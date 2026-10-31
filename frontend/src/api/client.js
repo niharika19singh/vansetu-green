@@ -29,6 +29,28 @@ async function requestJson(path, options = {}) {
   return response.json();
 }
 
+async function requestUpload(path, formData, token = null) {
+  const url = `${API_BASE}${path}`;
+  const headers = {};
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  const response = await fetch(url, {
+    method: 'POST',
+    headers,
+    body: formData,
+  });
+  if (!response.ok) {
+    let detail = `HTTP ${response.status}`;
+    try {
+      const errJson = await response.json();
+      detail = errJson.detail || detail;
+    } catch {}
+    throw new Error(detail);
+  }
+  return response.json();
+}
+
 export function getTileUrl(layer, z = '{z}', x = '{x}', y = '{y}') {
   return `${API_BASE}/api/tiles/${layer}/${z}/${x}/${y}.png`;
 }
@@ -250,6 +272,67 @@ export const api = {
   advanceReadinessPackageGate: (packageId, payload) =>
     requestJson(`/api/readiness/package/${encodeURIComponent(packageId)}/gate`, {
       method: 'PATCH',
+      body: JSON.stringify(payload),
+    }),
+
+  // Phase 11: Machine Learning Intervention Intelligence Engine
+  getMlModelStatus: () => requestJson('/api/ml/model-status'),
+  getMlDataStatus: () => requestJson('/api/ml/data-status'),
+  getSegmentFeatures: (segmentId) =>
+    requestJson(`/api/ml/features/${encodeURIComponent(segmentId)}`),
+  recommendInterventions: (payload) =>
+    requestJson('/api/ml/interventions/recommend', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  uploadEvidenceDocument: (formData, token) =>
+    requestUpload('/api/ml/evidence/upload', formData, token),
+  verifyEvidenceDocument: (evidenceId, payload, token) =>
+    requestJson(`/api/ml/evidence/${encodeURIComponent(evidenceId)}/verify`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: JSON.stringify(payload),
+    }),
+  listEvidenceDocuments: (params = {}, token) => {
+    const q = new URLSearchParams(params).toString();
+    return requestJson(`/api/ml/evidence${q ? `?${q}` : ''}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+  },
+  submitSiteAssessment: (payload, token) =>
+    requestJson('/api/ml/site-assessments', {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: JSON.stringify(payload),
+    }),
+  reviewSiteAssessment: (assessmentId, payload, token) =>
+    requestJson(`/api/ml/site-assessments/${encodeURIComponent(assessmentId)}`, {
+      method: 'PATCH',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: JSON.stringify(payload),
+    }),
+  listSiteAssessments: (params = {}, token) => {
+    const q = new URLSearchParams(params).toString();
+    return requestJson(`/api/ml/site-assessments${q ? `?${q}` : ''}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+  },
+  submitOutcomeObservation: (payload, token) =>
+    requestJson('/api/ml/outcome-observations', {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: JSON.stringify(payload),
+    }),
+  promoteModel: (payload, token) =>
+    requestJson('/api/ml/model/promote', {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: JSON.stringify(payload),
+    }),
+  rollbackModel: (payload, token) =>
+    requestJson('/api/ml/model/rollback', {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
       body: JSON.stringify(payload),
     }),
 };
