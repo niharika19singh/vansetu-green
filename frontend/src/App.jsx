@@ -331,32 +331,30 @@ export default function App() {
   const [passportCorridorId, setPassportCorridorId] = useState('C-14');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [retryKey, setRetryKey] = useState(0);
+  const [retrying, setRetrying] = useState(false);
 
   // Initial metadata fetch
-  useEffect(() => {
-    let mounted = true;
-    async function loadInitialMetadata() {
-      try {
-        const [statsRes, provRes, aqiRes, zonesRes] = await Promise.all([
-          api.getStatsSummary(),
-          api.getProvenance(),
-          api.getAqiStations(),
-          api.getRasterZones(85.0),
-        ]);
-        if (!mounted) return;
-        setStatsSummary(statsRes);
-        setProvenance(provRes);
-        setAqiStations(aqiRes.features || []);
-        setRasterZones(zonesRes);
-      } catch (err) {
-        if (mounted) setError(err.message || 'Failed to connect to VanSetu API');
-      }
+  const loadInitialMetadata = useCallback(async () => {
+    try {
+      const [statsRes, provRes, aqiRes, zonesRes] = await Promise.all([
+        api.getStatsSummary(),
+        api.getProvenance(),
+        api.getAqiStations(),
+        api.getRasterZones(85.0),
+      ]);
+      setStatsSummary(statsRes);
+      setProvenance(provRes);
+      setAqiStations(aqiRes.features || []);
+      setRasterZones(zonesRes);
+    } catch (err) {
+      setError(err.message || 'Failed to connect to VanSetu API');
     }
-    loadInitialMetadata();
-    return () => {
-      mounted = false;
-    };
   }, []);
+
+  useEffect(() => {
+    loadInitialMetadata();
+  }, [loadInitialMetadata]);
 
   // Load corridors & sensitivity data
   const loadCorridorData = useCallback(async () => {
@@ -404,6 +402,19 @@ export default function App() {
   useEffect(() => {
     loadCorridorData();
   }, [loadCorridorData]);
+
+  const handleGlobalRetry = useCallback(async () => {
+    setRetrying(true);
+    setError(null);
+    setRetryKey((k) => k + 1);
+    try {
+      await Promise.all([loadInitialMetadata(), loadCorridorData()]);
+    } catch (err) {
+      setError(err.message || 'Failed to fetch');
+    } finally {
+      setRetrying(false);
+    }
+  }, [loadInitialMetadata, loadCorridorData]);
 
   const activeSensitivityRow = sensitivityData?.corridors?.find(
     (c) => c.id === selectedCorridor?.id
@@ -597,10 +608,12 @@ export default function App() {
               <span>{error}</span>
             </div>
             <button
-              onClick={loadCorridorData}
-              className="px-2 py-0.5 rounded bg-rose-800/60 hover:bg-rose-700 text-rose-100 flex items-center gap-1"
+              onClick={handleGlobalRetry}
+              disabled={retrying}
+              className="px-2.5 py-1 rounded bg-rose-800/80 hover:bg-rose-700 active:bg-rose-900 text-rose-100 flex items-center gap-1.5 font-medium transition disabled:opacity-50"
             >
-              <RefreshCw className="w-3 h-3" /> Retry
+              <RefreshCw className={`w-3 h-3 ${retrying ? 'animate-spin' : ''}`} />
+              {retrying ? 'Retrying...' : 'Retry'}
             </button>
           </div>
         )}
@@ -871,7 +884,10 @@ export default function App() {
               )}
 
               {activeView === 'seasonal' && (
-                <SeasonalHeatIntelligenceView selectedCorridor={selectedCorridor} />
+                <SeasonalHeatIntelligenceView
+                  selectedCorridor={selectedCorridor}
+                  retryKey={retryKey}
+                />
               )}
 
               {activeView === 'impact' && <ImpactMonitoringView />}

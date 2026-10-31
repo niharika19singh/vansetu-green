@@ -59,14 +59,31 @@ export class LivingForestDirector {
   }
 
   initForestScene() {
+    const primaryUrl = 'https://i.pinimg.com/1200x/f3/2d/44/f32d449cc721be356efb6dad47834669.jpg';
+    const fallbackUrl = '/textures/landing_forest_background.jpg';
+
     const forestTex = this.textureLoader.load(
-      '/textures/forest_reference.jpg',
+      primaryUrl,
       (tex) => {
         tex.generateMipmaps = true;
         tex.minFilter = THREE.LinearMipmapLinearFilter;
         tex.magFilter = THREE.LinearFilter;
         tex.wrapS = THREE.ClampToEdgeWrapping;
         tex.wrapT = THREE.ClampToEdgeWrapping;
+      },
+      undefined,
+      () => {
+        // Fallback to local copy if remote image fails or is blocked
+        this.textureLoader.load(fallbackUrl, (fallbackTex) => {
+          fallbackTex.generateMipmaps = true;
+          fallbackTex.minFilter = THREE.LinearMipmapLinearFilter;
+          fallbackTex.magFilter = THREE.LinearFilter;
+          fallbackTex.wrapS = THREE.ClampToEdgeWrapping;
+          fallbackTex.wrapT = THREE.ClampToEdgeWrapping;
+          if (this.forestMaterial) {
+            this.forestMaterial.uniforms.uForestTex.value = fallbackTex;
+          }
+        });
       }
     );
 

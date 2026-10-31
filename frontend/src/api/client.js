@@ -60,6 +60,7 @@ export function getTileUrl(layer, z = '{z}', x = '{x}', y = '{y}') {
 }
 
 export const api = {
+  getBaseUrl: () => API_BASE,
   getHealth: () => requestJson('/api/health'),
   getProvenance: () => requestJson('/api/provenance'),
   getLayers: () => requestJson('/api/layers'),

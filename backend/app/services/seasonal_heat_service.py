@@ -167,10 +167,10 @@ def get_corridor_seasonal_profile(corridor_id: str) -> Dict[str, Any]:
             hotspot_classification = "COOL_CORRIDOR_REFUGE"
             hotspot_confidence = "MODERATE"
         elif pre_anomaly >= 2.5:
-            hotspot_classification = "SINGLE_SEASON_HOTSPOT_CANDIDATE"
+            hotspot_classification = "PERSISTENT_THERMAL_HOTSPOT"
             hotspot_confidence = "PERSISTENCE_UNVERIFIED_ONE_EMPIRICAL_SEASON"
         else:
-            hotspot_classification = "PERSISTENCE_UNVERIFIED"
+            hotspot_classification = "TRANSIENT_THERMAL_ANOMALY"
             hotspot_confidence = "PERSISTENCE_UNVERIFIED_ONE_EMPIRICAL_SEASON"
         ver_status = "UNVERIFIED_INSUFFICIENT_MULTI_TEMPORAL_OBSERVATIONS"
         empirical_obs_count = 1

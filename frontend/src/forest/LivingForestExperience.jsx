@@ -3,8 +3,11 @@
  * Mounts the LivingForestDirector Three.js engine and renders continuous water wave
  * displacement, droplet ripples, and subtle sunlight motes behind the functional UI.
  */
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { LivingForestDirector } from './LivingForestDirector';
+
+const REMOTE_BG = 'https://i.pinimg.com/1200x/f3/2d/44/f32d449cc721be356efb6dad47834669.jpg';
+const LOCAL_BG = '/textures/landing_forest_background.jpg';
 
 export default function LivingForestExperience({
   onRipple,
@@ -12,6 +15,7 @@ export default function LivingForestExperience({
 }) {
   const canvasRef = useRef(null);
   const directorRef = useRef(null);
+  const [bgSrc, setBgSrc] = useState(REMOTE_BG);
 
   useEffect(() => {
     if (!canvasRef.current) return;
@@ -32,10 +36,11 @@ export default function LivingForestExperience({
 
   return (
     <div className="fixed inset-0 w-full h-full overflow-hidden -z-20 pointer-events-none select-none">
-      {/* Fallback authentic reference photo on initial mount */}
+      {/* Required Landing Page Background Asset with Local Fallback */}
       <img
-        src="/textures/forest_reference.jpg"
-        alt="Living Forest and Pond"
+        src={bgSrc}
+        onError={() => setBgSrc(LOCAL_BG)}
+        alt="Living Forest and Water Background"
         className="absolute inset-0 w-full h-full object-cover -z-30 opacity-90 transition-opacity duration-1000"
       />
 

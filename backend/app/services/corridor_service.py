@@ -411,9 +411,13 @@ class CorridorService:
         target = str(corridor_id).strip().lower()
         for feat in result["features"]:
             p = feat["properties"]
+            id_lower = str(p.get("id", "")).lower()
+            code_lower = str(p.get("code", "")).lower()
             if (
-                str(p["id"]).lower() == target
-                or str(p.get("code", "")).lower() == target
+                id_lower == target
+                or code_lower == target
+                or (target.isdigit() and code_lower == f"c-{target}")
+                or (target.isdigit() and id_lower.endswith(f"_{target.zfill(3)}"))
                 or str(p.get("ward_id", "")).lower() == target
                 or target in str(p.get("name", "")).lower()
             ):
