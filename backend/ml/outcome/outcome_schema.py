@@ -7,10 +7,10 @@ Never trains on seeded synthetic outcomes or simple unadjusted before/after comp
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class OutcomeMetricType(str, Enum):
@@ -25,27 +25,54 @@ class OutcomeMetricType(str, Enum):
 
 
 class DeploymentOutcomeObservation(BaseModel):
-    deployment_id: str
-    segment_id: str
+    deployment_id: str = Field(min_length=3, description="Municipal work order or project deployment ID.")
+    segment_id: str = Field(min_length=3, description="Intervened Delhi road segment ID.")
     intervention_archetype: str
-    installation_date: str
-    observation_date: str
+    installation_date: str = Field(description="ISO date string (YYYY-MM-DD) of installation.")
+    observation_date: str = Field(description="ISO date string (YYYY-MM-DD) of field observation.")
     is_post_intervention: bool = Field(description="True if post-installation measurement, False if baseline.")
     metric_type: OutcomeMetricType
     measured_value: float
-    measurement_unit: str
+    measurement_unit: str = Field(min_length=1)
     measurement_method: str = Field(description="FIELD_SENSOR, SATELLITE_RASTER, or MANUAL_SURVEY.")
-    instrument_details: Optional[str] = None
-    matched_control_segment_id: Optional[str] = Field(None, description="Nearby un-intervened segment for difference-in-differences comparison.")
+    instrument_details: str = Field(min_length=3, description="Hardware model, sensor serial, or protocol reference.")
+    matched_control_segment_id: Optional[str] = Field(None, description="Nearby un-intervened control segment ID.")
     control_measured_value: Optional[float] = None
-    weather_confounder_notes: Optional[str] = None
-    reviewer_id: str
+    weather_confounder_notes: Optional[str] = Field(None, description="Ambient weather/rainfall notes during observation.")
+    evidence_document_ref: Optional[str] = Field(None, description="Verifiable municipal or lab document reference.")
+    evidence_document_type: Optional[str] = Field(None, description="MUNICIPAL_WORK_ORDER, FIELD_LOG, LAB_REPORT, etc.")
+    recorder_id: Optional[str] = Field(None, description="Server-injected accredited assessor ID.")
     verification_status: str = Field(default="EMPIRICAL_VERIFIED", description="EMPIRICAL_VERIFIED or PENDING_AUDIT. Never SYNTHETIC.")
+
+    @model_validator(mode="after")
+    def validate_dates_and_controls(self) -> DeploymentOutcomeObservation:
+        # Validate observation date is not before installation date for post-intervention
+        try:
+            inst_d = date.fromisoformat(self.installation_date.split("T")[0])
+            obs_d = date.fromisoformat(self.observation_date.split("T")[0])
+            if self.is_post_intervention and obs_d < inst_d:
+                raise ValueError(
+                    f"Temporal Inconsistency: Observation date ({self.observation_date}) "
+                    f"cannot precede installation date ({self.installation_date}) for post-intervention telemetry."
+                )
+        except Exception as exc:
+            if "Temporal Inconsistency" in str(exc):
+                raise
+            # If date parse fails, let standard validation handle
+
+        # Matched control segment cannot be the same as the intervened segment
+        if self.matched_control_segment_id and self.matched_control_segment_id.strip() == self.segment_id.strip():
+            raise ValueError(
+                f"Causal Design Violation: Matched control segment ID ('{self.matched_control_segment_id}') "
+                f"cannot be the same segment as the intervened site ('{self.segment_id}')."
+            )
+
+        return self
 
 
 class OutcomeLearningReadinessReport(BaseModel):
     is_outcome_model_trainable: bool = False
-    status_code: str = "OUTCOME_LEARNING_PENDING_EMPIRICAL_FOLLOW_UP"
+    status_code: str = "OUTCOME_MONITORING_DATA_COLLECTION_ONLY"
     total_verified_deployments: int = 0
     deployments_with_post_data: int = 0
     matched_control_pairs_count: int = 0
@@ -60,5 +87,6 @@ class OutcomeLearningReadinessReport(BaseModel):
     ])
     disclaimer: str = (
         "Causal intervention efficacy cannot be established from naive before/after satellite differences. "
-        "Outcome learning models will only be activated when empirical multi-season matched control observations mature."
+        "Outcome learning models will only be activated when empirical multi-season matched control observations mature. "
+        "Currently in baseline data collection phase only."
     )

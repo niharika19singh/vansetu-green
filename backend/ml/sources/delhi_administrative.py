@@ -1,9 +1,14 @@
 """
-VanSetu GreenTech — Delhi Administrative Boundary Spatial Joiner (Phase 1H).
+VanSetu GreenTech — Delhi Administrative Boundary Spatial Joiner (Priority 2 Remediation).
 
-Performs strict, mathematically verified spatial joins against official NCT Delhi
-administrative boundary geometries. Never uses list indices or invented mappings.
-Operates in EPSG:32643 (UTM Zone 43N) for metric accuracy; outputs in EPSG:4326.
+Performs mathematically verified spatial joins against official NCT Delhi
+administrative boundary geometries in metric EPSG:32643 (UTM Zone 43N).
+
+CRITICAL ADMINISTRATIVE DISTINCTION:
+- This adapter models the 11 official Revenue Districts of NCT Delhi (Census 2011 / GNCTD).
+- Note: Municipal Corporation of Delhi (MCD) electoral wards (250 wards post-2022 delimitation)
+  represent a separate municipal administrative structure and are NOT represented by these
+  11 revenue district polygons.
 """
 from __future__ import annotations
 
@@ -22,9 +27,24 @@ class DelhiAdministrativeBoundaryAdapter(BaseSourceAdapter):
     METRIC_CRS = "EPSG:32643"  # UTM Zone 43N for Delhi (units in metres)
     GEOGRAPHIC_CRS = "EPSG:4326"
 
+    # Official 11 Revenue Districts of NCT Delhi
+    NCT_DELHI_11_DISTRICTS = [
+        "Central Delhi",
+        "East Delhi",
+        "New Delhi",
+        "North Delhi",
+        "North East Delhi",
+        "North West Delhi",
+        "Shahdara",
+        "South Delhi",
+        "South East Delhi",
+        "South West Delhi",
+        "West Delhi",
+    ]
+
     def __init__(self, data_dir: Optional[Path] = None) -> None:
         super().__init__(
-            source_name="NCT Delhi Official Revenue Districts & Electoral Boundaries",
+            source_name="NCT Delhi Official Revenue Districts (11 Districts)",
             provider="State Election Commission Delhi / Survey of India / Census of India",
             portal_url="https://sec.delhi.gov.in/",
             license_type="Open Government Data (OGD) India / Government of NCT of Delhi",
@@ -54,6 +74,10 @@ class DelhiAdministrativeBoundaryAdapter(BaseSourceAdapter):
             "status": IngestionStatus.AVAILABLE_LOCAL_CACHE.value,
             "verified_districts_count": len(districts),
             "districts_list": districts,
+            "administrative_level": "Revenue District (GNCTD)",
+            "administrative_note": (
+                "Models the 11 Revenue Districts of NCT Delhi. Distinct from the 250 MCD municipal wards."
+            ),
             "metric_crs": self.METRIC_CRS,
             "geographic_crs": self.GEOGRAPHIC_CRS,
         }
@@ -67,14 +91,16 @@ class DelhiAdministrativeBoundaryAdapter(BaseSourceAdapter):
             provider_agency=self.provider,
             official_portal_url=self.portal_url,
             license_type=self.license_type,
-            native_spatial_resolution="Cadastral/Administrative boundary polygons (11 NCT Delhi Districts)",
+            native_spatial_resolution="11 Cadastral/Administrative boundary polygons (Revenue Districts)",
             native_temporal_resolution="Census 2011 / Delhi Reorganization Act",
             crs="EPSG:4326 (source) / EPSG:32643 (metric computation)",
             acquisition_period="Official NCT Delhi Revenue District Boundaries",
             ingestion_status=IngestionStatus.AVAILABLE_LOCAL_CACHE,
             is_live_connected=True,
+            is_local_cached=True,
             local_asset_path=str(self.districts_file),
             file_size_bytes=sz,
+            manual_acquisition_procedure="Export from SEC Delhi or Survey of India Open Data portal.",
         )
 
     def spatial_join_geometry(self, geom: Any, crs: str = "EPSG:4326") -> Dict[str, Any]:
@@ -110,31 +136,29 @@ class DelhiAdministrativeBoundaryAdapter(BaseSourceAdapter):
                     is_boundary_edge = True
                 break
 
-        if matched_district is None:
-            # Fallback to nearest district if slightly outside due to road vertex buffer
-            nearest_dist = float("inf")
-            for _, row in self._gdf_32643.iterrows():
-                d = geom_metric.distance(row.geometry)
-                if d < nearest_dist:
-                    nearest_dist = d
-                    matched_district = row.get("district") or row.get("name")
-                    matched_id = row.get("id")
-                    distance_to_boundary_m = round(float(d), 1)
-                    is_boundary_edge = True
+        # Fallback to nearest district if point lies slightly outside bounding edge
+        if matched_district is None and not self._gdf_32643.empty:
+            distances = self._gdf_32643.geometry.distance(geom_metric)
+            nearest_idx = distances.idxmin()
+            nearest_row = self._gdf_32643.loc[nearest_idx]
+            matched_district = nearest_row.get("district") or nearest_row.get("name")
+            matched_id = nearest_row.get("id") or nearest_row.get("district_id")
+            distance_to_boundary_m = round(float(distances.min()), 1)
+            is_boundary_edge = True
 
         return {
             "district": matched_district,
             "district_id": matched_id,
             "is_boundary_edge": is_boundary_edge,
             "distance_to_boundary_metres": distance_to_boundary_m,
-            "crs_used": self.METRIC_CRS,
-            "spatial_join_method": "PRECISE_POLYGON_INTERSECTION_EPSG_32643",
+            "administrative_division": "Revenue District (11 in Delhi)",
         }
 
     def fetch_observations_or_raster(self, **kwargs: Any) -> Dict[str, Any]:
+        self._ensure_loaded()
         return {
             "available": True,
             "status": IngestionStatus.AVAILABLE_LOCAL_CACHE.value,
-            "districts_count": len(self._gdf_4326) if self._gdf_4326 is not None else 11,
+            "districts_count": len(self._gdf_4326) if self._gdf_4326 is not None else 0,
             "provenance": self.get_provenance().to_dict(),
         }

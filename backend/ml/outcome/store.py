@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from ml.outcome.outcome_schema import DeploymentOutcomeObservation, OutcomeLearningReadinessReport
+from ml.security.auth import AuthenticatedUser, Permission
 
 
 class OutcomeObservationStore:
@@ -49,7 +50,9 @@ class OutcomeObservationStore:
                     matched_control_segment_id TEXT,
                     control_measured_value REAL,
                     weather_confounder_notes TEXT,
-                    reviewer_id TEXT NOT NULL,
+                    evidence_document_ref TEXT,
+                    evidence_document_type TEXT,
+                    recorder_id TEXT NOT NULL,
                     verification_status TEXT NOT NULL,
                     created_at TEXT NOT NULL
                 );
@@ -58,48 +61,121 @@ class OutcomeObservationStore:
                 CREATE INDEX IF NOT EXISTS idx_outcome_deployment ON intervention_outcome_observations(deployment_id);
                 """
             )
+            # Automatic schema migration for pre-existing databases
+            cur_out = conn.execute("PRAGMA table_info(intervention_outcome_observations)")
+            out_cols = {row[1] for row in cur_out.fetchall()}
+            if "evidence_document_ref" not in out_cols and len(out_cols) > 0:
+                conn.execute("ALTER TABLE intervention_outcome_observations ADD COLUMN evidence_document_ref TEXT")
+            if "evidence_document_type" not in out_cols and len(out_cols) > 0:
+                conn.execute("ALTER TABLE intervention_outcome_observations ADD COLUMN evidence_document_type TEXT")
+            if "recorder_id" not in out_cols and len(out_cols) > 0:
+                conn.execute("ALTER TABLE intervention_outcome_observations ADD COLUMN recorder_id TEXT NOT NULL DEFAULT 'system'")
             conn.commit()
 
-    def record_outcome_observation(self, obs: DeploymentOutcomeObservation) -> Dict[str, Any]:
-        """Record an empirical outcome measurement with validation against synthetic claims."""
+    def record_outcome_observation(
+        self,
+        obs: DeploymentOutcomeObservation,
+        authenticated_user: Optional[AuthenticatedUser] = None,
+    ) -> Dict[str, Any]:
+        """
+        Record an empirical outcome measurement with server-side identity injection and anti-contamination validation.
+        """
         if obs.verification_status.upper() in ("SYNTHETIC", "SIMULATED", "FIXTURE"):
-            raise ValueError("Data Contamination Rejection: Synthetic outcome records cannot be stored in empirical outcome registry.")
+            raise ValueError(
+                "Data Contamination Rejection: Synthetic outcome records cannot be stored in empirical outcome registry."
+            )
+
+        recorder_id = obs.recorder_id or "unauthenticated_field_user"
+        if authenticated_user is not None:
+            if not authenticated_user.has_permission(Permission.SUBMIT_OUTCOME):
+                raise PermissionError(
+                    f"User '{authenticated_user.user_id}' lacks SUBMIT_OUTCOME permission."
+                )
+            recorder_id = authenticated_user.user_id
+
+        # Verification requires a document reference
+        v_status = obs.verification_status
+        if not obs.evidence_document_ref and v_status == "EMPIRICAL_VERIFIED":
+            v_status = "PENDING_AUDIT"
 
         oid = f"out-{uuid.uuid4().hex[:10]}"
         now = datetime.now(timezone.utc).isoformat()
 
         with self._get_conn() as conn:
-            conn.execute(
-                """
-                INSERT INTO intervention_outcome_observations (
-                    observation_id, deployment_id, segment_id, intervention_archetype,
-                    installation_date, observation_date, is_post_intervention,
-                    metric_type, measured_value, measurement_unit, measurement_method,
-                    instrument_details, matched_control_segment_id, control_measured_value,
-                    weather_confounder_notes, reviewer_id, verification_status, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    oid,
-                    obs.deployment_id,
-                    obs.segment_id,
-                    obs.intervention_archetype,
-                    obs.installation_date,
-                    obs.observation_date,
-                    1 if obs.is_post_intervention else 0,
-                    obs.metric_type.value,
-                    float(obs.measured_value),
-                    obs.measurement_unit,
-                    obs.measurement_method,
-                    obs.instrument_details,
-                    obs.matched_control_segment_id,
-                    obs.control_measured_value,
-                    obs.weather_confounder_notes,
-                    obs.reviewer_id,
-                    obs.verification_status,
-                    now,
-                ),
-            )
+            cur_out = conn.execute("PRAGMA table_info(intervention_outcome_observations)")
+            cols = {row[1] for row in cur_out.fetchall()}
+
+            if "reviewer_id" in cols:
+                conn.execute(
+                    """
+                    INSERT INTO intervention_outcome_observations (
+                        observation_id, deployment_id, segment_id, intervention_archetype,
+                        installation_date, observation_date, is_post_intervention,
+                        metric_type, measured_value, measurement_unit, measurement_method,
+                        instrument_details, matched_control_segment_id, control_measured_value,
+                        weather_confounder_notes, evidence_document_ref, evidence_document_type,
+                        recorder_id, reviewer_id, verification_status, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        oid,
+                        obs.deployment_id,
+                        obs.segment_id,
+                        obs.intervention_archetype,
+                        obs.installation_date,
+                        obs.observation_date,
+                        1 if obs.is_post_intervention else 0,
+                        obs.metric_type.value,
+                        float(obs.measured_value),
+                        obs.measurement_unit,
+                        obs.measurement_method,
+                        obs.instrument_details,
+                        obs.matched_control_segment_id,
+                        obs.control_measured_value,
+                        obs.weather_confounder_notes,
+                        obs.evidence_document_ref,
+                        obs.evidence_document_type,
+                        recorder_id,
+                        recorder_id,
+                        v_status,
+                        now,
+                    ),
+                )
+            else:
+                conn.execute(
+                    """
+                    INSERT INTO intervention_outcome_observations (
+                        observation_id, deployment_id, segment_id, intervention_archetype,
+                        installation_date, observation_date, is_post_intervention,
+                        metric_type, measured_value, measurement_unit, measurement_method,
+                        instrument_details, matched_control_segment_id, control_measured_value,
+                        weather_confounder_notes, evidence_document_ref, evidence_document_type,
+                        recorder_id, verification_status, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        oid,
+                        obs.deployment_id,
+                        obs.segment_id,
+                        obs.intervention_archetype,
+                        obs.installation_date,
+                        obs.observation_date,
+                        1 if obs.is_post_intervention else 0,
+                        obs.metric_type.value,
+                        float(obs.measured_value),
+                        obs.measurement_unit,
+                        obs.measurement_method,
+                        obs.instrument_details,
+                        obs.matched_control_segment_id,
+                        obs.control_measured_value,
+                        obs.weather_confounder_notes,
+                        obs.evidence_document_ref,
+                        obs.evidence_document_type,
+                        recorder_id,
+                        v_status,
+                        now,
+                    ),
+                )
             conn.commit()
 
         return self.get_observation(oid)
@@ -136,7 +212,7 @@ class OutcomeObservationStore:
 
         return OutcomeLearningReadinessReport(
             is_outcome_model_trainable=is_trainable,
-            status_code="OUTCOME_MODEL_APPROVED_FOR_TRAINING" if is_trainable else "OUTCOME_LEARNING_PENDING_EMPIRICAL_FOLLOW_UP",
+            status_code="OUTCOME_MODEL_APPROVED_FOR_TRAINING" if is_trainable else "OUTCOME_MONITORING_DATA_COLLECTION_ONLY",
             total_verified_deployments=total_deps,
             deployments_with_post_data=post_deps,
             matched_control_pairs_count=matched_controls,

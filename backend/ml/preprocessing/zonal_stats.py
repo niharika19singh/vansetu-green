@@ -22,6 +22,32 @@ class ZonalStatsSampler:
         self.data_dir = data_dir or (Path(__file__).parent.parent.parent / "data")
         self.ndvi_path = self.data_dir / "delhi_ndvi_10m.tif"
         self.lst_path = self.data_dir / "delhi_lst_modis_daily_celsius.tif"
+        self._cached_scene_mean_lst: Optional[float] = None
+
+    def get_scene_mean_lst(self) -> float:
+        """
+        Compute the terrestrial scene-average baseline LST from the MODIS GeoTIFF.
+        Replaces arbitrary static offsets with the empirical Delhi scene mean (approx 25.8°C - 26.4°C).
+        """
+        if self._cached_scene_mean_lst is not None:
+            return self._cached_scene_mean_lst
+
+        if not self.lst_path.exists():
+            self._cached_scene_mean_lst = 25.76
+            return self._cached_scene_mean_lst
+
+        try:
+            with rasterio.open(self.lst_path) as src:
+                data = src.read(1)
+                valid = data[(data > 0.0) & (data < 70.0) & (data != -9999.0)]
+                if valid.size > 0:
+                    self._cached_scene_mean_lst = round(float(np.mean(valid)), 2)
+                else:
+                    self._cached_scene_mean_lst = 25.76
+        except Exception:
+            self._cached_scene_mean_lst = 25.76
+
+        return self._cached_scene_mean_lst
 
     def sample_ndvi_for_polygon(self, polygon_geom_4326: Any) -> Dict[str, Any]:
         """

@@ -35,7 +35,8 @@ flowchart TD
 
 ### Protocol Rules:
 1. **Grouping Variable**: `corridor_id`. All segments of any given corridor belong exclusively to the training fold or exclusively to the validation fold.
-2. **District Block Out**: In advanced verification, geographic leave-one-district-out (LODO) validation isolates entire revenue districts (e.g., train on 10 districts, evaluate on North West Delhi).
+2. **Class Distribution Check**: Each validation fold must contain representative samples of all present target classes. If corridor grouping leaves any fold without class representation, the system raises `INSUFFICIENT_SPATIAL_CLASS_COVERAGE`. Falling back to non-spatial random splitting is **strictly prohibited** to preserve spatial integrity.
+3. **District Block Out**: In advanced verification, geographic leave-one-district-out (LODO) validation isolates entire revenue districts (e.g., train on 10 districts, evaluate on North West Delhi).
 
 ---
 

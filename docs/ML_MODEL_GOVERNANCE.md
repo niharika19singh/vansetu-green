@@ -70,6 +70,15 @@ and immediately disables the model, activating the deterministic rule-based engi
 
 ### Zero-Downtime Rollback Procedure:
 If a newly approved model demonstrates unexpected predictions in the field:
-1. The administrator invokes `POST /api/ml/model/rollback` or updates `latest_model_metadata.json` with the previous version's metadata.
-2. The runtime cache reloads the previous approved `.joblib` artifact.
-3. If no prior artifact is available, the system falls back to `RULE_BASED_FALLBACK_v1.0` without process restarts or service downtime.
+1. The administrator invokes `POST /api/ml/model/rollback` with accredited credentials (`PROMOTE_MODEL` permission).
+2. The runtime cache verifies artifact integrity and restores the target historical `.joblib` artifact.
+3. If no prior artifact is available, the system falls back to `DETERMINISTIC_RULE_BASED_ENGINE_ACTIVE` without process restarts or service downtime.
+
+---
+
+## 5. Durable Object Storage (DigitalOcean Spaces)
+
+In production environments, model artifacts are mirrored to DigitalOcean Spaces (`blr1` region).
+If `DO_SPACES_KEY` or `DO_SPACES_BUCKET` are unconfigured, `ModelRegistry.check_durable_storage_status()` reports:
+`DURABLE_MODEL_STORAGE_NOT_CONFIGURED`
+while allowing secure local filesystem fallback for development and isolated testing. Model promotion enforces that local artifacts pass SHA-256 integrity verification before activation.

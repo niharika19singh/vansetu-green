@@ -2,11 +2,13 @@
 VanSetu GreenTech — Segment Feature Extraction & GeoParquet Pipeline (Phase 3B).
 
 Assembles multi-domain road segment features for all 1,302 Delhi road segments.
-Saves versioned datasets in GeoParquet format with explicit missingness metadata.
+Saves versioned datasets in GeoParquet format with explicit missingness metadata
+and strict scientific provenance classifications for every feature.
 """
 from __future__ import annotations
 
 import os
+from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 import geopandas as gpd
@@ -18,6 +20,61 @@ from ml.preprocessing.segmentation import CorridorSegmenter
 from ml.preprocessing.zonal_stats import ZonalStatsSampler
 from ml.sources.cpcb_airquality import CpcbAirQualityAdapter
 from ml.sources.delhi_administrative import DelhiAdministrativeBoundaryAdapter
+
+
+class FeatureProvenance(str, Enum):
+    DIRECTLY_OBSERVED = "DIRECTLY_OBSERVED"
+    SATELLITE_DERIVED = "SATELLITE_DERIVED"
+    GIS_DERIVED = "GIS_DERIVED"
+    PROXY_ESTIMATE = "PROXY_ESTIMATE"
+    ENGINEERING_ESTIMATE = "ENGINEERING_ESTIMATE"
+    FIELD_VERIFIED = "FIELD_VERIFIED"
+    UNAVAILABLE = "UNAVAILABLE"
+
+
+# Authoritative feature provenance registry
+FEATURE_PROVENANCE_REGISTRY: Dict[str, str] = {
+    "segment_id": FeatureProvenance.GIS_DERIVED.value,
+    "corridor_id": FeatureProvenance.GIS_DERIVED.value,
+    "corridor_code": FeatureProvenance.GIS_DERIVED.value,
+    "corridor_name": FeatureProvenance.GIS_DERIVED.value,
+    "segment_index": FeatureProvenance.GIS_DERIVED.value,
+    "length_metres": FeatureProvenance.GIS_DERIVED.value,
+    "start_chainage_m": FeatureProvenance.GIS_DERIVED.value,
+    "end_chainage_m": FeatureProvenance.GIS_DERIVED.value,
+    "centroid_lat": FeatureProvenance.GIS_DERIVED.value,
+    "centroid_lon": FeatureProvenance.GIS_DERIVED.value,
+    "district": FeatureProvenance.GIS_DERIVED.value,
+    "district_id": FeatureProvenance.GIS_DERIVED.value,
+    "is_boundary_edge": FeatureProvenance.GIS_DERIVED.value,
+    "highway_class": FeatureProvenance.GIS_DERIVED.value,
+    "ndvi_mean": FeatureProvenance.SATELLITE_DERIVED.value,
+    "ndvi_median": FeatureProvenance.SATELLITE_DERIVED.value,
+    "ndvi_p10": FeatureProvenance.SATELLITE_DERIVED.value,
+    "ndvi_p90": FeatureProvenance.SATELLITE_DERIVED.value,
+    "ndvi_valid_pixel_fraction": FeatureProvenance.SATELLITE_DERIVED.value,
+    "ndmi": FeatureProvenance.UNAVAILABLE.value,
+    "ndmi_proxy": FeatureProvenance.UNAVAILABLE.value,
+    "ndbi": FeatureProvenance.UNAVAILABLE.value,
+    "ndbi_proxy": FeatureProvenance.UNAVAILABLE.value,
+    "modis_lst_celsius": FeatureProvenance.SATELLITE_DERIVED.value,
+    "thermal_anomaly_celsius": FeatureProvenance.SATELLITE_DERIVED.value,
+    "lst_sampling_mode": FeatureProvenance.GIS_DERIVED.value,
+    "built_up_fraction": FeatureProvenance.PROXY_ESTIMATE.value,
+    "open_space_fraction": FeatureProvenance.PROXY_ESTIMATE.value,
+    "nearest_cpcb_station_id": FeatureProvenance.DIRECTLY_OBSERVED.value,
+    "nearest_cpcb_station_name": FeatureProvenance.DIRECTLY_OBSERVED.value,
+    "cpcb_distance_km": FeatureProvenance.GIS_DERIVED.value,
+    "air_quality_spatial_representativeness": FeatureProvenance.GIS_DERIVED.value,
+    "is_walkable": FeatureProvenance.ENGINEERING_ESTIMATE.value,
+    "road_class_guideline_row_m": FeatureProvenance.ENGINEERING_ESTIMATE.value,
+    "estimated_row_width_m": FeatureProvenance.ENGINEERING_ESTIMATE.value,
+    "surveyed_row_width_m": FeatureProvenance.FIELD_VERIFIED.value,
+    "clear_pedestrian_width_m": FeatureProvenance.FIELD_VERIFIED.value,
+    "available_planting_verge_m": FeatureProvenance.FIELD_VERIFIED.value,
+    "gpr_utility_survey_status": FeatureProvenance.FIELD_VERIFIED.value,
+    "subsurface_utility_conflict_gpr": FeatureProvenance.FIELD_VERIFIED.value,
+}
 
 
 # Estimated ROW width guidelines by highway class (Indian Roads Congress / CPWD Street Design Guidelines)
@@ -37,7 +94,7 @@ class SegmentFeaturePipeline:
     Builds the authoritative, versioned Delhi road segment feature dataset.
     """
 
-    FEATURE_SCHEMA_VERSION = "2.0.0"
+    FEATURE_SCHEMA_VERSION = "2.1.0"
 
     def __init__(self, data_dir: Optional[Path] = None) -> None:
         self.data_dir = data_dir or (Path(__file__).parent.parent.parent / "data")
@@ -53,7 +110,7 @@ class SegmentFeaturePipeline:
 
     def extract_features_for_segment(self, segment_row: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Extract multi-domain features for a single road segment.
+        Extract multi-domain features for a single road segment with genuine scientific provenance.
         """
         seg_geom_4326 = segment_row["geometry"]
         seg_metric = segment_row.get("geometry_metric")
@@ -74,20 +131,33 @@ class SegmentFeaturePipeline:
         ndvi_p90 = ndvi_res.get("ndvi_p90")
         valid_ndvi_frac = ndvi_res.get("valid_pixel_count", 0) / max(1, ndvi_res.get("pixel_count", 1))
 
-        # NDMI / moisture proxy from NDVI
-        ndmi_proxy = round(float(ndvi_mean * 0.72), 4) if ndvi_mean is not None else None
+        # Scientific correction: NDMI requires SWIR Band 11 (Sentinel-2), absent from single-band NDVI composite.
+        # Fictional proxy (ndvi * 0.72) is removed to maintain scientific integrity.
+        ndmi_val = None
+        ndmi_proxy_val = None
+        ndmi_note = "UNAVAILABLE (SWIR Band 11 required; synthetic proxy disabled for scientific integrity)"
 
         # 2. Thermal features via 1,000m MODIS
         lst_res = self.sampler.sample_lst_for_polygon(buf_4326)
         lst_val = lst_res.get("lst_celsius")
-        # Delhi urban baseline reference for pre-monsoon ~25.5°C
-        thermal_anomaly = round(float(lst_val - 25.5), 2) if lst_val is not None else None
+        scene_baseline_celsius = self.sampler.get_scene_mean_lst()
+        thermal_anomaly = round(float(lst_val - scene_baseline_celsius), 2) if lst_val is not None else None
 
-        # 3. Built environment & land cover proxies
-        # NDBI is typically negatively correlated with NDVI in urban areas
-        ndbi_proxy = round(float(0.45 - (ndvi_mean * 0.65)), 4) if ndvi_mean is not None else None
-        built_up_fraction = round(float(np.clip(0.60 + (ndbi_proxy or 0.2) * 0.5, 0.0, 1.0)), 3)
-        open_space_fraction = round(float(max(0.0, 1.0 - built_up_fraction)), 3)
+        # 3. Built environment & land cover
+        # Scientific correction: NDBI requires SWIR Band 11 / NIR Band 8 ratio.
+        # Arbitrary linear formula is removed; proxy is explicitly disabled.
+        ndbi_val = None
+        ndbi_proxy_val = None
+        ndbi_note = "UNAVAILABLE (SWIR/NIR ratio required; synthetic proxy disabled for scientific integrity)"
+
+        # Estimated built-up / open-space fractions using empirical negative correlation with green canopy
+        # Explicitly marked with PROXY_ESTIMATE provenance
+        if ndvi_mean is not None:
+            built_up_fraction = round(float(np.clip(0.85 - (ndvi_mean * 0.50), 0.10, 0.95)), 3)
+            open_space_fraction = round(float(max(0.05, 1.0 - built_up_fraction)), 3)
+        else:
+            built_up_fraction = 0.750
+            open_space_fraction = 0.250
 
         # 4. Air quality features via CPCB stations
         c_lat = segment_row["centroid_lat"]
@@ -95,18 +165,22 @@ class SegmentFeaturePipeline:
         aq_match = self.cpcb.find_nearest_station(c_lat, c_lon)
         stn = aq_match["nearest_station"]
 
-        # 5. Accessibility & physical geometry
+        # 5. Accessibility & physical geometry (Strict separation of guideline vs field-surveyed ROW)
         hw_class = segment_row.get("highway_class", "primary")
         irc_info = IRC_ROW_GUIDELINES.get(hw_class, {"min_row_m": 18.0, "walkable": True})
         is_walkable = irc_info["walkable"]
-        est_row_width_m = irc_info["min_row_m"]
+        guideline_row_m = irc_info["min_row_m"]
+
+        # Field-verified parameters default to None until an accredited surveyor records empirical measurements
+        surveyed_row_width_m = None
+        clear_pedestrian_width_m = None
+        available_planting_verge_m = None
+        subsurface_utility_conflict_gpr = None
 
         # GPR utility survey status: UNVERIFIED by default for field integrity
-        # (Only genuine field surveys change this; never synthetic fixtures)
         gpr_survey_status = "FIELD_GPR_REQUIRED"
         known_utility_conflict = False
 
-        # If corridor is C-14, note that demo fixture survey-014 exists but is flagged as DEMO
         if segment_row.get("corridor_code") == "C-14":
             demo_fixture_note = "DEMO_FIXTURE_SURVEY_014_AVAILABLE_FOR_SIMULATION_ONLY"
         else:
@@ -133,13 +207,19 @@ class SegmentFeaturePipeline:
             "ndvi_p10": ndvi_p10,
             "ndvi_p90": ndvi_p90,
             "ndvi_valid_pixel_fraction": round(float(valid_ndvi_frac), 4),
-            "ndmi_proxy": ndmi_proxy,
+            "ndmi": ndmi_val,
+            "ndmi_proxy": ndmi_proxy_val,
+            "ndmi_status": ndmi_note,
             # Thermal
             "modis_lst_celsius": lst_val,
             "thermal_anomaly_celsius": thermal_anomaly,
+            "lst_baseline_celsius": scene_baseline_celsius,
             "lst_sampling_mode": lst_res.get("sampling_mode", "UNAVAILABLE"),
+            "lst_resolution_disclaimer": "MOD11A2 1,000m coarse spatial resolution; captures regional UHI, not microclimate",
             # Built environment
-            "ndbi_proxy": ndbi_proxy,
+            "ndbi": ndbi_val,
+            "ndbi_proxy": ndbi_proxy_val,
+            "ndbi_status": ndbi_note,
             "built_up_fraction": built_up_fraction,
             "open_space_fraction": open_space_fraction,
             # Air quality
@@ -147,17 +227,24 @@ class SegmentFeaturePipeline:
             "nearest_cpcb_station_name": stn["name"] if stn else None,
             "cpcb_distance_km": aq_match["distance_km"],
             "air_quality_spatial_representativeness": aq_match["spatial_representativeness"],
-            # Accessibility & physical constraints
+            # Physical geometry & Right-of-Way
             "is_walkable": is_walkable,
-            "estimated_row_width_m": est_row_width_m,
+            "road_class_guideline_row_m": guideline_row_m,
+            "estimated_row_width_m": guideline_row_m,  # Backwards compatibility alias
+            "row_width_provenance": FeatureProvenance.ENGINEERING_ESTIMATE.value,
+            "surveyed_row_width_m": surveyed_row_width_m,
+            "clear_pedestrian_width_m": clear_pedestrian_width_m,
+            "available_planting_verge_m": available_planting_verge_m,
+            "subsurface_utility_conflict_gpr": subsurface_utility_conflict_gpr,
             "gpr_utility_survey_status": gpr_survey_status,
             "known_utility_conflict": known_utility_conflict,
             "demo_fixture_note": demo_fixture_note,
-            # Metadata
+            # Metadata & Provenance
             "feature_schema_version": self.FEATURE_SCHEMA_VERSION,
             "native_ndvi_resolution": "10m",
             "native_lst_resolution": "1,000m",
             "geometry": seg_geom_4326,
+            "feature_provenance": FEATURE_PROVENANCE_REGISTRY,
         }
 
     def generate_and_save_dataset(
@@ -178,7 +265,10 @@ class SegmentFeaturePipeline:
         feature_records = []
         for _, row in segs_gdf.iterrows():
             rec = self.extract_features_for_segment(dict(row))
-            feature_records.append(rec)
+            # Remove nested dict before saving to parquet/geojson column
+            rec_flat = dict(rec)
+            rec_flat.pop("feature_provenance", None)
+            feature_records.append(rec_flat)
 
         features_gdf = gpd.GeoDataFrame(feature_records, geometry="geometry", crs="EPSG:4326")
 

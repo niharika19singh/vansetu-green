@@ -1,20 +1,27 @@
 """
-VanSetu GreenTech — CPCB / DPCC Air Quality Ingestion Adapter (Phase 1E).
+VanSetu GreenTech — CPCB / DPCC Air Quality Ingestion Adapter (Priority 2 Remediation).
 
 Interfaces Central Pollution Control Board (CPCB) and Delhi Pollution Control Committee
-(DPCC) Continuous Ambient Air Quality Monitoring (CAAQM) stations across Delhi.
-Calculates station distance from segment centroids and exposes spatial representativeness.
+(DPCC) Continuous Ambient Air Quality Monitoring (CAAQM) network.
+
+CRITICAL INTEGRITY RULES:
+1. Station metadata (coordinates, names, IDs) is strictly separated from pollution observations.
+2. Station proximity alone is NEVER represented as a measured pollution concentration.
+3. Live pollutant values (PM2.5, PM10, NO2, AQI) are only reported when genuine observations
+   are returned from an official API.
 """
 from __future__ import annotations
 
 import math
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+import httpx
 
 from ml.sources.base import BaseSourceAdapter, IngestionStatus, SourceProvenance
 
-# Verified CPCB/DPCC monitoring stations in NCT Delhi with official GPS fixes
+
 DELHI_CAAQM_STATIONS = [
     {"station_id": "DL001", "name": "Anand Vihar, Delhi - DPCC", "lat": 28.6476, "lon": 77.3158, "district": "East Delhi"},
     {"station_id": "DL002", "name": "Mandir Marg, Delhi - DPCC", "lat": 28.6365, "lon": 77.2011, "district": "New Delhi"},
@@ -50,6 +57,8 @@ def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
 class CpcbAirQualityAdapter(BaseSourceAdapter):
     """Adapter for official CPCB/DPCC continuous ambient air quality stations."""
 
+    DATA_GOV_IN_RESOURCE_URL = "https://api.data.gov.in/resource/3b01bcb8-0b14-4abf-b6f2-c1bfd384ba69"
+
     def __init__(self, data_dir: Optional[Path] = None) -> None:
         super().__init__(
             source_name="CPCB / DPCC Continuous Ambient Air Quality Monitoring Network (CAAQM)",
@@ -58,21 +67,63 @@ class CpcbAirQualityAdapter(BaseSourceAdapter):
             license_type="National Data Sharing and Accessibility Policy (NDSAP) / Open Government Data (OGD) India",
         )
         self.data_dir = data_dir or (Path(__file__).parent.parent.parent / "data")
-        self.api_key = os.getenv("CPCB_API_KEY", "") or os.getenv("DATA_GOV_IN_API_KEY", "")
+        self.api_key = os.getenv("CPCB_API_KEY", "").strip() or os.getenv("DATA_GOV_IN_API_KEY", "").strip()
 
     def check_connection(self) -> Dict[str, Any]:
-        live_configured = bool(self.api_key)
+        has_key = bool(self.api_key)
+        live_verified = False
+        conn_error = None
+
+        if has_key:
+            try:
+                # Query Data.gov.in CAAQM resource with limit 1
+                resp = httpx.get(
+                    self.DATA_GOV_IN_RESOURCE_URL,
+                    params={
+                        "api-key": self.api_key,
+                        "format": "json",
+                        "limit": 1,
+                        "filters[city]": "Delhi",
+                    },
+                    timeout=4.0,
+                )
+                if resp.status_code == 200:
+                    live_verified = True
+                else:
+                    conn_error = f"Data.gov.in API returned HTTP {resp.status_code}"
+            except Exception as exc:
+                conn_error = f"Connection error: {exc}"
+
+        # Station metadata is always available in local cache
+        if live_verified:
+            status = IngestionStatus.LIVE_CONNECTION_VERIFIED
+        elif has_key and conn_error:
+            status = IngestionStatus.INGESTION_FAILED
+        elif has_key:
+            status = IngestionStatus.CREDENTIALS_CONFIGURED
+        else:
+            status = IngestionStatus.AVAILABLE_LOCAL_CACHE
+
         return {
             "source_name": self.source_name,
-            "status": IngestionStatus.CONNECTED_LIVE_API.value if live_configured else IngestionStatus.AVAILABLE_LOCAL_CACHE.value,
+            "status": status.value,
             "verified_stations_count": len(DELHI_CAAQM_STATIONS),
-            "live_api_configured": live_configured,
+            "station_network_metadata": {
+                "status": IngestionStatus.AVAILABLE_LOCAL_CACHE.value,
+                "verified_stations_count": len(DELHI_CAAQM_STATIONS),
+                "geographic_coverage": "All 11 NCT Delhi Revenue Districts",
+            },
+            "live_observations_status": IngestionStatus.LIVE_DATA_FETCHED.value if live_verified else IngestionStatus.DATA_UNAVAILABLE.value,
+            "live_api_configured": has_key,
+            "live_connection_verified": live_verified,
+            "connection_error": conn_error,
             "requires_credentials": ["CPCB_API_KEY", "DATA_GOV_IN_API_KEY"],
             "representativeness_rule": "Distance decay applied: stations beyond 5 km flagged as regional background rather than corridor-local.",
         }
 
     def get_provenance(self) -> SourceProvenance:
         conn = self.check_connection()
+        st = IngestionStatus(conn["status"])
 
         return SourceProvenance(
             source_name=self.source_name,
@@ -83,8 +134,9 @@ class CpcbAirQualityAdapter(BaseSourceAdapter):
             native_temporal_resolution="15-minute / Hourly continuous telemetry",
             crs="EPSG:4326 (WGS 84 Point Coordinates)",
             acquisition_period="Continuous regulatory compliance monitoring",
-            ingestion_status=IngestionStatus(conn["status"]),
-            is_live_connected=conn["live_api_configured"],
+            ingestion_status=st,
+            is_live_connected=conn["live_connection_verified"],
+            is_local_cached=True,
             missing_credentials_detail=(
                 None if conn["live_api_configured"]
                 else "CPCB_API_KEY / DATA_GOV_IN_API_KEY not configured. Station spatial geometry active; real-time feeds require OGD registration."
@@ -122,20 +174,46 @@ class CpcbAirQualityAdapter(BaseSourceAdapter):
         }
 
     def fetch_observations_or_raster(self, **kwargs: Any) -> Dict[str, Any]:
+        """
+        Retrieve genuine air quality telemetry or disclose that live observations are unmeasured.
+        """
+        conn = self.check_connection()
         lat = kwargs.get("lat")
         lon = kwargs.get("lon")
+        station_match = None
         if lat is not None and lon is not None:
-            near = self.find_nearest_station(float(lat), float(lon))
-            return {
-                "available": True,
-                "status": IngestionStatus.AVAILABLE_LOCAL_CACHE.value,
-                "station_match": near,
-                "provenance": self.get_provenance().to_dict(),
-            }
+            station_match = self.find_nearest_station(float(lat), float(lon))
 
+        if conn["live_connection_verified"]:
+            try:
+                resp = httpx.get(
+                    self.DATA_GOV_IN_RESOURCE_URL,
+                    params={
+                        "api-key": self.api_key,
+                        "format": "json",
+                        "limit": 10,
+                        "filters[city]": "Delhi",
+                    },
+                    timeout=5.0,
+                )
+                if resp.status_code == 200:
+                    records = resp.json().get("records", [])
+                    return {
+                        "available": True,
+                        "status": IngestionStatus.LIVE_DATA_FETCHED.value,
+                        "observations_count": len(records),
+                        "station_match": station_match,
+                        "observations": records,
+                    }
+            except Exception:
+                pass
+
+        # Disclose station metadata while explicitly marking live observations as unavailable
         return {
             "available": True,
             "status": IngestionStatus.AVAILABLE_LOCAL_CACHE.value,
-            "total_stations": len(DELHI_CAAQM_STATIONS),
+            "message": "CAAQM station network geometry available. Live real-time concentration telemetry unmeasured (API unconfigured).",
+            "station_match": station_match,
+            "live_measurements": None,
             "provenance": self.get_provenance().to_dict(),
         }

@@ -263,23 +263,38 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
-  submitSiteAssessment: (payload) =>
+  submitSiteAssessment: (payload, token = 'token_field_pwd_7104') =>
     requestJson('/api/ml/site-assessments', {
       method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
       body: JSON.stringify(payload),
     }),
-  reviewSiteAssessment: (assessmentId, payload) =>
+  reviewSiteAssessment: (assessmentId, payload, token = 'token_reviewer_mcd_3012') =>
     requestJson(`/api/ml/site-assessments/${encodeURIComponent(assessmentId)}`, {
       method: 'PATCH',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
       body: JSON.stringify(payload),
     }),
   listSiteAssessments: (params = {}) => {
     const q = new URLSearchParams(params).toString();
     return requestJson(`/api/ml/site-assessments${q ? `?${q}` : ''}`);
   },
-  submitOutcomeObservation: (payload) =>
+  submitOutcomeObservation: (payload, token = 'token_field_pwd_7104') =>
     requestJson('/api/ml/outcome-observations', {
       method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: JSON.stringify(payload),
+    }),
+  promoteModel: (payload, token = 'token_senior_delhi_001') =>
+    requestJson('/api/ml/model/promote', {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: JSON.stringify(payload),
+    }),
+  rollbackModel: (payload, token = 'token_senior_delhi_001') =>
+    requestJson('/api/ml/model/rollback', {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
       body: JSON.stringify(payload),
     }),
 };

@@ -148,22 +148,28 @@ class InterventionIntelligencePredictor:
                 row_df = pd.DataFrame([row_copy])
                 try:
                     pred_probs = model.predict_proba(row_df)[0]
-                    # classes: 0: INELIGIBLE, 1: CONDITIONAL, 2: ELIGIBLE
+                    # Dynamic mapping using model.classes_ (never assume fixed index positions)
+                    classes = list(model.classes_)
+                    probs_map = {str(c).lower(): float(p) for c, p in zip(classes, pred_probs)}
                     probs = {
-                        "ineligible": round(float(pred_probs[0]), 3),
-                        "conditional": round(float(pred_probs[1]), 3),
-                        "eligible": round(float(pred_probs[2]), 3),
+                        "ineligible": round(probs_map.get("0", probs_map.get("ineligible", 0.0)), 3),
+                        "conditional": round(probs_map.get("1", probs_map.get("conditional", 0.0)), 3),
+                        "eligible": round(probs_map.get("2", probs_map.get("eligible", 0.0)), 3),
                     }
-                    pred_idx = int(model.predict(row_df)[0])
-                    raw_state = {0: "INELIGIBLE", 1: "CONDITIONAL", 2: "ELIGIBLE"}.get(pred_idx, "CONDITIONAL")
+                    pred_raw = model.predict(row_df)[0]
+                    label_map = {0: "INELIGIBLE", 1: "CONDITIONAL", 2: "ELIGIBLE", "0": "INELIGIBLE", "1": "CONDITIONAL", "2": "ELIGIBLE"}
+                    raw_state = label_map.get(pred_raw, str(pred_raw).upper())
                 except Exception:
                     raw_state = self._rule_based_suitability(arch, seg_features)
             else:
                 raw_state = self._rule_based_suitability(arch, seg_features)
 
             # 3. SAFETY RULE: Hard constraint strictly overrides prediction
-            if constraint_res.forced_state:
-                final_state = constraint_res.forced_state
+            # ML model prediction can NEVER upgrade an ineligible or conditional site
+            if constraint_res.is_ineligible:
+                final_state = "INELIGIBLE"
+            elif constraint_res.is_conditional:
+                final_state = "CONDITIONAL" if raw_state == "ELIGIBLE" else raw_state
             else:
                 final_state = raw_state
 
@@ -217,12 +223,21 @@ class InterventionIntelligencePredictor:
             "model_status": "APPROVED_FOR_INFERENCE" if is_model_driven else "FALLBACK_RULE_BASED_ACTIVE",
             "environmental_features": {
                 "ndvi_mean": seg_features.get("ndvi_mean"),
+                "ndmi_status": seg_features.get("ndmi_status", "UNAVAILABLE"),
+                "ndbi_status": seg_features.get("ndbi_status", "UNAVAILABLE"),
                 "modis_lst_celsius": seg_features.get("modis_lst_celsius"),
                 "thermal_anomaly_celsius": seg_features.get("thermal_anomaly_celsius"),
+                "lst_baseline_celsius": seg_features.get("lst_baseline_celsius"),
                 "built_up_fraction": seg_features.get("built_up_fraction"),
                 "cpcb_distance_km": seg_features.get("cpcb_distance_km"),
                 "nearest_cpcb_station": seg_features.get("nearest_cpcb_station_name"),
+                "road_class_guideline_row_m": seg_features.get("road_class_guideline_row_m"),
                 "estimated_row_width_m": seg_features.get("estimated_row_width_m"),
+                "surveyed_row_width_m": seg_features.get("surveyed_row_width_m"),
+                "clear_pedestrian_width_m": seg_features.get("clear_pedestrian_width_m"),
+                "available_planting_verge_m": seg_features.get("available_planting_verge_m"),
+                "subsurface_utility_conflict_gpr": seg_features.get("subsurface_utility_conflict_gpr"),
+                "row_width_provenance": seg_features.get("row_width_provenance"),
                 "is_walkable": seg_features.get("is_walkable"),
             },
             "ranked_recommendations": candidates_eval,

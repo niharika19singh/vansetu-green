@@ -15,6 +15,7 @@ from ml.labels.store import AssessmentLabelStore
 from ml.outcome.outcome_schema import DeploymentOutcomeObservation
 from ml.outcome.store import OutcomeObservationStore
 from ml.preprocessing.feature_pipeline import SegmentFeaturePipeline
+from ml.security.auth import AuthenticatedUser
 from ml.sources import get_data_ecosystem_status
 from ml.training.data_builder import TrainingDatasetBuilder
 from ml.training.registry import ModelRegistry
@@ -111,13 +112,21 @@ class InterventionMlService:
             "feature_schema_version": self.feature_pipeline.FEATURE_SCHEMA_VERSION,
         }
 
-    def submit_site_assessment(self, sub: SiteAssessmentSubmission) -> Dict[str, Any]:
-        """Submit a verified human field assessment."""
-        return self.label_store.submit_assessment(sub)
+    def submit_site_assessment(
+        self,
+        sub: SiteAssessmentSubmission,
+        authenticated_user: Optional[AuthenticatedUser] = None,
+    ) -> Dict[str, Any]:
+        """Submit a verified human field assessment with server-side identity injection."""
+        return self.label_store.submit_assessment(sub, authenticated_user=authenticated_user)
 
-    def review_site_assessment(self, act: AssessmentReviewAction) -> Dict[str, Any]:
+    def review_site_assessment(
+        self,
+        act: AssessmentReviewAction,
+        authenticated_user: Optional[AuthenticatedUser] = None,
+    ) -> Dict[str, Any]:
         """Perform documented review or correction on a field assessment."""
-        return self.label_store.review_assessment(act)
+        return self.label_store.review_assessment(act, authenticated_reviewer=authenticated_user)
 
     def list_assessments(
         self,
@@ -131,9 +140,39 @@ class InterventionMlService:
             only_approved=only_approved,
         )
 
-    def record_outcome_observation(self, obs: DeploymentOutcomeObservation) -> Dict[str, Any]:
+    def record_outcome_observation(
+        self,
+        obs: DeploymentOutcomeObservation,
+        authenticated_user: Optional[AuthenticatedUser] = None,
+    ) -> Dict[str, Any]:
         """Record an empirical post-intervention deployment outcome."""
-        return self.outcome_store.record_outcome_observation(obs)
+        return self.outcome_store.record_outcome_observation(obs, authenticated_user=authenticated_user)
+
+    def promote_model(
+        self,
+        model_version: str,
+        reviewer: AuthenticatedUser,
+        approval_note: str,
+    ) -> Dict[str, Any]:
+        """Promote candidate model to approved inference status."""
+        return self.registry.promote_model(
+            model_version=model_version,
+            reviewer=reviewer,
+            approval_note=approval_note,
+        )
+
+    def rollback_model(
+        self,
+        target_version: str,
+        reviewer: AuthenticatedUser,
+        rollback_reason: str,
+    ) -> Dict[str, Any]:
+        """Roll back inference engine to prior approved model version."""
+        return self.registry.rollback_model(
+            target_version=target_version,
+            reviewer=reviewer,
+            rollback_reason=rollback_reason,
+        )
 
     def get_model_status(self) -> Dict[str, Any]:
         """Return model availability, minimum data gate status, and validation metrics."""

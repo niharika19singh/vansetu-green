@@ -39,7 +39,8 @@ export default function InterventionIntelligenceView({
   const [assArchetype, setAssArchetype] = useState('linear_street_trees');
   const [assState, setAssState] = useState('CONDITIONAL');
   const [assReviewerId, setAssReviewerId] = useState('PWD_ENG_7104');
-  const [assReviewerRole, setAssReviewerRole] = useState('Municipal Field Engineer');
+  const [assToken, setAssToken] = useState('token_field_pwd_7104');
+  const [assEvidenceType, setAssEvidenceType] = useState('GPR_UTILITY_SURVEY');
   const [assEvidenceRef, setAssEvidenceRef] = useState('PWD/D-12/2026/GPR-SURVEY-CLEARANCE');
   const [assNotes, setAssNotes] = useState('');
   const [submittingAss, setSubmittingAss] = useState(false);
@@ -101,17 +102,20 @@ export default function InterventionIntelligenceView({
     setSubmittingAss(true);
     setAssSuccessMsg(null);
     try {
-      const res = await api.submitSiteAssessment({
-        segment_id: segmentId,
-        corridor_id: featuresData?.corridor_code || 'C-14',
-        intervention_archetype: assArchetype,
-        suitability_state: assState,
-        reviewer_id: assReviewerId,
-        reviewer_role: assReviewerRole,
-        evidence_reference: assEvidenceRef,
-        reviewer_notes: assNotes,
-      });
-      setAssSuccessMsg(`Assessment recorded: ${res.assessment_id} (${res.suitability_state})`);
+      const res = await api.submitSiteAssessment(
+        {
+          segment_id: segmentId,
+          corridor_id: featuresData?.corridor_code || 'C-14',
+          intervention_archetype: assArchetype,
+          suitability_state: assState,
+          reviewer_id: assReviewerId,
+          evidence_reference: assEvidenceRef,
+          evidence_document_type: assEvidenceType,
+          reviewer_notes: assNotes,
+        },
+        assToken
+      );
+      setAssSuccessMsg(`Assessment recorded: ${res.assessment_id} (${res.suitability_state}) • Identity verified server-side`);
       fetchSegmentIntelligence();
     } catch (err) {
       alert(`Submission error: ${err.message}`);
@@ -251,18 +255,41 @@ export default function InterventionIntelligenceView({
               </select>
             </div>
             <div>
-              <label className="text-slate-400 block mb-1">Reviewer ID &amp; Role</label>
-              <input
-                type="text"
-                value={assReviewerId}
-                onChange={(e) => setAssReviewerId(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 font-mono text-white"
-                required
-              />
+              <label className="text-slate-400 block mb-1">Accredited Credentials</label>
+              <select
+                value={assToken}
+                onChange={(e) => {
+                  setAssToken(e.target.value);
+                  if (e.target.value === 'token_field_pwd_7104') setAssReviewerId('field_pwd_7104');
+                  if (e.target.value === 'token_reviewer_mcd_3012') setAssReviewerId('reviewer_mcd_3012');
+                  if (e.target.value === 'token_senior_delhi_001') setAssReviewerId('senior_delhi_001');
+                }}
+                className="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-white"
+              >
+                <option value="token_field_pwd_7104">PWD Field Assessor (token_field_pwd_7104)</option>
+                <option value="token_reviewer_mcd_3012">MCD Ward Reviewer (token_reviewer_mcd_3012)</option>
+                <option value="token_senior_delhi_001">Senior Climate Reviewer (token_senior_delhi_001)</option>
+                <option value="token_admin_delhi_root">Delhi Admin (token_admin_delhi_root)</option>
+              </select>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div>
+              <label className="text-slate-400 block mb-1">Evidence Document Type</label>
+              <select
+                value={assEvidenceType}
+                onChange={(e) => setAssEvidenceType(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-white"
+              >
+                <option value="GPR_UTILITY_SURVEY">GPR Utility Survey (Ground-Penetrating Radar)</option>
+                <option value="MUNICIPAL_WORK_ORDER">Municipal Work Order</option>
+                <option value="ENGINEERING_CROSS_SECTION">Engineering Cross-Section Survey</option>
+                <option value="TREE_CENSUS_REGISTER">Tree Census Register</option>
+                <option value="HERITAGE_RESTRICTION_CIRCULAR">Heritage Restriction Circular</option>
+                <option value="UNVERIFIED_TEXTUAL_NOTE">Unverified Textual Note</option>
+              </select>
+            </div>
             <div>
               <label className="text-slate-400 block mb-1">Evidence / Survey Reference Document</label>
               <input
@@ -365,32 +392,19 @@ export default function InterventionIntelligenceView({
           <span className="text-lg font-mono font-bold text-emerald-400 block mt-1">
             {feats.ndvi_mean !== undefined && feats.ndvi_mean !== null ? feats.ndvi_mean.toFixed(3) : 'N/A'}
           </span>
-          <span className="text-[10px] text-slate-400 block font-mono">10m native spatial pixel</span>
+          <span className="text-[10px] text-emerald-300/80 block font-mono">10m Satellite Observed</span>
         </div>
 
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-3">
           <div className="flex items-center justify-between text-slate-400 text-[11px]">
-            <span>MODIS Daily LST</span>
+            <span>MODIS LST &amp; UHI</span>
             <Thermometer className="w-3.5 h-3.5 text-rose-400" />
           </div>
           <span className="text-lg font-mono font-bold text-rose-300 block mt-1">
             {feats.modis_lst_celsius ? `${feats.modis_lst_celsius}°C` : 'N/A'}
           </span>
           <span className="text-[10px] text-slate-400 block font-mono">
-            {feats.thermal_anomaly_celsius ? `+${feats.thermal_anomaly_celsius}°C anomaly` : '1km native grid'}
-          </span>
-        </div>
-
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-3">
-          <div className="flex items-center justify-between text-slate-400 text-[11px]">
-            <span>Nearest CAAQM</span>
-            <Wind className="w-3.5 h-3.5 text-blue-400" />
-          </div>
-          <span className="text-lg font-mono font-bold text-blue-300 block mt-1">
-            {feats.cpcb_distance_km ? `${feats.cpcb_distance_km} km` : 'N/A'}
-          </span>
-          <span className="text-[10px] text-slate-400 block truncate" title={feats.nearest_cpcb_station}>
-            {feats.nearest_cpcb_station ? feats.nearest_cpcb_station.split(',')[0] : 'CPCB Network'}
+            {feats.thermal_anomaly_celsius ? `+${feats.thermal_anomaly_celsius}°C (Scene baseline 25.8°C)` : '1km native grid'}
           </span>
         </div>
 
@@ -399,11 +413,24 @@ export default function InterventionIntelligenceView({
             <span>Right-of-Way (ROW)</span>
             <Footprints className="w-3.5 h-3.5 text-purple-400" />
           </div>
-          <span className="text-lg font-mono font-bold text-purple-300 block mt-1">
-            {feats.estimated_row_width_m ? `${feats.estimated_row_width_m}m` : 'N/A'}
+          <span className="text-base font-mono font-bold text-purple-300 block mt-1">
+            {feats.road_class_guideline_row_m || feats.estimated_row_width_m ? `${feats.road_class_guideline_row_m || feats.estimated_row_width_m}m` : 'N/A'}
           </span>
-          <span className="text-[10px] text-slate-400 block font-mono">
-            {feats.is_walkable ? 'Pedestrian footway verified' : 'Non-pedestrian highway'}
+          <span className="text-[10px] text-amber-400/90 block font-mono">
+            {feats.surveyed_row_width_m ? `Surveyed: ${feats.surveyed_row_width_m}m` : 'Guideline only • Survey pending'}
+          </span>
+        </div>
+
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-3">
+          <div className="flex items-center justify-between text-slate-400 text-[11px]">
+            <span>Moisture (NDMI) / NDBI</span>
+            <Wind className="w-3.5 h-3.5 text-cyan-400" />
+          </div>
+          <span className="text-xs font-mono font-bold text-slate-300 block mt-1.5 truncate">
+            UNAVAILABLE
+          </span>
+          <span className="text-[9px] text-slate-400 block leading-tight">
+            SWIR Band 11 required; synthetic proxy disabled
           </span>
         </div>
 
@@ -412,7 +439,7 @@ export default function InterventionIntelligenceView({
             <span>Subsurface Clearance</span>
             <ShieldAlert className="w-3.5 h-3.5 text-amber-400" />
           </div>
-          <span className="text-sm font-mono font-bold text-amber-300 block mt-1.5 truncate">
+          <span className="text-xs font-mono font-bold text-amber-300 block mt-1.5 truncate">
             {feats.gpr_utility_survey_status || 'FIELD_GPR_REQUIRED'}
           </span>
           <span className="text-[10px] text-slate-400 block font-mono">Hard safety gate active</span>

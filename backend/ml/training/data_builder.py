@@ -21,6 +21,11 @@ class InsufficientLabelsError(Exception):
     pass
 
 
+class InsufficientSpatialClassCoverageError(Exception):
+    """Raised when spatial corridor grouping leaves a validation fold with zero representation for a class."""
+    pass
+
+
 class TrainingDatasetBuilder:
     """
     Assembles spatial features and verified ground-truth labels for ML training.
@@ -38,14 +43,13 @@ class TrainingDatasetBuilder:
         "ndvi_p10",
         "ndvi_p90",
         "ndvi_valid_pixel_fraction",
-        "ndmi_proxy",
         "modis_lst_celsius",
         "thermal_anomaly_celsius",
-        "ndbi_proxy",
         "built_up_fraction",
         "open_space_fraction",
         "cpcb_distance_km",
         "is_walkable",
+        "road_class_guideline_row_m",
         "estimated_row_width_m",
         "is_boundary_edge",
     ]

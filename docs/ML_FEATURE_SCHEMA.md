@@ -2,70 +2,88 @@
 
 ## 1. Schema Overview
 
-The VanSetu GreenTech feature store comprises **39 engineered geospatial, physical, environmental, and administrative features** computed across all **1,302 road segments** in NCT Delhi.
+The VanSetu GreenTech feature store comprises multi-domain engineered geospatial, physical, environmental, and administrative features computed across all **1,302 road segments** in NCT Delhi.
 
 - **Primary Storage**: `backend/data/features/delhi_segment_features.parquet` (compressed Apache Parquet)
 - **Geospatial GeoJSON**: `backend/data/features/delhi_segment_features.geojson`
 - **Metric Computation CRS**: `EPSG:32643` (WGS 84 / UTM Zone 43N)
 - **Output Geographic CRS**: `EPSG:4326` (WGS 84 Lat/Lon)
-- **Version**: `2.0.0-DELHI-ML`
+- **Schema Version**: `2.1.0-DELHI-ML`
 
 ---
 
-## 2. Feature Definitions Table
+## 2. Scientific Provenance Classifications
 
-| # | Feature Name | Data Type | Physical Bounds / Enum | Source Dataset | Missingness / Default Policy | Description |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| 1 | `segment_id` | String (Primary Key) | `^C-\d{2}-S\d{3}$` | Geometric Segmentation | Required (No missing allowed) | Unique deterministic segment ID (e.g., `C-14-S001`). |
-| 2 | `corridor_id` | String | `^C-\d{2}$` or integer string | Geometric Segmentation | Required | Parent corridor identifier. |
-| 3 | `corridor_code` | String | `^C-\d{2}$` | Administrative | Required | Standard corridor code (e.g., `C-14`). |
-| 4 | `corridor_name` | String | Text | OSM Delhi | Required | Official road or corridor name. |
-| 5 | `segment_index` | Integer | $[1, 200]$ | Geometric Segmentation | Required | Sequential index along the corridor. |
-| 6 | `length_metres` | Float | $[25.0, 150.0]\text{ m}$ | Shapely in `EPSG:32643` | Required | Actual geodesic length of the segment. |
-| 7 | `start_chainage_m` | Float | $\ge 0.0\text{ m}$ | Geometric Segmentation | Required | Cumulative distance from corridor origin. |
-| 8 | `end_chainage_m` | Float | $\ge 25.0\text{ m}$ | Geometric Segmentation | Required | Cumulative distance at segment termination. |
-| 9 | `centroid_lat` | Float | $[28.35, 28.95]^\circ\text{N}$ | Geometric Centroid | Required | Latitude in WGS 84. |
-| 10 | `centroid_lon` | Float | $[76.80, 77.55]^\circ\text{E}$ | Geometric Centroid | Required | Longitude in WGS 84. |
-| 11 | `midpoint_lat` | Float | $[28.35, 28.95]^\circ\text{N}$ | Interpolated metric midpoint | Required | Latitude of metric midpoint. |
-| 12 | `midpoint_lon` | Float | $[76.80, 77.55]^\circ\text{E}$ | Interpolated metric midpoint | Required | Longitude of metric midpoint. |
-| 13 | `district` | Categorical String | 11 NCT Delhi Districts | SEC Delhi Boundary Polygon | Spatial join; fallback to nearest district | Official revenue district name. |
-| 14 | `district_id` | String | Text | SEC Delhi | Nullable | Administrative district code. |
-| 15 | `is_boundary_edge` | Boolean | `True`, `False` | SEC Boundary Buffer (50m) | Default: `False` | Flag indicating segment lies within 50m of district border. |
-| 16 | `distance_to_boundary_metres` | Float | $\ge 0.0\text{ m}$ | Metric distance to polygon boundary | Impute median ($1,200\text{ m}$) | Distance to nearest district administrative boundary. |
-| 17 | `highway_class` | Categorical String | `primary`, `secondary`, `tertiary`, `trunk` | OpenStreetMap | Default: `primary` | Functional road hierarchy classification. |
-| 18 | `is_walkable` | Boolean | `True`, `False` | OSM Pedestrian Tags | Default: `True` | Whether pedestrian footway or sidewalk is present. |
-| 19 | `estimated_row_width_m` | Float | $[4.0, 60.0]\text{ m}$ | OSM roadway width & highway class | Default: $18.0\text{ m}$ | Estimated total Right-of-Way width. |
-| 20 | `ndvi_mean` | Float | $[-0.50, 1.00]$ | Sentinel-2 L2A (10m) | Nullable / Impute corridor median | Mean NDVI over 15m road corridor buffer. |
-| 21 | `ndvi_median` | Float | $[-0.50, 1.00]$ | Sentinel-2 L2A (10m) | Nullable | 50th percentile NDVI within buffer polygon. |
-| 22 | `ndvi_p10` | Float | $[-0.50, 1.00]$ | Sentinel-2 L2A (10m) | Nullable | 10th percentile NDVI (highlights bare soil / imperviousness). |
-| 23 | `ndvi_p90` | Float | $[-0.50, 1.00]$ | Sentinel-2 L2A (10m) | Nullable | 90th percentile NDVI (highlights existing mature tree canopy). |
-| 24 | `ndvi_pixel_count` | Integer | $\ge 0$ | Sentinel-2 L2A (10m) | Default: $0$ | Number of 10m Sentinel-2 pixels intersecting buffer. |
-| 25 | `ndvi_valid_pixel_fraction` | Float | $[0.0, 1.0]$ | Sentinel-2 L2A (10m) | Default: $0.0$ | Fraction of pixels with valid non-NoData reflectance. |
-| 26 | `ndmi_proxy` | Float | $[-0.50, 1.00]$ | Normalized Difference Moisture Index | Nullable | Vegetation canopy moisture proxy ($0.85 \times \text{NDVI}$). |
-| 27 | `modis_lst_celsius` | Float | $[15.0, 55.0]^\circ\text{C}$ | NASA MODIS MOD11A2 (1,000m) | Nullable / Impute district mean | Mean daytime Land Surface Temperature in Celsius. |
-| 28 | `lst_pixel_count` | Integer | $\ge 0$ | NASA MODIS (1,000m) | Default: $0$ | Number of intersecting 1,000m MODIS grid cells. |
-| 29 | `thermal_anomaly_celsius` | Float | $[-10.0, 15.0]^\circ\text{C}$ | MODIS LST vs Regional Baseline | Default: $0.0^\circ\text{C}$ | Temperature difference above Delhi mean ($25.5^\circ\text{C}$). |
-| 30 | `ndbi_proxy` | Float | $[-1.00, 1.00]$ | Built-up Index Proxy | Default: $0.20$ | Normalized difference built-up index proxy ($1.0 - \text{NDVI}$). |
-| 31 | `built_up_fraction` | Float | $[0.0, 1.0]$ | Built-up Area Fraction | Default: $0.65$ | Fraction of buffer covered by impervious surfaces. |
-| 32 | `open_space_fraction` | Float | $[0.0, 1.0]$ | Open Space Fraction | Default: $0.35$ | Fraction of buffer available as open ground or verge ($1.0 - \text{built\_up}$). |
-| 33 | `cpcb_station_id` | String | `DL001` to `DL018` | CPCB / DPCC CAAQM | Default: nearest station | Nearest air quality monitoring station ID. |
-| 34 | `nearest_cpcb_station_name` | String | Text | CPCB / DPCC CAAQM | Default: nearest station name | Name and location of nearest CAAQM station. |
-| 35 | `cpcb_distance_km` | Float | $[0.1, 35.0]\text{ km}$ | Haversine Formula | Required | Great-circle distance to nearest CAAQM station in km. |
-| 36 | `cpcb_is_proximate` | Boolean | `True`, `False` | Distance $\le 5.0\text{ km}$ | Default: `False` | Flag indicating microclimate representativeness ($\le 5\text{ km}$). |
-| 37 | `gpr_utility_survey_status` | Categorical String | `FIELD_GPR_REQUIRED`, `VERIFIED_CLEAR` | Municipal Records | Default: `FIELD_GPR_REQUIRED` | Subsurface utility clearance status. |
-| 38 | `subsurface_utility_conflict_gpr`| Boolean | `True`, `False` | GPR Survey Clearance | Default: `False` | Hard constraint flag indicating underground utility clash. |
-| 39 | `feature_schema_version` | String | `2.0.0-DELHI-ML` | Pipeline Metadata | Required | Schema version for dataset tracking. |
+Every feature in the VanSetu feature store is explicitly tagged with one of seven provenance categories:
+
+| Provenance Category | Definition & Governance | Examples |
+| :--- | :--- | :--- |
+| **`DIRECTLY_OBSERVED`** | Ground measurements or station coordinates directly verified without modeling. | CAAQM Station IDs, Station Lat/Lon coordinates |
+| **`SATELLITE_DERIVED`** | Derived from calibrated, open satellite earth observation missions (ESA Copernicus, NASA). | Sentinel-2 10m NDVI distributions, MODIS 1km Daily LST, Regional Thermal Anomaly |
+| **`GIS_DERIVED`** | Calculated via deterministic computational geometry in metric UTM Zone 43N (`EPSG:32643`). | Segment geodesic length, chainage, 15m road buffer, district spatial joins, distance to CPCB stations |
+| **`ENGINEERING_ESTIMATE`** | Established municipal design guidelines (IRC:SP:84, CPWD Guidelines) based on roadway class. | `road_class_guideline_row_m`, highway class walkability |
+| **`FIELD_VERIFIED`** | Human-in-the-loop ground truth verified via official municipal work orders, GPR scans, or surveys. | `surveyed_row_width_m`, `clear_pedestrian_width_m`, `gpr_utility_survey_status` |
+| **`PROXY_ESTIMATE`** | Empirical proxy estimates with disclosed margins of uncertainty. | `built_up_fraction`, `open_space_fraction` |
+| **`UNAVAILABLE`** | Features whose requisite physical bands are absent from current inputs; synthetic formulas disabled. | `ndmi` (SWIR Band 11 required), `ndbi` (SWIR/NIR ratio required) |
 
 ---
 
-## 3. Missingness & Imputation Protocols
+## 3. Feature Definitions Table
 
-1. **Environmental Features (`ndvi_mean`, `modis_lst_celsius`)**:
-   - If a road segment falls into a raster edge or NoData region, `SimpleImputer(strategy='median')` is fitted strictly on the spatial cross-validation training fold and applied to the test fold.
-   - Global column imputation across the entire dataset is **strictly prohibited** to prevent spatial data leakage.
+| # | Feature Name | Data Type | Provenance Category | Source / Baseline | Description |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| 1 | `segment_id` | String | `GIS_DERIVED` | Geometric Segmentation | Deterministic 75m segment code (e.g., `C-14-S001`). |
+| 2 | `corridor_id` | String | `GIS_DERIVED` | Geometric Segmentation | Parent corridor identifier. |
+| 3 | `corridor_code` | String | `GIS_DERIVED` | Administrative | Standard corridor code (e.g., `C-14`). |
+| 4 | `corridor_name` | String | `GIS_DERIVED` | OSM Delhi | Official road corridor name. |
+| 5 | `segment_index` | Integer | `GIS_DERIVED` | Geometric Segmentation | Sequential segment index along corridor. |
+| 6 | `length_metres` | Float | `GIS_DERIVED` | Shapely in `EPSG:32643` | Actual geodesic length of the segment. |
+| 7 | `start_chainage_m` | Float | `GIS_DERIVED` | Geometric Segmentation | Cumulative distance from corridor origin. |
+| 8 | `end_chainage_m` | Float | `GIS_DERIVED` | Geometric Segmentation | Cumulative distance at segment termination. |
+| 9 | `centroid_lat` | Float | `GIS_DERIVED` | Geometric Centroid | WGS 84 latitude of segment centroid. |
+| 10 | `centroid_lon` | Float | `GIS_DERIVED` | Geometric Centroid | WGS 84 longitude of segment centroid. |
+| 11 | `district` | Categorical | `GIS_DERIVED` | SEC Delhi Revenue Districts | Official NCT Delhi Revenue District name. |
+| 12 | `district_id` | String | `GIS_DERIVED` | SEC Delhi | Revenue district code. |
+| 13 | `is_boundary_edge` | Boolean | `GIS_DERIVED` | 50m Boundary Buffer | True if segment lies within 50m of district border. |
+| 14 | `highway_class` | Categorical | `GIS_DERIVED` | OpenStreetMap | Functional road class (`primary`, `secondary`, `tertiary`, `residential`, `pedestrian`, `trunk`). |
+| 15 | `ndvi_mean` | Float | `SATELLITE_DERIVED` | Sentinel-2 L2A (10m) | Mean NDVI sampled across 15m centerline buffer. |
+| 16 | `ndvi_median` | Float | `SATELLITE_DERIVED` | Sentinel-2 L2A (10m) | Median NDVI within 15m buffer. |
+| 17 | `ndvi_p10` | Float | `SATELLITE_DERIVED` | Sentinel-2 L2A (10m) | 10th percentile NDVI (soil/imperviousness indicator). |
+| 18 | `ndvi_p90` | Float | `SATELLITE_DERIVED` | Sentinel-2 L2A (10m) | 90th percentile NDVI (canopy density indicator). |
+| 19 | `ndvi_valid_pixel_fraction` | Float | `SATELLITE_DERIVED` | Sentinel-2 L2A (10m) | Fraction of non-NoData reflectance pixels in buffer. |
+| 20 | `ndmi` | Nullable Float | `UNAVAILABLE` | SWIR Band 11 Required | **UNAVAILABLE**: SWIR Band 11 required; synthetic proxy disabled. |
+| 21 | `ndbi` | Nullable Float | `UNAVAILABLE` | SWIR/NIR Ratio Required | **UNAVAILABLE**: SWIR/NIR ratio required; synthetic proxy disabled. |
+| 22 | `modis_lst_celsius` | Float | `SATELLITE_DERIVED` | NASA MODIS MOD11A2 (1,000m) | Regional daytime Land Surface Temperature in Celsius. |
+| 23 | `thermal_anomaly_celsius` | Float | `SATELLITE_DERIVED` | MODIS vs Scene Mean ($25.76^\circ\text{C}$) | Surface temperature anomaly relative to empirical Delhi scene mean. |
+| 24 | `lst_sampling_mode` | Categorical | `GIS_DERIVED` | Spatial Intersection | Sampling mode (`POLYGON_ZONAL_MASK` or `CENTROID_GRID_INTERSECTION`). |
+| 25 | `built_up_fraction` | Float | `PROXY_ESTIMATE` | Vegetative Inverse Proxy | Estimated impervious fraction ($0.10$ to $0.95$). |
+| 26 | `open_space_fraction` | Float | `PROXY_ESTIMATE` | Vegetative Inverse Proxy | Estimated permeable/verge fraction ($1.0 - \text{built\_up}$). |
+| 27 | `nearest_cpcb_station_id` | String | `DIRECTLY_OBSERVED` | CPCB / DPCC Network | Nearest CAAQM monitoring station ID. |
+| 28 | `nearest_cpcb_station_name` | String | `DIRECTLY_OBSERVED` | CPCB / DPCC Network | Official name of nearest CAAQM station. |
+| 29 | `cpcb_distance_km` | Float | `GIS_DERIVED` | Haversine Formula | Distance to nearest CAAQM station in kilometres. |
+| 30 | `air_quality_spatial_representativeness` | Categorical | `GIS_DERIVED` | Distance Decay Rule | `MICROCLIMATE_REPRESENTATIVE` ($\le 3\text{ km}$), `SUB_REGIONAL_PROXY` ($3-5\text{ km}$), or `REGIONAL_BACKGROUND` ($> 5\text{ km}$). |
+| 31 | `is_walkable` | Boolean | `ENGINEERING_ESTIMATE` | IRC Highway Guidelines | Whether pedestrian footway access is physically supported. |
+| 32 | `road_class_guideline_row_m` | Float | `ENGINEERING_ESTIMATE` | IRC:SP:84 / CPWD Guidelines | Standard guideline ROW width based on highway class. |
+| 33 | `estimated_row_width_m` | Float | `ENGINEERING_ESTIMATE` | IRC:SP:84 / CPWD Guidelines | Backward-compatible alias for guideline ROW width. |
+| 34 | `surveyed_row_width_m` | Nullable Float | `FIELD_VERIFIED` | Accredited Field Cross-Section | Measured physical roadway width. Defaults to `None`. |
+| 35 | `clear_pedestrian_width_m` | Nullable Float | `FIELD_VERIFIED` | Accredited Field Cross-Section | Measured obstruction-free footway width. Defaults to `None`. |
+| 36 | `available_planting_verge_m` | Nullable Float | `FIELD_VERIFIED` | Accredited Field Cross-Section | Measured unpaved verge width. Defaults to `None`. |
+| 37 | `gpr_utility_survey_status` | Categorical | `FIELD_VERIFIED` | Ground-Penetrating Radar | `FIELD_GPR_REQUIRED`, `PENDING_REVIEW`, or `VERIFIED_CLEAR`. |
+| 38 | `subsurface_utility_conflict_gpr` | Nullable Bool | `FIELD_VERIFIED` | Ground-Penetrating Radar | True if underground high-voltage/water utilities conflict. |
+| 39 | `feature_schema_version` | String | `GIS_DERIVED` | Pipeline Metadata | Authoritative schema version tag (`2.1.0`). |
 
-2. **Categorical Features (`district`, `highway_class`)**:
-   - Encoded via `OneHotEncoder(handle_unknown='ignore')`.
+---
 
-3. **Subsurface Ground-Penetrating Radar (`gpr_utility_survey_status`)**:
-   - By default, unverified segments carry `FIELD_GPR_REQUIRED`. Interventions requiring deep excavation (`linear_street_trees`, `roadside_bioswales`) receive `CONDITIONAL` recommendations with explicit survey warnings rather than unverified unconditional clearance.
+## 4. Scientific Integrity Safeguards
+
+1. **Elimination of Arbitrary Constants**:
+   - The thermal anomaly baseline is dynamically derived from the empirical mean ($25.76^\circ\text{C}$) of all valid terrestrial pixels in `delhi_lst_modis_daily_celsius.tif`, replacing static unreferenced offsets.
+   - MODIS coarse $1,000\text{m}$ resolution is explicitly disclosed on every API response and UI visualization.
+
+2. **Removal of Fictional Synthetic Proxies**:
+   - The previously proposed `ndmi_proxy = ndvi * 0.72` and `ndbi_proxy = 0.45 - (ndvi * 0.65)` formulas have been completely removed.
+   - Genuine NDMI requires SWIR Band 11; because `delhi_ndvi_10m.tif` is a single-band pre-computed composite, NDMI is marked `UNAVAILABLE` rather than fabricated.
+
+3. **Separation of Guideline Estimates from Field Measurements**:
+   - `road_class_guideline_row_m` reflects Indian Roads Congress design specifications based on OSM road hierarchy.
+   - Guideline width can **never** establish unconditional physical feasibility for tree pits or swales; `surveyed_row_width_m` remains `None` until an accredited surveyor records empirical cross-section measurements.

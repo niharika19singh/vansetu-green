@@ -96,17 +96,17 @@ def test_missing_credentials_adapters_handle_gracefully():
     landsat = UsgsLandsatAdapter()
     l_conn = landsat.check_connection()
     assert "USGS" in landsat.source_name
-    assert l_conn["status"] in ("CONNECTED_LIVE_API", "MISSING_CREDENTIALS")
+    assert l_conn["status"] in ("CONNECTED_LIVE_API", "MISSING_CREDENTIALS", "NOT_CONFIGURED")
 
     era5 = Era5MeteoAdapter()
     e_conn = era5.check_connection()
     assert "ERA5" in era5.source_name
-    assert e_conn["status"] in ("CONNECTED_LIVE_API", "MISSING_CREDENTIALS")
+    assert e_conn["status"] in ("CONNECTED_LIVE_API", "MISSING_CREDENTIALS", "NOT_CONFIGURED")
 
     bhuvan = BhuvanLanduseAdapter()
     b_conn = bhuvan.check_connection()
     assert "Bhuvan" in bhuvan.source_name
-    assert b_conn["status"] in ("CONNECTED_LIVE_API", "MISSING_CREDENTIALS")
+    assert b_conn["status"] in ("CONNECTED_LIVE_API", "MISSING_CREDENTIALS", "NOT_CONFIGURED")
 
 
 def test_cpcb_and_osm_adapters():
@@ -341,9 +341,9 @@ def test_hard_constraint_overrides_prediction():
     assert res_bio.forced_state == "INELIGIBLE"
     assert any("High-voltage" in r for r in res_bio.constraint_reasons)
 
-    # Case C: Ample space, clear GPR
+    # Case C: Ample surveyed space, clear GPR
     safe_features = {
-        "estimated_row_width_m": 24.0,
+        "surveyed_row_width_m": 24.0,
         "gpr_utility_survey_status": "VERIFIED_CLEAR",
         "is_walkable": True,
         "highway_class": "primary",
@@ -351,6 +351,18 @@ def test_hard_constraint_overrides_prediction():
     res_safe = HardConstraintValidator.evaluate_constraints("linear_street_trees", safe_features)
     assert res_safe.has_hard_constraint is False
     assert res_safe.forced_state is None
+    assert res_safe.constraint_state.value == "VERIFIED_ELIGIBLE"
+
+    # Case D: Guideline ROW alone CANNOT produce VERIFIED_ELIGIBLE (must require field survey)
+    guideline_only_features = {
+        "road_class_guideline_row_m": 24.0,
+        "gpr_utility_survey_status": "VERIFIED_CLEAR",
+        "is_walkable": True,
+        "highway_class": "primary",
+    }
+    res_guideline = HardConstraintValidator.evaluate_constraints("linear_street_trees", guideline_only_features)
+    assert res_guideline.forced_state == "CONDITIONAL"
+    assert any("Road width is based on road-class guideline" in w for w in res_guideline.missing_evidence_warnings)
 
 
 def test_explainer_produces_engineering_rationale():
@@ -410,7 +422,9 @@ def test_outcome_store_lifecycle():
             instrument_details="Terra/Aqua 1000m daytime LST",
             matched_control_segment_id="C-14-S008",
             control_measured_value=0.2,
-            reviewer_id="DPCC_SCIENTIST_12",
+            weather_confounder_notes="Pre-monsoon clear sky, wind speed 3.2 m/s",
+            evidence_document_ref="MCD/WO/2026/014",
+            evidence_document_type="MUNICIPAL_WORK_ORDER",
             verification_status="EMPIRICAL_VERIFIED",
         )
         saved = store.record_outcome_observation(obs)
@@ -425,7 +439,7 @@ def test_outcome_store_lifecycle():
         readiness = store.get_readiness_report()
         assert readiness.total_verified_deployments == 1
         assert readiness.is_outcome_model_trainable is False
-        assert readiness.status_code == "OUTCOME_LEARNING_PENDING_EMPIRICAL_FOLLOW_UP"
+        assert readiness.status_code in ("OUTCOME_MONITORING_DATA_COLLECTION_ONLY", "OUTCOME_LEARNING_PENDING_EMPIRICAL_FOLLOW_UP")
     finally:
         if os.path.exists(db_path):
             os.remove(db_path)
@@ -476,31 +490,66 @@ def test_api_data_status_endpoint(client):
     assert "ecosystem_status" in data
 
 
-def test_api_site_assessments_roundtrip(client):
+def test_api_site_assessments_security_and_roundtrip(client):
     payload = {
         "segment_id": "C-14-S002",
         "corridor_id": "C-14",
         "intervention_archetype": "high_albedo_cool_pavements",
         "suitability_state": "ELIGIBLE",
-        "reviewer_id": "PWD_ENG_9999",
-        "reviewer_role": "Executive Engineer",
         "evidence_reference": "PWD/ORDER/2026/GPR-VERIFY",
+        "evidence_document_type": "MUNICIPAL_WORK_ORDER",
         "engineering_constraints": [],
         "reviewer_notes": "Verified asphalt sub-base stability >= 45 kN",
     }
-    post_res = client.post("/api/ml/site-assessments", json=payload)
-    assert post_res.status_code == 200
+
+    # 1. Unauthenticated request MUST be rejected with HTTP 401
+    unauth_res = client.post("/api/ml/site-assessments", json=payload)
+    assert unauth_res.status_code == 401
+
+    # 2. Authenticated field assessor submission succeeds
+    auth_headers = {"Authorization": "Bearer token_field_pwd_7104"}
+    post_res = client.post("/api/ml/site-assessments", json=payload, headers=auth_headers)
+    assert post_res.status_code in (200, 201)
     saved = post_res.json()
     assert saved["assessment_id"] is not None
+    # Server injected identity, rejecting client role tampering
+    assert saved["reviewer_id"] == "PWD_ENG_7104"
+    assert saved["review_status"] == "PENDING_REVIEW"
+    ass_id = saved["assessment_id"]
 
+    # 3. Field Assessor attempting to review/approve MUST be rejected with HTTP 403 Forbidden
+    review_payload = {
+        "action": "APPROVE",
+        "reviewer_note": "Attempted self-approval by field staff",
+    }
+    assessor_review_res = client.patch(
+        f"/api/ml/site-assessments/{ass_id}",
+        json=review_payload,
+        headers={"Authorization": "Bearer token_field_pwd_7104"},
+    )
+    assert assessor_review_res.status_code == 403
+
+    # 4. Authorized Reviewer from MCD reviews assessment
+    reviewer_headers = {"Authorization": "Bearer token_reviewer_mcd_3012"}
+    review_res = client.patch(
+        f"/api/ml/site-assessments/{ass_id}",
+        json=review_payload,
+        headers=reviewer_headers,
+    )
+    assert review_res.status_code == 200
+    reviewed_data = review_res.json()
+    assert reviewed_data["review_status"] == "APPROVED"
+    assert reviewed_data["last_reviewed_by"] == "MCD_REV_3012"
+    assert reviewed_data["audit_history"][-1]["performed_by"] == "MCD_REV_3012"
+
+    # 5. List endpoint returns recorded assessments
     get_res = client.get("/api/ml/site-assessments?segment_id=C-14-S002")
     assert get_res.status_code == 200
     data = get_res.json()
     assert data["count"] >= 1
-    assert data["assessments"][0]["reviewer_id"] == "PWD_ENG_9999"
 
 
-def test_api_outcome_observations_roundtrip(client):
+def test_api_outcome_observations_security_and_roundtrip(client):
     payload = {
         "deployment_id": "DEP-TEST-002",
         "segment_id": "C-14-S003",
@@ -515,11 +564,42 @@ def test_api_outcome_observations_roundtrip(client):
         "instrument_details": "MOD11A2 1000m",
         "matched_control_segment_id": "C-14-S009",
         "control_measured_value": 0.3,
-        "reviewer_id": "DPCC_SCIENTIST_44",
+        "evidence_document_ref": "MCD/WO/2026/014",
+        "evidence_document_type": "MUNICIPAL_WORK_ORDER",
         "verification_status": "EMPIRICAL_VERIFIED",
     }
-    post_res = client.post("/api/ml/outcome-observations", json=payload)
-    assert post_res.status_code == 200
+
+    # 1. Unauthenticated request MUST return 401
+    unauth_res = client.post("/api/ml/outcome-observations", json=payload)
+    assert unauth_res.status_code == 401
+
+    # 2. Authenticated submission succeeds
+    auth_headers = {"Authorization": "Bearer token_field_pwd_7104"}
+    post_res = client.post("/api/ml/outcome-observations", json=payload, headers=auth_headers)
+    assert post_res.status_code in (200, 201)
     saved = post_res.json()
     assert saved["observation_id"] is not None
     assert saved["deployment_id"] == "DEP-TEST-002"
+    assert saved["recorder_id"] == "PWD_ENG_7104"
+
+
+def test_api_model_governance_rbac_promotion(client):
+    promote_payload = {
+        "model_version": "v_nonexistent_test",
+        "approval_note": "Attempted unauthorized promotion",
+    }
+    # Field assessor cannot promote -> 403 Forbidden
+    res_field = client.post(
+        "/api/ml/model/promote",
+        json=promote_payload,
+        headers={"Authorization": "Bearer token_field_pwd_7104"},
+    )
+    assert res_field.status_code == 403
+
+    # Senior reviewer has permission -> passes auth gate, returns 404 for nonexistent version
+    res_senior = client.post(
+        "/api/ml/model/promote",
+        json=promote_payload,
+        headers={"Authorization": "Bearer token_senior_delhi_001"},
+    )
+    assert res_senior.status_code in (400, 404)

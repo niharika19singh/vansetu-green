@@ -50,11 +50,11 @@ class RecommendationExplainer:
             supporting_factors.append(f"Proximate CAAQM station ({cpcb_dist} km) confirms elevated particulate background.")
 
         # Narrative synthesis
-        if suitability_state == "INELIGIBLE":
+        if suitability_state in ("INELIGIBLE", "INELIGIBLE_HARD_CONSTRAINT"):
             narrative = f"Rejected for {archetype}: " + ("; ".join(limiting_factors) if limiting_factors else "Unsuitable site conditions.")
-        elif suitability_state == "CONDITIONAL":
+        elif suitability_state in ("CONDITIONAL", "CONDITIONAL_PENDING_INSPECTION"):
             narrative = f"Conditional suitability for {archetype}: Site has environmental justification, but requires clearance: " + ("; ".join(missing_warnings) if missing_warnings else "Engineering checks pending.")
-        elif suitability_state == "ELIGIBLE":
+        elif suitability_state in ("ELIGIBLE", "VERIFIED_ELIGIBLE"):
             narrative = f"Highly suitable for {archetype}: Supported by " + ("; ".join(supporting_factors[:3]) if supporting_factors else "favourable environmental conditions.")
         else:
             narrative = f"Unassessed: Insufficient verified field evidence to determine feasibility for {archetype}."

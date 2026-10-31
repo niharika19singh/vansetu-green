@@ -57,15 +57,21 @@ stateDiagram-v2
 
 ## 3. Reviewer Provenance & Audit Protocol
 
-To prevent ground-truth contamination, every label submission must include:
-1. `reviewer_id`: Unique institutional identifier (e.g., `PWD_ENG_7104`).
-2. `reviewer_role`: Authorized professional role (e.g., `Executive Engineer`, `Municipal Urban Forester`).
+To prevent ground-truth contamination, every label submission is validated through the server-side RBAC security layer:
+1. `assessor_id` & `organization`: Injected strictly from the server-verified Bearer token session. Client-supplied role strings are ignored to prevent privilege escalation.
+2. `evidence_document_type`: Must be categorized as one of the following recognized institutional classes:
+   - `GPR_UTILITY_SURVEY` (Ground-penetrating radar scan report)
+   - `MUNICIPAL_WORK_ORDER` (Signed departmental sanction order)
+   - `ENGINEERING_CROSS_SECTION` (Measured total and pedestrian ROW)
+   - `TREE_CENSUS_REGISTER` (Official municipal tree census)
+   - `HERITAGE_RESTRICTION_CIRCULAR` (ASI / DUAC circular)
+   - `UNVERIFIED_TEXTUAL_NOTE` (Demoted to unverified; excluded from ML training)
 3. `evidence_reference`: Verifiable official document ID (e.g., `PWD/2026/GPR-7701`, `MCD/HORT/W-12/2026`).
 4. `engineering_constraints`: Specific structured notes regarding subsurface conditions, ROW dimensions, or traffic patterns.
-5. `assessment_timestamp`: ISO 8601 UTC timestamp.
 
 ### Label Governance & Review Lifecycle
-- **Level 1 (Field Submission)**: Status = `PENDING_REVIEW`.
-- **Level 2 (Senior Approval)**: Review by Chief Engineer or Lead Environmental Planner -> Status = `APPROVED`.
-- **Revisions & Corrections**: Previous states are retained immutably in `assessment_audit_history`.
-- Only `APPROVED` assessments with verified non-synthetic evidence references enter the ML training pipeline.
+- **Level 1 (Field Submission)**: Initiated by an accredited `FIELD_ASSESSOR`. Status = `PENDING_REVIEW`.
+- **Level 2 (Senior Approval)**: Review by an authorized `AUTHORIZED_REVIEWER`, `SENIOR_REVIEWER`, or `ADMINISTRATOR` -> Status = `APPROVED`.
+- **Prohibition of Self-Approval**: A field assessor is strictly prohibited by code from approving their own submitted assessment. Attempted self-approvals raise a Conflict of Interest violation and are rejected.
+- **Immutable Audit Trail**: All state transitions, reviewer notes, and previous statuses are retained immutably in `assessment_audit_history`.
+- Only `APPROVED` assessments backed by verifiable documents (`is_evidence_verified == 1`) enter the ML training pipeline. All `PENDING_REVIEW` or unverified notes are strictly excluded.

@@ -1,20 +1,23 @@
 """
-VanSetu GreenTech — ISRO NRSC Bhuvan LULC Ingestion Adapter (Phase 1G).
+VanSetu GreenTech — ISRO NRSC Bhuvan LULC Ingestion Adapter (Priority 2 Remediation).
 
-Interfaces ISRO National Remote Sensing Centre (NRSC) Bhuvan portal
-for Land Use and Land Cover (LULC 1:50,000 / 1:250,000) thematic mapping.
+Interfaces ISRO National Remote Sensing Centre (NRSC) Bhuvan Land Use / Land Cover (LULC 1:50K).
+Reports accurate status semantics: configured vs fetching vs data unavailable.
 """
 from __future__ import annotations
 
 import os
 from pathlib import Path
 from typing import Any, Dict, Optional
+import httpx
 
 from ml.sources.base import BaseSourceAdapter, IngestionStatus, SourceProvenance
 
 
 class BhuvanLanduseAdapter(BaseSourceAdapter):
-    """Adapter for ISRO / NRSC Bhuvan land use / land cover products."""
+    """Adapter for ISRO NRSC Bhuvan Land Use / Land Cover 1:50,000 mapping."""
+
+    BHUVAN_WMS_ENDPOINT = "https://bhuvan-vec1.nrsc.gov.in/bhuvan/wms"
 
     def __init__(self, data_dir: Optional[Path] = None) -> None:
         super().__init__(
@@ -24,20 +27,50 @@ class BhuvanLanduseAdapter(BaseSourceAdapter):
             license_type="Government of India Open Access / Bhuvan Terms of Service",
         )
         self.data_dir = data_dir or (Path(__file__).parent.parent.parent / "data")
-        self.bhuvan_token = os.getenv("BHUVAN_API_KEY", "")
+        self.bhuvan_token = os.getenv("BHUVAN_API_KEY", "").strip()
 
     def check_connection(self) -> Dict[str, Any]:
-        live_configured = bool(self.bhuvan_token)
+        has_token = bool(self.bhuvan_token)
+        live_verified = False
+        conn_error = None
+
+        if has_token:
+            try:
+                # Test WMS GetCapabilities availability
+                resp = httpx.get(
+                    self.BHUVAN_WMS_ENDPOINT,
+                    params={"service": "WMS", "request": "GetCapabilities"},
+                    timeout=4.0,
+                )
+                if resp.status_code == 200:
+                    live_verified = True
+                else:
+                    conn_error = f"Bhuvan WMS returned HTTP {resp.status_code}"
+            except Exception as exc:
+                conn_error = f"Connection error: {exc}"
+
+        if live_verified:
+            status = IngestionStatus.LIVE_CONNECTION_VERIFIED
+        elif has_token and conn_error:
+            status = IngestionStatus.INGESTION_FAILED
+        elif has_token:
+            status = IngestionStatus.CREDENTIALS_CONFIGURED
+        else:
+            status = IngestionStatus.NOT_CONFIGURED
+
         return {
             "source_name": self.source_name,
-            "status": IngestionStatus.CONNECTED_LIVE_API.value if live_configured else IngestionStatus.MISSING_CREDENTIALS.value,
-            "live_api_configured": live_configured,
+            "status": status.value,
+            "live_api_configured": has_token,
+            "live_connection_verified": live_verified,
+            "connection_error": conn_error,
             "requires_credentials": ["BHUVAN_API_KEY"],
-            "wms_endpoint": "https://bhuvan-vec1.nrsc.gov.in/bhuvan/wms",
+            "wms_endpoint": self.BHUVAN_WMS_ENDPOINT,
         }
 
     def get_provenance(self) -> SourceProvenance:
         conn = self.check_connection()
+        st = IngestionStatus(conn["status"])
 
         return SourceProvenance(
             source_name=self.source_name,
@@ -48,11 +81,11 @@ class BhuvanLanduseAdapter(BaseSourceAdapter):
             native_temporal_resolution="Multi-annual cycle (Cycle 2 / Cycle 3)",
             crs="EPSG:4326 / LCC WGS 84",
             acquisition_period="National Natural Resources Management System (NNRMS) LULC",
-            ingestion_status=IngestionStatus(conn["status"]),
-            is_live_connected=conn["live_api_configured"],
+            ingestion_status=st,
+            is_live_connected=conn["live_connection_verified"],
             missing_credentials_detail=(
                 None if conn["live_api_configured"]
-                else "BHUVAN_API_KEY not configured. WMS thematic queries require registered Bhuvan token."
+                else "BHUVAN_API_KEY not configured. Thematic land use classification currently in local reference mode."
             ),
             manual_acquisition_procedure=(
                 "Register on Bhuvan portal https://bhuvan.nrsc.gov.in/, open Bhuvan Thematic Services, "
@@ -61,17 +94,10 @@ class BhuvanLanduseAdapter(BaseSourceAdapter):
         )
 
     def fetch_observations_or_raster(self, **kwargs: Any) -> Dict[str, Any]:
-        prov = self.get_provenance()
-        if not prov.is_live_connected:
-            return {
-                "available": False,
-                "status": IngestionStatus.MISSING_CREDENTIALS.value,
-                "message": "Bhuvan WMS API token required for live thematic queries.",
-                "provenance": prov.to_dict(),
-            }
-
+        conn = self.check_connection()
         return {
-            "available": True,
-            "status": IngestionStatus.CONNECTED_LIVE_API.value,
-            "provenance": prov.to_dict(),
+            "available": conn["live_connection_verified"],
+            "status": conn["status"],
+            "message": "Bhuvan WMS land cover query configured. Requires live authenticated token for remote layer fetch.",
+            "provenance": self.get_provenance().to_dict(),
         }

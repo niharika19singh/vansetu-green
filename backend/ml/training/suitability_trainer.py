@@ -31,7 +31,11 @@ from sklearn.model_selection import GroupKFold
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
-from ml.training.data_builder import InsufficientLabelsError, TrainingDatasetBuilder
+from ml.training.data_builder import (
+    InsufficientLabelsError,
+    InsufficientSpatialClassCoverageError,
+    TrainingDatasetBuilder,
+)
 
 
 def _utc_now_iso() -> str:
@@ -127,10 +131,19 @@ class SuitabilityModelTrainer:
         y_true_all: List[int] = []
         y_pred_all: List[int] = []
         y_prob_all: List[np.ndarray] = []
+        present_classes = set(y.unique())
 
-        for train_idx, test_idx in gkf.split(X, y, groups=groups):
+        for fold_idx, (train_idx, test_idx) in enumerate(gkf.split(X, y, groups=groups)):
             X_tr, X_te = X.iloc[train_idx], X.iloc[test_idx]
             y_tr, y_te = y.iloc[train_idx], y.iloc[test_idx]
+
+            # Enforce spatial class coverage rule: no fold can lack class representation
+            if len(set(y_tr.unique())) < len(present_classes) or len(set(y_te.unique())) < len(present_classes):
+                raise InsufficientSpatialClassCoverageError(
+                    f"INSUFFICIENT_SPATIAL_CLASS_COVERAGE: Fold {fold_idx} lacks representation for all classes. "
+                    f"Corridor grouping cannot form valid stratified validation folds with current label distribution. "
+                    f"Falling back to non-spatial random splits is strictly prohibited for spatial integrity."
+                )
 
             pipe.fit(X_tr, y_tr)
             preds = pipe.predict(X_te)
@@ -157,6 +170,7 @@ class SuitabilityModelTrainer:
         true_ineligible_count = int(np.sum(y_t == 0))
         false_eligible_count = int(np.sum((y_t == 0) & (y_p == 2)))
         false_eligible_rate = float(false_eligible_count / max(1, true_ineligible_count))
+        is_disqualified = false_eligible_rate > 0.05
 
         return {
             "model_name": model_name,
@@ -167,12 +181,15 @@ class SuitabilityModelTrainer:
             "confusion_matrix": cm,
             "false_eligible_rate": round(false_eligible_rate, 4),
             "cross_val_splits": effective_splits,
+            "is_disqualified": is_disqualified,
+            "disqualification_reason": "False-eligible rate exceeds 5.0% threshold" if is_disqualified else None,
         }
 
     def train_and_compare_candidates(self) -> Dict[str, Any]:
         """
         Execute full training run comparing all 4 candidates.
         Enforces minimum evidence gate; raises InsufficientLabelsError if not met.
+        Enforces 5% maximum false-eligible safety disqualification rule.
         """
         X, y, groups = self.builder.build_training_matrix()
 
@@ -184,13 +201,23 @@ class SuitabilityModelTrainer:
         for name, est in candidates.items():
             metrics = self.evaluate_model_spatial_cv(name, est, X, y, groups)
             evaluation_results[name] = metrics
+
+            # Code rejection rule: Models with false_eligible_rate > 5% are disqualified
+            if metrics["is_disqualified"]:
+                continue
+
             # Safety-weighted selection: balanced_accuracy - 2 * false_eligible_rate
             selection_score = metrics["balanced_accuracy"] - (2.0 * metrics["false_eligible_rate"])
             if selection_score > best_score:
                 best_score = selection_score
                 best_name = name
 
-        assert best_name is not None
+        if best_name is None:
+            raise ValueError(
+                "MODEL_REJECTED_EXCESSIVE_FALSE_ELIGIBLE_RATE: All candidate architectures "
+                "exceeded the 5.0% false-eligible safety limit."
+            )
+
         best_estimator = candidates[best_name]
 
         # Fit final pipeline on all verified training data
@@ -209,6 +236,7 @@ class SuitabilityModelTrainer:
         # Compute SHA-256 integrity hash
         sha256 = hashlib.sha256(artifact_path.read_bytes()).hexdigest()
 
+        # Newly trained model is EXPERIMENTAL; NEVER APPROVED_FOR_INFERENCE until promoted by senior reviewer
         metadata = {
             "model_version": version_tag,
             "model_architecture": best_name,
@@ -218,7 +246,7 @@ class SuitabilityModelTrainer:
             "training_samples_count": len(y),
             "feature_schema_version": self.builder.feature_pipeline.FEATURE_SCHEMA_VERSION,
             "label_schema_version": "2.0.0",
-            "approval_status": "APPROVED_FOR_INFERENCE",
+            "approval_status": "EXPERIMENTAL",
             "validation_metrics": evaluation_results[best_name],
             "candidate_comparisons": evaluation_results,
         }

@@ -1,8 +1,8 @@
 """
-VanSetu GreenTech — Human-Verified Suitability Label Schema (Phase 4A).
+VanSetu GreenTech — Human-Verified Suitability Label Schema (Phase 4A & Remediation).
 
 Defines the 4-state suitability ontology, 5 GreenTech intervention classes,
-and strict human reviewer provenance fields for municipal field surveys.
+evidence classification types, and strict server-side reviewer provenance.
 """
 from __future__ import annotations
 
@@ -34,17 +34,41 @@ class ReviewStatus(str, Enum):
     SUPERSEDED = "SUPERSEDED"
 
 
+class EvidenceDocumentType(str, Enum):
+    GPR_UTILITY_SURVEY = "GPR_UTILITY_SURVEY"
+    MUNICIPAL_WORK_ORDER = "MUNICIPAL_WORK_ORDER"
+    ENGINEERING_CROSS_SECTION = "ENGINEERING_CROSS_SECTION"
+    TREE_CENSUS_REGISTER = "TREE_CENSUS_REGISTER"
+    HERITAGE_RESTRICTION_CIRCULAR = "HERITAGE_RESTRICTION_CIRCULAR"
+    UNVERIFIED_TEXTUAL_NOTE = "UNVERIFIED_TEXTUAL_NOTE"
+
+
+class ReviewActionType(str, Enum):
+    APPROVE = "APPROVE"
+    REJECT = "REJECT"
+    CORRECT = "CORRECT"
+
+
 class SiteAssessmentSubmission(BaseModel):
+    """
+    Client submission model for field assessments.
+    Reviewer identity and role are server-injected via authenticated session.
+    """
     segment_id: str = Field(description="Stable road segment ID, e.g. 'C-14-S001'.")
     corridor_id: str = Field(description="Parent corridor code, e.g. 'C-14'.")
     intervention_archetype: InterventionArchetype
     suitability_state: SuitabilityState
-    reviewer_id: str = Field(min_length=3, description="Authenticated municipal field engineer or planner ID.")
-    reviewer_role: str = Field(default="Municipal Field Engineer", description="Authorised role (e.g. Field Engineer, Urban Forester).")
     evidence_reference: str = Field(min_length=3, description="Official ground-survey reference, GPR report, or work order.")
+    evidence_document_type: EvidenceDocumentType = Field(
+        default=EvidenceDocumentType.GPR_UTILITY_SURVEY,
+        description="Classification of supporting physical evidence.",
+    )
     survey_reference: Optional[str] = None
     engineering_constraints: List[str] = Field(default_factory=list, description="Subsurface utilities, ROW bottlenecks, or structural limits.")
     reviewer_notes: Optional[str] = None
+    # Optional client-supplied hints; SERVER OVERWRITES WITH AUTHENTICATED USER
+    reviewer_id: Optional[str] = None
+    reviewer_role: Optional[str] = None
     assessment_timestamp: str = Field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat(),
         description="ISO timestamp of field inspection."
@@ -52,11 +76,15 @@ class SiteAssessmentSubmission(BaseModel):
 
 
 class AssessmentReviewAction(BaseModel):
+    """
+    Server action model for reviewing, approving, or correcting an assessment.
+    """
     assessment_id: str
-    reviewer_id: str
-    action: str = Field(description="APPROVE, REJECT, or CORRECT.")
+    action: ReviewActionType = Field(description="APPROVE, REJECT, or CORRECT.")
     corrected_suitability_state: Optional[SuitabilityState] = None
-    reviewer_note: str = Field(min_length=3, description="Justification for approval, correction, or rejection.")
+    reviewer_note: str = Field(min_length=5, description="Mandatory engineering justification.")
+    # Optional client hint; SERVER OVERWRITES WITH AUTHENTICATED REVIEWER ID
+    reviewer_id: Optional[str] = None
 
 
 class SiteAssessmentRecord(BaseModel):
@@ -69,10 +97,12 @@ class SiteAssessmentRecord(BaseModel):
     reviewer_id: str
     reviewer_role: str
     evidence_reference: str
+    evidence_document_type: str
+    is_evidence_verified: bool
     survey_reference: Optional[str] = None
     engineering_constraints: List[str] = Field(default_factory=list)
     reviewer_notes: Optional[str] = None
     created_at: str
     updated_at: str
-    schema_version: str = "2.0.0"
+    schema_version: str = "2.1.0"
     audit_history_count: int = 1
