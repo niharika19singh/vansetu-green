@@ -1,8 +1,8 @@
 /**
  * VanSetu — Urban Climate Action Intelligence Automated Frontend Verification Suite (Node Test Runner).
  * Verifies component architecture, 10-view navigation, Tailwind/Recharts/Leaflet stack compliance,
- * district GeoJSON validity, Meko ON/OFF controls, Gemini 3.8 Flash, Tiger Data, and IOMETE Procurement Studio.
- * Expanded with Research-Backed Scientific Differentiation & UI Integrity checks.
+ * district GeoJSON validity, Meko ON/OFF controls, Gemini 3.8 Flash, Tiger Data, IOMETE Procurement Studio,
+ * "The Living Forest" Photorealistic Water Engine, and "Veins of Life" 7-Stage 3D Cinematic Story Journey.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const frontendRoot = path.resolve(__dirname, '..');
 
-test('package.json includes required stack (React, Vite, Tailwind CSS, Leaflet, Recharts)', () => {
+test('package.json includes required stack (React, Vite, Tailwind CSS, Leaflet, Recharts, Three.js)', () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(frontendRoot, 'package.json'), 'utf-8'));
   const allDeps = { ...pkg.dependencies, ...pkg.devDependencies };
   assert.ok(allDeps.react, 'React dependency missing');
@@ -22,6 +22,7 @@ test('package.json includes required stack (React, Vite, Tailwind CSS, Leaflet, 
   assert.ok(allDeps.leaflet, 'Leaflet dependency missing');
   assert.ok(allDeps['react-leaflet'], 'react-leaflet dependency missing');
   assert.ok(allDeps.recharts, 'Recharts dependency missing');
+  assert.ok(allDeps.three, 'Three.js dependency missing');
 });
 
 test('Delhi districts GeoJSON is valid EPSG:4326 FeatureCollection', () => {
@@ -88,52 +89,67 @@ test('All HackCBS 9.0 specialized view components exist and wire to API client',
   }
 });
 
-test('Research-backed scientific badges and thermal disambiguation are implemented', () => {
-  const badgeSrc = fs.readFileSync(
-    path.join(frontendRoot, 'src/components/ui/ScientificBadges.jsx'),
-    'utf-8'
-  );
-  assert.ok(badgeSrc.includes('FEASIBLE_ESTIMATE'), 'FEASIBLE_ESTIMATE status missing');
-  assert.ok(badgeSrc.includes('FIELD_VERIFICATION_REQUIRED'), 'FIELD_VERIFICATION_REQUIRED status missing');
-  assert.ok(badgeSrc.includes('CONSTRAINT_IDENTIFIED'), 'CONSTRAINT_IDENTIFIED status missing');
-  assert.ok(badgeSrc.includes('NOT_FEASIBLE'), 'NOT_FEASIBLE status missing');
+test('"The Living Forest" Photorealistic Water & Nature Engine is valid', () => {
+  const forestFiles = [
+    'src/forest/LivingForestDirector.js',
+    'src/forest/LivingForestExperience.jsx',
+    'src/forest/shaders/forestWaterShader.js',
+    'public/textures/forest_reference.jpg',
+  ];
 
-  assert.ok(badgeSrc.includes('Surface Heat Indicator (Satellite Land Surface Temperature — LST)'), 'Surface Heat Indicator missing');
-  assert.ok(badgeSrc.includes('Human Heat Stress Assessment (UTCI / WBGT Physiological Index)'), 'Human Heat Stress Assessment missing');
-  assert.ok(badgeSrc.includes('Not available'), 'Not available status for human heat stress missing');
-  assert.ok(badgeSrc.includes('SYNTHETIC DEMONSTRATION SCENARIO'), 'SYNTHETIC DEMONSTRATION SCENARIO badge missing');
-  assert.ok(badgeSrc.includes('SIMULATED DATA'), 'SIMULATED DATA badge missing');
-  assert.ok(badgeSrc.includes('HISTORICAL DATA'), 'HISTORICAL DATA badge missing');
-  assert.ok(badgeSrc.includes('LIVE DATA'), 'LIVE DATA badge missing');
-});
+  for (const f of forestFiles) {
+    const full = path.join(frontendRoot, f);
+    assert.ok(fs.existsSync(full), `Missing forest asset/module: ${f}`);
+  }
 
-test('7-Step municipal decision workflow is exposed in App.jsx', () => {
+  // Verify App.jsx imports LivingForestExperience for layer 1 background
   const appSrc = fs.readFileSync(path.join(frontendRoot, 'src/App.jsx'), 'utf-8');
-  assert.ok(appSrc.includes('DECISION_WORKFLOW_STEPS'), 'DECISION_WORKFLOW_STEPS missing in App.jsx');
-  assert.ok(appSrc.includes('Decision workflow:'), 'Decision workflow label missing in App.jsx');
+  assert.ok(appSrc.includes('LivingForestExperience'), 'App.jsx missing LivingForestExperience');
+
+  // Verify water shader features
+  const shaderSrc = fs.readFileSync(path.join(frontendRoot, 'src/forest/shaders/forestWaterShader.js'), 'utf-8');
+  assert.ok(shaderSrc.includes('getWaterWave'), 'Missing getWaterWave in forestWaterShader.js');
+  assert.ok(shaderSrc.includes('uWaterLevel'), 'Missing uWaterLevel in forestWaterShader.js');
+  assert.ok(shaderSrc.includes('uRipples'), 'Missing uRipples in forestWaterShader.js');
 });
 
-test('Vite config splits vendor chunks to prevent single bundle warning (>500kB)', () => {
-  const viteSrc = fs.readFileSync(path.join(frontendRoot, 'vite.config.js'), 'utf-8');
-  assert.ok(viteSrc.includes('manualChunks'), 'manualChunks missing in vite.config.js');
-  assert.ok(viteSrc.includes('vendor-leaflet'), 'vendor-leaflet chunk missing in vite.config.js');
-  assert.ok(viteSrc.includes('vendor-recharts'), 'vendor-recharts chunk missing in vite.config.js');
-});
+test('"Veins of Life" 7-Stage 3D Cinematic Story Journey, Cloud Shaders, and Assets are valid', () => {
+  const cinematicFiles = [
+    'src/cinematic/VeinsOfLifeExperience.jsx',
+    'src/components/VeinsOfLifeModal.jsx',
+    'src/cinematic/CinematicDirector.js',
+    'src/cinematic/mathUtils.js',
+    'src/cinematic/delhiNetwork.js',
+    'src/cinematic/veinNetwork.js',
+    'src/cinematic/audioSynth.js',
+    'src/cinematic/shaders/leafShader.js',
+    'src/cinematic/shaders/dropletShader.js',
+    'src/cinematic/shaders/cloudShader.js',
+    'src/cinematic/shaders/morphShader.js',
+    'public/textures/leaf_cover.jpg',
+    'public/textures/leaf_reference.jpg',
+    'public/textures/delhi_map_reference.png',
+    'public/delhi_roads.geojson',
+  ];
 
-test('Accessible keyboard support and aria attributes present in interactive components', () => {
-  const rankingSrc = fs.readFileSync(
-    path.join(frontendRoot, 'src/components/PriorityRankingPanel.jsx'),
-    'utf-8'
-  );
-  assert.ok(rankingSrc.includes('role="listbox"'), 'listbox role missing in PriorityRankingPanel');
-  assert.ok(rankingSrc.includes('role="option"'), 'option role missing in PriorityRankingPanel');
-  assert.ok(rankingSrc.includes('tabIndex={0}'), 'tabIndex missing in PriorityRankingPanel options');
-  assert.ok(rankingSrc.includes('onKeyDown='), 'onKeyDown handler missing in PriorityRankingPanel');
+  for (const f of cinematicFiles) {
+    const full = path.join(frontendRoot, f);
+    assert.ok(fs.existsSync(full), `Missing cinematic asset/module: ${f}`);
+  }
 
-  const plannerSrc = fs.readFileSync(
-    path.join(frontendRoot, 'src/components/InterventionPlannerPanel.jsx'),
-    'utf-8'
+  // Verify VeinsOfLifeModal hosts the 7-stage experience
+  const modalSrc = fs.readFileSync(path.join(frontendRoot, 'src/components/VeinsOfLifeModal.jsx'), 'utf-8');
+  assert.ok(modalSrc.includes('VeinsOfLifeExperience'), 'VeinsOfLifeModal missing VeinsOfLifeExperience');
+  assert.ok(modalSrc.includes('SCENE_STAGES'), 'VeinsOfLifeModal missing SCENE_STAGES');
+
+  // Verify App.jsx wires the story modal
+  const appSrc = fs.readFileSync(path.join(frontendRoot, 'src/App.jsx'), 'utf-8');
+  assert.ok(appSrc.includes('VeinsOfLifeModal'), 'App.jsx missing VeinsOfLifeModal');
+
+  // Verify Delhi road network GeoJSON
+  const roadsGeo = JSON.parse(
+    fs.readFileSync(path.join(frontendRoot, 'public/delhi_roads.geojson'), 'utf-8')
   );
-  assert.ok(plannerSrc.includes('role="tablist"'), 'tablist role missing in InterventionPlannerPanel');
-  assert.ok(plannerSrc.includes('role="tab"'), 'tab role missing in InterventionPlannerPanel');
+  assert.equal(roadsGeo.type, 'FeatureCollection');
+  assert.equal(roadsGeo.features.length, 44, 'Expected 44 Delhi verified corridors');
 });

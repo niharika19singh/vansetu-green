@@ -1,66 +1,73 @@
-import React, { useEffect, useState, useCallback, Suspense, lazy } from 'react';
+/**
+ * App.jsx — VanSetu GreenTech NCT Delhi v2.0 Architecture.
+ * 
+ * Multipage Architecture:
+ * - Landing Page (Home): Minimal, uninterrupted nature hero (ZERO top buttons),
+ *   locked living forest and water background, editorial headline, and clear "Explore Delhi Map" CTA.
+ * - Map Explorer (Flagship Experience): Full-screen geographic workspace, compact controls,
+ *   collapsible filters, contextual corridor inspection drawer.
+ * - Corridors: 44 Corridors comparative analytics and severity inspection.
+ * - Canopy & Hydrology: NASA MODIS LST, ESA Sentinel NDVI, evaporative cooling analysis.
+ * - Scenario Lab: 5 Municipal policy scenarios, What-If heat sensitivity slider.
+ * - Decision Studio: MILP budget solver, IOMETE procurement studio, Gemini 3.8 Flash AI co-pilot.
+ * - Intelligence & Records: Meko institutional memory (MEKO: ON/OFF), Tiger Data, cryptographic provenance.
+ */
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   Trees,
-  Thermometer,
-  Wind,
-  Database,
-  Calculator,
-  Wrench,
-  BarChart3,
-  AlertCircle,
-  RefreshCw,
   Map,
   Sliders,
+  Calculator,
   ShoppingBag,
   Sparkles,
   Brain,
   Clock,
   Users,
   LayoutDashboard,
+  AlertCircle,
+  RefreshCw,
 } from 'lucide-react';
 import { api } from './api/client';
-import InteractiveMap from './components/InteractiveMap';
-import PriorityRankingPanel from './components/PriorityRankingPanel';
-import CorridorAnalyticalDetail from './components/CorridorAnalyticalDetail';
-import InterventionPlannerPanel from './components/InterventionPlannerPanel';
-import {
-  DECISION_WORKFLOW_STEPS,
-  FeasibilityStatusBadge,
-  deriveCorridorFeasibilityStatus,
-} from './components/ui/ScientificBadges';
+import AppSidebar, { APP_NAV_ITEMS } from './components/AppSidebar';
+import LandingPageView from './views/LandingPageView';
+import MapExplorerView from './views/MapExplorerView';
+import CorridorsView from './views/CorridorsView';
+import CanopyHydrologyView from './views/CanopyHydrologyView';
+import ScenarioLabView from './views/ScenarioLabView';
+import DecisionStudioView from './views/DecisionStudioView';
+import RecordsView from './views/RecordsView';
+import VeinsOfLifeModal from './components/VeinsOfLifeModal';
+import DataProvenanceModal from './components/DataProvenanceModal';
+import LivingForestExperience from './forest/LivingForestExperience';
+import { cinematicAudio } from './cinematic/audioSynth';
 
-// Secondary modules are code-split so the map-first explorer loads faster (Section 15).
-const DataProvenanceModal = lazy(() => import('./components/DataProvenanceModal'));
-const InterventionOptimizerView = lazy(() => import('./components/InterventionOptimizerView'));
-const ProcurementStudioView = lazy(() => import('./components/ProcurementStudioView'));
-const AiPlanningAssistantView = lazy(() => import('./components/AiPlanningAssistantView'));
-const MekoMemoryStudioView = lazy(() => import('./components/MekoMemoryStudioView'));
-const TemporalInsightsView = lazy(() => import('./components/TemporalInsightsView'));
-const EquityAndProvenanceView = lazy(() => import('./components/EquityAndProvenanceView'));
-
-const ViewFallback = () => (
-  <div className="h-full w-full flex items-center justify-center text-xs font-mono text-slate-400" role="status">
-    Loading decision-support module...
-  </div>
-);
-
-const NAV_VIEWS = [
-  { id: 'overview', label: '1. Climate Overview', icon: LayoutDashboard },
+export const NAV_VIEWS = [
+  { id: 'canopy', label: '1. Climate Overview', icon: LayoutDashboard },
   { id: 'map', label: '2. Interactive Map', icon: Map },
   { id: 'corridors', label: '3. Corridor Intelligence', icon: Trees },
   { id: 'scenarios', label: '4. Scenario Lab', icon: Sliders },
-  { id: 'optimizer', label: '5. Intervention Optimizer', icon: Calculator },
-  { id: 'procurement', label: '6. Climate Procurement Studio', icon: ShoppingBag },
-  { id: 'agent', label: '7. AI Planning Assistant', icon: Sparkles },
-  { id: 'meko', label: '8. Institutional Memory (Meko)', icon: Brain },
-  { id: 'temporal', label: '9. Temporal Insights (Tiger Data)', icon: Clock },
-  { id: 'provenance', label: '10. Evidence & Data Provenance', icon: Users },
+  { id: 'studio-optimizer', label: '5. Intervention Optimizer', icon: Calculator },
+  { id: 'studio-procurement', label: '6. Climate Procurement Studio', icon: ShoppingBag },
+  { id: 'studio-agent', label: '7. AI Planning Assistant', icon: Sparkles },
+  { id: 'records-meko', label: '8. Institutional Memory (Meko)', icon: Brain },
+  { id: 'records-temporal', label: '9. Temporal Insights (Tiger Data)', icon: Clock },
+  { id: 'records-provenance', label: '10. Evidence & Data Provenance', icon: Users },
 ];
 
 export default function App() {
-  const [activeView, setActiveView] = useState('overview');
+  // Navigation: 'home' | 'map' | 'corridors' | 'canopy' | 'scenarios' | 'studio' | 'records'
+  const [activePage, setActivePage] = useState('home');
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
+
+  // Audio & Modals
+  const [isMuted, setIsMuted] = useState(true);
+  const [isVeinsStoryOpen, setIsVeinsStoryOpen] = useState(false);
+  const [provenanceModalOpen, setProvenanceModalOpen] = useState(false);
+
+  // Institutional Memory
   const [mekoEnabled, setMekoEnabled] = useState(true);
 
+  // Application Data States
   const [corridors, setCorridors] = useState([]);
   const [districts, setDistricts] = useState([]);
   const [selectedDistrict, setSelectedDistrict] = useState('All Districts');
@@ -75,13 +82,10 @@ export default function App() {
   const [statsSummary, setStatsSummary] = useState(null);
   const [provenance, setProvenance] = useState(null);
 
-  const [rightTab, setRightTab] = useState('analytics');
-  const [mobilePane, setMobilePane] = useState('map'); // 'rankings' | 'map' | 'inspector' (below lg)
-  const [provenanceModalOpen, setProvenanceModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // Initial static metadata fetch
+  // Load initial static metadata
   useEffect(() => {
     let mounted = true;
     async function loadInitialMetadata() {
@@ -107,7 +111,7 @@ export default function App() {
     };
   }, []);
 
-  // Load corridors & sensitivity whenever scenario, district, or What-If slider changes
+  // Load corridor prioritization data
   const loadCorridorData = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -141,7 +145,6 @@ export default function App() {
           const updated = corrList.find((c) => c.id === prev.id);
           if (updated) return updated;
         }
-        // Default to C-14 if available for instant demo readiness, else top corridor
         return corrList.find((c) => c.code === 'C-14') || corrList[0];
       });
     } catch (err) {
@@ -155,482 +158,173 @@ export default function App() {
     loadCorridorData();
   }, [loadCorridorData]);
 
-  const activeSensitivityRow = sensitivityData?.corridors?.find(
-    (c) => c.id === selectedCorridor?.id
-  );
+  const toggleSound = () => {
+    const unmuted = cinematicAudio.toggleMute();
+    setIsMuted(!unmuted);
+  };
 
-  const lstStats = statsSummary?.raster?.lst || {};
-  const ndviStats = statsSummary?.raster?.ndvi || {};
-  const aqiStats = statsSummary?.aqi || {};
+  const handleNavigate = (page) => {
+    setActivePage(page);
+    // On Map page, default to collapsed sidebar for maximum map real estate
+    if (page === 'map') {
+      setSidebarCollapsed(true);
+    }
+  };
 
   return (
-    <div className="flex flex-col h-screen w-screen bg-slate-950 text-slate-100 overflow-hidden">
-      {/* Top Decision-Support Header */}
-      <header className="h-14 shrink-0 bg-slate-900/95 border-b border-slate-800 px-4 flex items-center justify-between gap-4 z-20">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-emerald-500/15 border border-emerald-500/40 flex items-center justify-center shadow-inner">
-            <Trees className="w-5 h-5 text-emerald-400" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-sm font-bold tracking-tight text-white">
-                VanSetu <span className="text-emerald-400">— Evidence-Aware Climate Investment Intelligence</span>
-              </h1>
-              <span className="hidden sm:inline text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
-                NCT Delhi v2.0
-              </span>
-            </div>
-            <p className="text-[11px] text-slate-400 hidden sm:block">
-              Prioritise climate need • Check evidence quality • Verify site feasibility • Allocate limited budgets • Preserve institutional knowledge
-            </p>
-          </div>
+    <div className="isolate relative w-screen h-screen overflow-hidden bg-[#071C16] text-[#F3F1E7] font-body selection:bg-emerald-600/30 selection:text-emerald-100">
+      {/* =========================================================================
+          DESTINATION 1: LANDING PAGE (Clean, Uninterrupted, ZERO top buttons)
+          ========================================================================= */}
+      {activePage === 'home' ? (
+        <div className="w-full h-full overflow-y-auto">
+          <LandingPageView
+            onNavigate={handleNavigate}
+            onOpenVeinsStory={() => setIsVeinsStoryOpen(true)}
+            statsSummary={statsSummary}
+          />
         </div>
+      ) : (
+        /* =========================================================================
+            DESTINATIONS 2-7: FUNCTIONAL APPLICATION PAGES WITH SLEEK SIDEBAR
+            ========================================================================= */
+        <div className="w-full h-full flex overflow-hidden">
+          {/* Collapsible Application Sidebar */}
+          <AppSidebar
+            activePage={activePage}
+            onNavigate={handleNavigate}
+            collapsed={sidebarCollapsed}
+            onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+            mekoEnabled={mekoEnabled}
+            onToggleMeko={() => setMekoEnabled(!mekoEnabled)}
+            isMuted={isMuted}
+            onToggleSound={toggleSound}
+            onOpenVeinsStory={() => setIsVeinsStoryOpen(true)}
+          />
 
-        {/* City-Wide Telemetry Strip */}
-        <div className="hidden 2xl:flex items-center gap-2.5 text-xs">
-          <div className="bg-slate-950/90 border border-slate-800 rounded-lg px-2.5 py-1 flex items-center gap-2">
-            <Thermometer className="w-4 h-4 text-orange-400" />
-            <div>
-              <span className="text-[10px] text-slate-400 block leading-none">
-                MODIS Surface LST (1km Native)
-              </span>
-              <span className="font-mono font-bold text-slate-100">
-                {lstStats.mean ? `${lstStats.mean.toFixed(1)}°C` : '25.8°C'}{' '}
-                <span className="text-[10px] text-slate-400 font-normal">
-                  (57×79 → 10m Display)
-                </span>
-              </span>
-            </div>
-          </div>
-
-          <div className="bg-slate-950/90 border border-slate-800 rounded-lg px-2.5 py-1 flex items-center gap-2">
-            <Trees className="w-4 h-4 text-emerald-400" />
-            <div>
-              <span className="text-[10px] text-slate-400 block leading-none">
-                Sentinel-2 NDVI (10m Native)
-              </span>
-              <span className="font-mono font-bold text-slate-100">
-                {ndviStats.mean ? ndviStats.mean.toFixed(3) : '0.310'}{' '}
-                <span className="text-[10px] text-slate-400 font-normal">(5572×7794)</span>
-              </span>
-            </div>
-          </div>
-
-          <div className="bg-slate-950/90 border border-slate-800 rounded-lg px-2.5 py-1 flex items-center gap-2">
-            <Wind className="w-4 h-4 text-amber-400" />
-            <div>
-              <span className="text-[10px] text-slate-400 block leading-none">
-                CPCB Mean AQI
-              </span>
-              <span className="font-mono font-bold text-amber-300">
-                {aqiStats.mean_aqi || '237.6'}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* Right Header Controls: Visible MEKO ON/OFF Switch + Provenance Modal */}
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setMekoEnabled(!mekoEnabled)}
-            aria-pressed={mekoEnabled}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 border transition focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 ${
-              mekoEnabled
-                ? 'bg-emerald-600/25 border-emerald-500 text-emerald-300'
-                : 'bg-rose-900/40 border-rose-500/50 text-rose-300'
-            }`}
-            title="Toggle Meko institutional memory. Connection mode (local engine vs. live Meko MCP) is shown in the Institutional Memory view."
-          >
-            <Brain className="w-3.5 h-3.5" aria-hidden="true" />
-            <span>{mekoEnabled ? 'MEKO: ON' : 'MEKO: OFF'}</span>
-          </button>
-
-          <button
-            onClick={() => setProvenanceModalOpen(true)}
-            aria-label="Open data provenance registry"
-            className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-medium text-emerald-300 flex items-center gap-1.5 transition shadow focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
-          >
-            <Database className="w-3.5 h-3.5 text-emerald-400" aria-hidden="true" />
-            <span className="hidden md:inline">Provenance</span>
-          </button>
-        </div>
-      </header>
-
-      {/* 10-View Cohesive Navigation Bar */}
-      <nav
-        aria-label="Platform modules"
-        className="bg-slate-900 border-b border-slate-800 px-3 py-1.5 flex items-center gap-1 overflow-x-auto shrink-0 z-10"
-      >
-        {NAV_VIEWS.map((view) => {
-          const IconComponent = view.icon;
-          const isActive = activeView === view.id;
-          return (
-            <button
-              key={view.id}
-              aria-current={isActive ? 'page' : undefined}
-              onClick={() => setActiveView(view.id)}
-              className={`px-2.5 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap flex items-center gap-1.5 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 ${
-                isActive
-                  ? 'bg-emerald-600 text-white shadow'
-                  : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/70'
-              }`}
-            >
-              <IconComponent className="w-3.5 h-3.5" aria-hidden="true" />
-              <span>{view.label}</span>
-            </button>
-          );
-        })}
-      </nav>
-
-      {/* 7-Step Municipal Decision Workflow (Section 3) */}
-      <div
-        aria-label="Seven-step municipal climate investment workflow"
-        className="hidden md:flex bg-slate-950 border-b border-slate-800 px-3 py-1 items-center gap-1 overflow-x-auto shrink-0 text-[10px]"
-      >
-        <span className="font-mono uppercase text-slate-500 font-semibold shrink-0 mr-1">
-          Decision workflow:
-        </span>
-        {DECISION_WORKFLOW_STEPS.map((st, idx) => (
-          <React.Fragment key={st.step}>
-            <button
-              type="button"
-              title={`${st.title}: ${st.detail}`}
-              onClick={() => {
-                const viewMap = { explorer: 'overview' };
-                setActiveView(viewMap[st.targetView] || st.targetView);
-                if (st.targetTab === 'analytics' || st.targetTab === 'interventions') {
-                  setRightTab(st.targetTab);
-                  setMobilePane('inspector');
-                } else if (st.targetTab === 'rankings') {
-                  setMobilePane('rankings');
-                }
-              }}
-              className="px-2 py-0.5 rounded border border-slate-800 bg-slate-900 text-slate-300 hover:text-emerald-300 hover:border-emerald-500/40 whitespace-nowrap transition focus:outline-none focus-visible:ring-1 focus-visible:ring-emerald-400"
-            >
-              {st.shortLabel}
-            </button>
-            {idx < DECISION_WORKFLOW_STEPS.length - 1 && (
-              <span className="text-slate-600" aria-hidden="true">→</span>
-            )}
-          </React.Fragment>
-        ))}
-      </div>
-
-      {/* Error Banner if API unreachable */}
-      {error && (
-        <div className="bg-rose-950/90 border-b border-rose-500/40 px-4 py-2 text-xs text-rose-200 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
-            <span>{error}</span>
-          </div>
-          <button
-            onClick={loadCorridorData}
-            className="px-2 py-0.5 rounded bg-rose-800/60 hover:bg-rose-700 text-rose-100 flex items-center gap-1"
-          >
-            <RefreshCw className="w-3 h-3" /> Retry
-          </button>
-        </div>
-      )}
-
-      {/* Main Workspace Area Switched by Active View */}
-      <div className="flex-1 min-h-0 overflow-hidden">
-        {/* Views 1, 2, 3, 4: Map-First & Analytical Views */}
-        {(activeView === 'overview' ||
-          activeView === 'map' ||
-          activeView === 'corridors' ||
-          activeView === 'scenarios') && (
-          <div className="h-full flex flex-col min-h-0 overflow-hidden">
-            {/* Mobile / tablet pane switcher (map-first) — hidden on lg+ (Section 14) */}
-            {activeView !== 'map' && (
-              <div
-                role="tablist"
-                aria-label="Workspace pane"
-                className="lg:hidden grid grid-cols-3 gap-1 p-1.5 bg-slate-900 border-b border-slate-800 text-xs shrink-0"
-              >
-                {[
-                  { id: 'map', label: 'Map' },
-                  { id: 'rankings', label: `Rankings (${corridors.length})` },
-                  { id: 'inspector', label: `Inspect ${selectedCorridor?.code || ''}` },
-                ].map((p) => (
-                  <button
-                    key={p.id}
-                    role="tab"
-                    aria-selected={mobilePane === p.id}
-                    onClick={() => setMobilePane(p.id)}
-                    className={`py-1.5 rounded-md font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 ${
-                      mobilePane === p.id
-                        ? 'bg-emerald-600 text-white'
-                        : 'bg-slate-950 text-slate-300 border border-slate-800'
-                    }`}
-                  >
-                    {p.label}
-                  </button>
-                ))}
-              </div>
-            )}
-          <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 min-h-0 overflow-hidden">
-            {/* Left Column: Corridor Priority Ranking & Scenario Controls */}
-            {activeView !== 'map' && (
-              <div
-                className={`${
-                  mobilePane === 'rankings' ? 'block' : 'hidden'
-                } lg:block lg:col-span-3 h-full min-h-0 overflow-hidden`}
-              >
-                <PriorityRankingPanel
-                  corridors={corridors}
-                  districts={districts}
-                  selectedDistrict={selectedDistrict}
-                  onSelectDistrict={setSelectedDistrict}
-                  activeScenario={activeScenario}
-                  onSelectScenario={setActiveScenario}
-                  whatIfHeatWeight={whatIfHeatWeight}
-                  onChangeWhatIfHeatWeight={setWhatIfHeatWeight}
-                  selectedCorridor={selectedCorridor}
-                  onSelectCorridor={(c) => {
-                    setSelectedCorridor(c);
-                    setMobilePane('inspector');
-                  }}
-                  mekoEnabled={mekoEnabled}
-                />
+          {/* Main Page Workspace */}
+          <main className="flex-1 h-full overflow-hidden relative">
+            {/* Error Notification Bar */}
+            {error && (
+              <div className="absolute top-2 left-4 right-4 z-50 bg-rose-950/90 border border-rose-500/40 rounded-xl px-4 py-2 text-xs text-rose-200 flex items-center justify-between shadow-xl">
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                  <span>{error}</span>
+                </div>
+                <button
+                  onClick={loadCorridorData}
+                  className="px-2 py-0.5 rounded bg-rose-800/60 hover:bg-rose-700 text-rose-100 flex items-center gap-1"
+                >
+                  <RefreshCw className="w-3 h-3" /> Retry
+                </button>
               </div>
             )}
 
-            {/* Center Column: Map-First Geospatial Canvas */}
-            <div
-              className={`${
-                activeView === 'map'
-                  ? 'block lg:col-span-12'
-                  : `${mobilePane === 'map' ? 'block' : 'hidden'} lg:block lg:col-span-5`
-              } h-full min-h-[360px] relative`}
-            >
-              <InteractiveMap
+            {/* Page 2: Flagship Map Explorer */}
+            {activePage === 'map' && (
+              <MapExplorerView
                 corridors={corridors}
-                selectedCorridor={selectedCorridor}
-                onSelectCorridor={setSelectedCorridor}
+                districts={districts}
                 selectedDistrict={selectedDistrict}
                 onSelectDistrict={setSelectedDistrict}
+                selectedCorridor={selectedCorridor}
+                onSelectCorridor={setSelectedCorridor}
                 aqiStations={aqiStations}
                 rasterZones={rasterZones}
+                sensitivityData={sensitivityData}
+                activeScenario={activeScenario}
+                onNavigate={handleNavigate}
               />
-            </div>
-
-            {/* Right Column: Explainable Analytics, Scenarios & Intervention Planner */}
-            {activeView !== 'map' && (
-              <div
-                className={`${
-                  mobilePane === 'inspector' ? 'flex' : 'hidden'
-                } lg:flex lg:col-span-4 h-full min-h-0 bg-slate-900/95 border-l border-slate-800 flex-col overflow-hidden`}
-              >
-                <div className="p-3.5 border-b border-slate-800 bg-slate-950/50 space-y-2.5">
-                  {selectedCorridor ? (
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono text-xs font-bold border border-emerald-500/40">
-                            {selectedCorridor.code || `#${selectedCorridor.rank}`}
-                          </span>
-                          <h2 className="text-sm font-bold text-white truncate">
-                            {selectedCorridor.name}
-                          </h2>
-                        </div>
-                        <div className="text-[11px] text-slate-400 mt-0.5">
-                          {selectedCorridor.district} ({selectedCorridor.ward_id}) • Highway:{' '}
-                          <span className="uppercase font-mono text-slate-300">
-                            {selectedCorridor.highway}
-                          </span>{' '}
-                          • Length: {selectedCorridor.length_km} km
-                        </div>
-                      </div>
-                      <div className="flex flex-col items-end gap-1 shrink-0">
-                      <span
-                        className="px-2 py-0.5 rounded text-[10px] font-bold shrink-0"
-                        style={{
-                          backgroundColor: `${selectedCorridor.severity_color || '#f97316'}22`,
-                          color: selectedCorridor.severity_color || '#f97316',
-                          border: `1px solid ${selectedCorridor.severity_color || '#f97316'}55`,
-                        }}
-                      >
-                        {selectedCorridor.severity}
-                      </span>
-                      <FeasibilityStatusBadge
-                        status={deriveCorridorFeasibilityStatus(selectedCorridor, mekoEnabled)}
-                        compact
-                      />
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="text-xs text-slate-400">
-                      {loading ? 'Loading corridor intelligence...' : 'Select a corridor to inspect'}
-                    </div>
-                  )}
-
-                  <div className="grid grid-cols-3 gap-1 bg-slate-900 p-1 rounded-lg border border-slate-800">
-                    <button
-                      onClick={() => setRightTab('analytics')}
-                      className={`py-1.5 px-2 rounded text-xs font-medium flex items-center justify-center gap-1.5 transition ${
-                        rightTab === 'analytics'
-                          ? 'bg-emerald-600 text-white shadow'
-                          : 'text-slate-400 hover:text-slate-200'
-                      }`}
-                    >
-                      <Calculator className="w-3.5 h-3.5" />
-                      <span>Evidence &amp; Score</span>
-                    </button>
-
-                    <button
-                      onClick={() => setRightTab('interventions')}
-                      className={`py-1.5 px-2 rounded text-xs font-medium flex items-center justify-center gap-1.5 transition ${
-                        rightTab === 'interventions'
-                          ? 'bg-emerald-600 text-white shadow'
-                          : 'text-slate-400 hover:text-slate-200'
-                      }`}
-                    >
-                      <Wrench className="w-3.5 h-3.5" />
-                      <span>Interventions (5)</span>
-                    </button>
-
-                    <button
-                      onClick={() => setRightTab('districts')}
-                      className={`py-1.5 px-2 rounded text-xs font-medium flex items-center justify-center gap-1.5 transition ${
-                        rightTab === 'districts'
-                          ? 'bg-emerald-600 text-white shadow'
-                          : 'text-slate-400 hover:text-slate-200'
-                      }`}
-                    >
-                      <BarChart3 className="w-3.5 h-3.5" />
-                      <span>Districts (11)</span>
-                    </button>
-                  </div>
-                </div>
-
-                <div className="flex-1 overflow-y-auto p-3.5">
-                  {rightTab === 'analytics' && (
-                    <CorridorAnalyticalDetail
-                      corridor={selectedCorridor}
-                      sensitivityRow={activeSensitivityRow}
-                      activeScenario={activeScenario}
-                      mekoEnabled={mekoEnabled}
-                    />
-                  )}
-
-                  {rightTab === 'interventions' && (
-                    <InterventionPlannerPanel corridor={selectedCorridor} mekoEnabled={mekoEnabled} />
-                  )}
-
-                  {rightTab === 'districts' && (
-                    <div className="space-y-3 text-xs">
-                      <div className="bg-slate-950/90 border border-slate-800 rounded-lg p-3">
-                        <div className="font-bold text-slate-100">
-                          NCT Delhi District Climate &amp; Vulnerability Matrix
-                        </div>
-                        <p className="text-[11px] text-slate-400 mt-0.5">
-                          Click any district row to filter corridors on the map and ranking panel.
-                        </p>
-                      </div>
-
-                      <div className="space-y-2">
-                        {districtsSummary.map((d) => {
-                          const isSelected =
-                            selectedDistrict !== 'All Districts' &&
-                            selectedDistrict.toLowerCase() === d.district.toLowerCase();
-                          return (
-                            <div
-                              key={d.district}
-                              onClick={() =>
-                                setSelectedDistrict(isSelected ? 'All Districts' : d.district)
-                              }
-                              className={`p-3 rounded-lg border cursor-pointer transition ${
-                                isSelected
-                                  ? 'bg-emerald-950/40 border-emerald-500'
-                                  : 'bg-slate-950/80 border-slate-800 hover:bg-slate-900'
-                              }`}
-                            >
-                              <div className="flex items-center justify-between">
-                                <div>
-                                  <span className="font-bold text-slate-100">{d.district}</span>
-                                  <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">
-                                    {d.corridor_count} Corridors ({d.total_corridor_length_km} km)
-                                  </span>
-                                </div>
-                                <span className="font-mono font-bold text-emerald-400">
-                                  Mean Score: {d.mean_priority_score?.toFixed(3)}
-                                </span>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
             )}
-          </div>
-          </div>
-        )}
 
-        <Suspense fallback={<ViewFallback />}>
-        {/* View 5: Intervention Optimizer (MILP) */}
-        {activeView === 'optimizer' && (
-          <InterventionOptimizerView
-            selectedCorridor={selectedCorridor}
-            mekoEnabled={mekoEnabled}
-            onToggleMeko={setMekoEnabled}
-          />
-        )}
+            {/* Page 3: Corridor Intelligence & Comparison */}
+            {activePage === 'corridors' && (
+              <CorridorsView
+                corridors={corridors}
+                districts={districts}
+                selectedDistrict={selectedDistrict}
+                onSelectDistrict={setSelectedDistrict}
+                selectedCorridor={selectedCorridor}
+                onSelectCorridor={setSelectedCorridor}
+                activeScenario={activeScenario}
+                onSelectScenario={setActiveScenario}
+                whatIfHeatWeight={whatIfHeatWeight}
+                onChangeWhatIfHeatWeight={setWhatIfHeatWeight}
+                sensitivityData={sensitivityData}
+                onNavigate={handleNavigate}
+              />
+            )}
 
-        {/* View 6: Climate Procurement Studio (IOMETE) */}
-        {activeView === 'procurement' && (
-          <ProcurementStudioView
-            selectedCorridor={selectedCorridor}
-            mekoEnabled={mekoEnabled}
-            onToggleMeko={setMekoEnabled}
-          />
-        )}
+            {/* Page 4: Canopy & Hydrology */}
+            {activePage === 'canopy' && (
+              <CanopyHydrologyView
+                statsSummary={statsSummary}
+                districtsSummary={districtsSummary}
+                selectedDistrict={selectedDistrict}
+                onSelectDistrict={setSelectedDistrict}
+                onNavigate={handleNavigate}
+              />
+            )}
 
-        {/* View 7: AI Planning Assistant (Google Gemini 3.8 Flash) */}
-        {activeView === 'agent' && (
-          <AiPlanningAssistantView
-            selectedCorridor={selectedCorridor}
-            mekoEnabled={mekoEnabled}
-            onToggleMeko={setMekoEnabled}
-          />
-        )}
+            {/* Page 5: Scenario Lab */}
+            {activePage === 'scenarios' && (
+              <ScenarioLabView
+                activeScenario={activeScenario}
+                onSelectScenario={setActiveScenario}
+                whatIfHeatWeight={whatIfHeatWeight}
+                onChangeWhatIfHeatWeight={setWhatIfHeatWeight}
+                sensitivityData={sensitivityData}
+                onNavigate={handleNavigate}
+              />
+            )}
 
-        {/* View 8: Institutional Memory (Meko) */}
-        {activeView === 'meko' && (
-          <MekoMemoryStudioView
-            mekoEnabled={mekoEnabled}
-            onToggleMeko={setMekoEnabled}
-          />
-        )}
+            {/* Page 6: Decision Studio */}
+            {activePage === 'studio' && (
+              <DecisionStudioView
+                selectedCorridor={selectedCorridor}
+                corridors={corridors}
+                onSelectCorridor={setSelectedCorridor}
+                mekoEnabled={mekoEnabled}
+                onToggleMeko={() => setMekoEnabled(!mekoEnabled)}
+              />
+            )}
 
-        {/* View 9: Temporal Insights (Tiger Data / TimescaleDB) */}
-        {activeView === 'temporal' && (
-          <TemporalInsightsView selectedCorridor={selectedCorridor} />
-        )}
-
-        {/* View 10: Evidence, Social Equity & Data Provenance */}
-        {activeView === 'provenance' && (
-          <EquityAndProvenanceView
-            provenance={provenance}
-            statsSummary={statsSummary}
-          />
-        )}
-        </Suspense>
-      </div>
-
-      {/* Scientific Data Provenance & Integrity Modal (lazy-loaded on first open) */}
-      {provenanceModalOpen && (
-        <Suspense fallback={null}>
-          <DataProvenanceModal
-            open={provenanceModalOpen}
-            onClose={() => setProvenanceModalOpen(false)}
-            provenance={provenance}
-            statsSummary={statsSummary}
-          />
-        </Suspense>
+            {/* Page 7: Intelligence & Records */}
+            {activePage === 'records' && (
+              <RecordsView
+                selectedCorridor={selectedCorridor}
+                mekoEnabled={mekoEnabled}
+                onToggleMeko={() => setMekoEnabled(!mekoEnabled)}
+                provenance={provenance}
+                statsSummary={statsSummary}
+                onOpenProvenanceModal={() => setProvenanceModalOpen(true)}
+              />
+            )}
+          </main>
+        </div>
       )}
+
+      {/* Accessible "Veins of Life" 7-Stage Storytelling Modal */}
+      <VeinsOfLifeModal
+        isOpen={isVeinsStoryOpen}
+        onClose={() => setIsVeinsStoryOpen(false)}
+        onSelectCorridor={(id) => {
+          const found = corridors.find((c) => c.id === id || c.code === id);
+          if (found) setSelectedCorridor(found);
+          handleNavigate('map');
+        }}
+        onOpenStudioView={() => {
+          handleNavigate('studio');
+        }}
+      />
+
+      {/* Scientific Data Provenance & Integrity Modal */}
+      <DataProvenanceModal
+        open={provenanceModalOpen}
+        onClose={() => setProvenanceModalOpen(false)}
+        provenance={provenance}
+        statsSummary={statsSummary}
+      />
     </div>
   );
 }

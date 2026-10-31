@@ -12,6 +12,7 @@ export default defineConfig({
           'vendor-leaflet': ['leaflet', 'react-leaflet'],
           'vendor-recharts': ['recharts'],
           'vendor-icons': ['lucide-react'],
+          'vendor-three': ['three'],
         },
       },
     },
