@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import {
   BarChart,
   Bar,
@@ -16,7 +16,15 @@ import {
   Layers,
   Footprints,
   Info,
+  ThumbsUp,
+  MessageSquare,
+  Box,
+  Send,
+  Sparkles,
+  Loader2,
 } from 'lucide-react';
+import { api } from '../api/client';
+import Corridor3DViewer from './Corridor3DViewer';
 import {
   FeasibilityStatusBadge,
   ThermalSeparationCard,
@@ -110,6 +118,76 @@ function CorridorAnalyticalDetail({
     FEASIBILITY_STATUS_META[feasibilityStatus] ||
     FEASIBILITY_STATUS_META.FIELD_VERIFICATION_REQUIRED;
 
+  // Legacy Parity: Community Upvoting & Suggestions State
+  const [upvotes, setUpvotes] = useState(0);
+  const [hasUpvoted, setHasUpvoted] = useState(false);
+  const [isUpvoting, setIsUpvoting] = useState(false);
+
+  const [suggestions, setSuggestions] = useState([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [newSuggestionText, setNewSuggestionText] = useState('');
+  const [submittingSuggestion, setSubmittingSuggestion] = useState(false);
+
+  // Legacy Parity: 3D Physical Cross-Section Viewer
+  const [show3DViewer, setShow3DViewer] = useState(false);
+
+  useEffect(() => {
+    if (!corridor) return;
+    const cid = corridor.code || corridor.id;
+    api
+      .getCorridorUpvotes(cid)
+      .then((res) => {
+        setUpvotes(res.upvotes || 0);
+      })
+      .catch(() => {});
+
+    api
+      .getCorridorSuggestions(cid)
+      .then((res) => {
+        setSuggestions(res.suggestions || []);
+      })
+      .catch(() => {});
+  }, [corridor]);
+
+  const handleUpvote = useCallback(async () => {
+    if (!corridor || isUpvoting || hasUpvoted) return;
+    setIsUpvoting(true);
+    const cid = corridor.code || corridor.id;
+    try {
+      const res = await api.upvoteCorridor(cid);
+      setUpvotes(res.upvotes || upvotes + 1);
+      setHasUpvoted(true);
+    } catch (err) {
+      console.error('Upvote failed:', err);
+    } finally {
+      setIsUpvoting(false);
+    }
+  }, [corridor, isUpvoting, hasUpvoted, upvotes]);
+
+  const handleSubmitSuggestion = useCallback(async (e) => {
+    e.preventDefault();
+    if (!corridor || !newSuggestionText.trim() || submittingSuggestion) return;
+    setSubmittingSuggestion(true);
+    const cid = corridor.code || corridor.id;
+    try {
+      const res = await api.addCorridorSuggestion(cid, newSuggestionText.trim());
+      setSuggestions((prev) => [
+        {
+          id: res.id,
+          text: newSuggestionText.trim(),
+          upvotes: 0,
+          created_at: new Date().toISOString(),
+        },
+        ...prev,
+      ]);
+      setNewSuggestionText('');
+    } catch (err) {
+      console.error('Submit suggestion failed:', err);
+    } finally {
+      setSubmittingSuggestion(false);
+    }
+  }, [corridor, newSuggestionText, submittingSuggestion]);
+
   return (
     <div className="space-y-4 text-xs">
       {/* Evidence Passport Action Banner */}
@@ -128,6 +206,116 @@ function CorridorAnalyticalDetail({
           View Passport
         </button>
       </div>
+
+      {/* Community Participation & 3D Cross-Section Action Row */}
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={handleUpvote}
+          disabled={hasUpvoted || isUpvoting}
+          className={`px-3 py-1.5 rounded-lg font-semibold text-xs flex items-center gap-1.5 transition border ${
+            hasUpvoted
+              ? 'bg-emerald-500/20 border-emerald-400 text-emerald-300'
+              : 'bg-slate-900 hover:bg-slate-800 border-slate-700 text-slate-200'
+          }`}
+          title="Upvote this corridor to demonstrate citizen greening demand"
+        >
+          <ThumbsUp className={`w-3.5 h-3.5 ${hasUpvoted ? 'text-emerald-400 fill-emerald-400' : 'text-slate-400'}`} />
+          <span>{hasUpvoted ? 'Upvoted' : 'Upvote Corridor'} ({upvotes})</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setShow3DViewer(!show3DViewer)}
+          className={`px-3 py-1.5 rounded-lg font-semibold text-xs flex items-center gap-1.5 transition border ${
+            show3DViewer
+              ? 'bg-emerald-600 border-emerald-400 text-white shadow'
+              : 'bg-slate-900 hover:bg-slate-800 border-slate-700 text-slate-200'
+          }`}
+          title="Toggle interactive 3D physical cross-section preview"
+        >
+          <Box className="w-3.5 h-3.5 text-emerald-400" />
+          <span>3D Cross-Section</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setShowSuggestions(!showSuggestions)}
+          className={`px-3 py-1.5 rounded-lg font-semibold text-xs flex items-center gap-1.5 transition border ${
+            showSuggestions
+              ? 'bg-emerald-600 border-emerald-400 text-white shadow'
+              : 'bg-slate-900 hover:bg-slate-800 border-slate-700 text-slate-200'
+          }`}
+          title="View and submit citizen suggestions for this corridor"
+        >
+          <MessageSquare className="w-3.5 h-3.5 text-amber-400" />
+          <span>Suggestions ({suggestions.length})</span>
+        </button>
+      </div>
+
+      {/* 3D Corridor Cross-Section Viewer Panel */}
+      {show3DViewer && (
+        <div className="space-y-1.5">
+          <Corridor3DViewer corridor={corridor} height="280px" />
+        </div>
+      )}
+
+      {/* Community Suggestions Section */}
+      {showSuggestions && (
+        <div className="bg-slate-950/90 border border-slate-800 rounded-xl p-3 space-y-3">
+          <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+            <span className="font-bold text-slate-200 flex items-center gap-1.5">
+              <MessageSquare className="w-3.5 h-3.5 text-amber-400" />
+              Community Citizen Suggestions
+            </span>
+            <span className="text-[10px] text-slate-400">Rate limit: 3/hr per corridor</span>
+          </div>
+
+          <form onSubmit={handleSubmitSuggestion} className="space-y-2">
+            <div className="relative">
+              <textarea
+                value={newSuggestionText}
+                onChange={(e) => setNewSuggestionText(e.target.value)}
+                maxLength={300}
+                placeholder="Suggest a specific greening, shade pergola, or water point intervention for this corridor..."
+                rows={2}
+                className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-slate-100 placeholder:text-slate-400 focus:outline-none focus:border-emerald-500 resize-none"
+              />
+              <span className="absolute bottom-1.5 right-2 text-[9px] text-slate-400">
+                {newSuggestionText.length}/300
+              </span>
+            </div>
+            <div className="flex justify-end">
+              <button
+                type="submit"
+                disabled={!newSuggestionText.trim() || submittingSuggestion}
+                className="px-3 py-1 rounded bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-semibold flex items-center gap-1 transition"
+              >
+                {submittingSuggestion ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
+                Submit Suggestion
+              </button>
+            </div>
+          </form>
+
+          <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+            {suggestions.length === 0 ? (
+              <div className="text-center py-3 text-slate-400 text-xs">
+                No citizen suggestions submitted yet. Be the first to propose an intervention!
+              </div>
+            ) : (
+              suggestions.map((s) => (
+                <div key={s.id} className="bg-slate-900/80 border border-slate-800 p-2.5 rounded-lg space-y-1">
+                  <div className="text-slate-200 text-xs">{s.text}</div>
+                  <div className="flex items-center justify-between text-[10px] text-slate-400 pt-1 border-t border-slate-800/60">
+                    <span>{new Date(s.created_at).toLocaleDateString()}</span>
+                    <span className="text-emerald-400 font-semibold">👍 {s.upvotes || 0} votes</span>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
       {/* Section 6C & 6D: Tri-Vector Evidence Cards (Never Collapsed Into One Score) */}
       <div
         className="space-y-2"

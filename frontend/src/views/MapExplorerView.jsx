@@ -26,6 +26,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import InteractiveMap from '../components/InteractiveMap';
+import LocationSearch from '../components/LocationSearch';
 import CorridorAnalyticalDetail from '../components/CorridorAnalyticalDetail';
 import InterventionPlannerPanel from '../components/InterventionPlannerPanel';
 
@@ -46,6 +47,7 @@ export default function MapExplorerView({
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [drawerTab, setDrawerTab] = useState('summary'); // 'summary' | 'interventions'
+  const [targetLocation, setTargetLocation] = useState(null);
 
   const filteredCorridors = corridors.filter((c) => {
     const matchesSearch =
@@ -97,6 +99,9 @@ export default function MapExplorerView({
 
         {/* Center / Right Quick Actions */}
         <div className="flex items-center gap-2">
+          {/* Location Search Bar across Delhi */}
+          <LocationSearch onLocationFound={(loc) => setTargetLocation(loc)} />
+
           {/* Quick Search */}
           <div className="relative hidden md:block">
             <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -105,7 +110,7 @@ export default function MapExplorerView({
               placeholder="Search 44 corridors..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-8 pr-3 py-1 text-xs bg-[#12392B]/50 border border-white/10 rounded-xl text-white placeholder:text-slate-400 focus:outline-none focus:border-emerald-400 w-48"
+              className="pl-8 pr-3 py-1 text-xs bg-[#12392B]/50 border border-white/10 rounded-xl text-white placeholder:text-slate-400 focus:outline-none focus:border-emerald-400 w-40"
             />
           </div>
 
@@ -140,6 +145,7 @@ export default function MapExplorerView({
           onSelectDistrict={onSelectDistrict}
           aqiStations={aqiStations}
           rasterZones={rasterZones}
+          targetLocation={targetLocation}
         />
 
         {/* Collapsible Left Filter Drawer */}

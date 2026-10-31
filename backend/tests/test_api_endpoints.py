@@ -100,3 +100,37 @@ def test_interventions_aqi_and_stats_endpoints():
     assert pt_data["lst_native_1km"] is not None
     assert pt_data["lst_display_10m"] is not None
     assert pt_data["ndvi"] is not None
+
+
+def test_legacy_parity_roads_and_community_endpoints():
+    # 1. /api/roads/simple
+    roads = client.get("/api/roads/simple")
+    assert roads.status_code == 200
+    r_data = roads.json()
+    assert r_data["type"] == "FeatureCollection"
+    assert len(r_data["features"]) > 0
+
+    # 2. Upvotes
+    c_resp = client.get("/api/corridors")
+    cid = c_resp.json()["features"][0]["properties"]["id"]
+
+    upvotes = client.get(f"/api/corridors/{cid}/upvotes")
+    assert upvotes.status_code == 200
+    u_data = upvotes.json()
+    assert "upvotes" in u_data
+    init_count = u_data["upvotes"]
+
+    post_up = client.post(f"/api/corridors/{cid}/upvote")
+    assert post_up.status_code == 200
+    assert post_up.json()["upvotes"] == init_count + 1
+
+    # 3. Suggestions
+    suggs = client.get(f"/api/corridors/{cid}/suggestions")
+    assert suggs.status_code == 200
+    assert "suggestions" in suggs.json()
+
+    post_sugg = client.post(f"/api/corridors/{cid}/suggestions", json={"text": "Add solar shade canopies"})
+    assert post_sugg.status_code == 200
+    assert post_sugg.json()["success"] is True
+
+

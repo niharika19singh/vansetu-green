@@ -142,3 +142,43 @@ test('Delhi roads GeoJSON FeatureCollection contains exactly 44 validated LineSt
     assert.ok(lon >= 76.7 && lon <= 77.5, `Longitude ${lon} out of bounds for ${feat.properties.name}`);
   }
 });
+
+test('Legacy feature parity: LocationSearch, Corridor3DViewer, and 10-layer InteractiveMap overlays are verified', () => {
+  // 1. LocationSearch component
+  const locPath = path.join(frontendRoot, 'src/components/LocationSearch.jsx');
+  assert.ok(fs.existsSync(locPath), 'LocationSearch.jsx must exist');
+  const locSrc = fs.readFileSync(locPath, 'utf-8');
+  assert.ok(locSrc.includes('DELHI_LANDMARKS'), 'LocationSearch must include offline curated Delhi landmarks');
+  assert.ok(locSrc.includes('nominatim.openstreetmap.org'), 'LocationSearch must support live OSM geocoding');
+  assert.ok(locSrc.includes('onSelectLocation'), 'LocationSearch must trigger location selection callback');
+
+  // 2. Corridor3DViewer component
+  const threeDPath = path.join(frontendRoot, 'src/components/Corridor3DViewer.jsx');
+  assert.ok(fs.existsSync(threeDPath), 'Corridor3DViewer.jsx must exist');
+  const threeDSrc = fs.readFileSync(threeDPath, 'utf-8');
+  assert.ok(threeDSrc.includes('three'), 'Corridor3DViewer must import Three.js');
+  assert.ok(threeDSrc.includes('PerspectiveCamera'), 'Corridor3DViewer must use PerspectiveCamera');
+  assert.ok(threeDSrc.includes('dispose'), 'Corridor3DViewer must properly clean up WebGL resources');
+
+  // 3. InteractiveMap 10-layer overlays and reference layers
+  const mapPath = path.join(frontendRoot, 'src/components/InteractiveMap.jsx');
+  assert.ok(fs.existsSync(mapPath), 'InteractiveMap.jsx must exist');
+  const mapSrc = fs.readFileSync(mapPath, 'utf-8');
+  assert.ok(mapSrc.includes('showRoadsOverlay'), 'InteractiveMap must include Roads Reference Overlay toggle');
+  assert.ok(mapSrc.includes('showParks'), 'InteractiveMap must include Parks & Green Spaces toggle');
+  assert.ok(mapSrc.includes('showResidential'), 'InteractiveMap must include Residential Planning Zones toggle');
+  assert.ok(mapSrc.includes('showRoadNetwork'), 'InteractiveMap must include Walkable Road Network toggle');
+  assert.ok(mapSrc.includes('World_Transportation'), 'InteractiveMap must include Esri World_Transportation tiles');
+  assert.ok(mapSrc.includes('World_Dark_Gray_Reference'), 'InteractiveMap must include crisp Esri label tiles');
+  assert.ok(mapSrc.includes('Fit Corridor'), 'InteractiveMap must include Fit Corridor action pill');
+  assert.ok(mapSrc.includes('Reset View'), 'InteractiveMap must include Reset View action pill');
+
+  // 4. CorridorAnalyticalDetail community feedback and 3D viewer
+  const detailPath = path.join(frontendRoot, 'src/components/CorridorAnalyticalDetail.jsx');
+  assert.ok(fs.existsSync(detailPath), 'CorridorAnalyticalDetail.jsx must exist');
+  const detailSrc = fs.readFileSync(detailPath, 'utf-8');
+  assert.ok(detailSrc.includes('upvoteCorridor'), 'Must support corridor upvoting');
+  assert.ok(detailSrc.includes('getCorridorSuggestions'), 'Must support corridor suggestions');
+  assert.ok(detailSrc.includes('Corridor3DViewer'), 'Must embed Corridor3DViewer');
+});
+

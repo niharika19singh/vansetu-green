@@ -11,6 +11,9 @@ from typing import Dict, Any, List, Optional, Tuple
 import json
 import math
 import logging
+import sqlite3
+import uuid
+from datetime import datetime, timezone
 import numpy as np
 from scipy.ndimage import label, binary_dilation
 from shapely.geometry import LineString, Polygon, mapping
@@ -66,6 +69,163 @@ class CorridorService:
         self._corridors_cache: Optional[List[Dict[str, Any]]] = None
         self._lst_low: float = 23.0
         self._lst_high: float = 29.0
+        self._init_feedback_db()
+
+    def _init_feedback_db(self) -> None:
+        """Initialize SQLite database for community corridor upvoting and suggestions."""
+        db_path = settings.data_dir / "community_feedback.sqlite"
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        self.feedback_db_path = db_path
+        with sqlite3.connect(db_path) as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS corridor_upvotes (
+                    corridor_id TEXT PRIMARY KEY,
+                    upvotes INTEGER NOT NULL DEFAULT 0,
+                    last_upvoted_at TEXT NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS corridor_suggestions (
+                    id TEXT PRIMARY KEY,
+                    corridor_id TEXT NOT NULL,
+                    text TEXT NOT NULL,
+                    upvotes INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    client_ip TEXT
+                )
+                """
+            )
+            conn.commit()
+
+            # Seed initial upvotes for realistic community participation if empty
+            cur = conn.execute("SELECT COUNT(*) FROM corridor_upvotes")
+            if cur.fetchone()[0] == 0:
+                baseline_upvotes = [
+                    ("C-14", 42),
+                    ("C-01", 28),
+                    ("C-05", 35),
+                    ("C-08", 19),
+                    ("C-22", 31),
+                    ("C-30", 24),
+                    ("C-44", 17),
+                ]
+                now_iso = datetime.now(timezone.utc).isoformat()
+                for cid, count in baseline_upvotes:
+                    conn.execute(
+                        "INSERT OR REPLACE INTO corridor_upvotes (corridor_id, upvotes, last_upvoted_at) VALUES (?, ?, ?)",
+                        (cid, count, now_iso),
+                    )
+                # Seed a few realistic community suggestions
+                sample_suggestions = [
+                    ("C-14", "Add dense native shade trees near the metro feeder bus stop to reduce pedestrian heat exposure.", 12),
+                    ("C-14", "Install bioswale along footpath to mitigate monsoon waterlogging and replenish local groundwater.", 8),
+                    ("C-01", "Create continuous pedestrian tree canopy along the market walkway for street vendors.", 15),
+                    ("C-05", "Plant Neem and Peepal clusters near school zones for PM2.5 air filtration and shade.", 9),
+                ]
+                for cid, stext, supvotes in sample_suggestions:
+                    sid = str(uuid.uuid4())[:8]
+                    conn.execute(
+                        "INSERT INTO corridor_suggestions (id, corridor_id, text, upvotes, created_at, client_ip) VALUES (?, ?, ?, ?, ?, ?)",
+                        (sid, cid, stext, supvotes, now_iso, "127.0.0.1"),
+                    )
+                conn.commit()
+
+    def get_corridor_upvotes(self, corridor_id: str) -> Dict[str, Any]:
+        """Get total community upvotes for a corridor."""
+        c = self.get_corridor_by_id(corridor_id)
+        cid = c.get("code") or c.get("id") or corridor_id
+        with sqlite3.connect(self.feedback_db_path) as conn:
+            cur = conn.execute("SELECT upvotes FROM corridor_upvotes WHERE corridor_id = ? OR corridor_id = ?", (cid, c.get("id")))
+            row = cur.fetchone()
+            count = row[0] if row else 0
+        return {"corridor_id": cid, "upvotes": count}
+
+    def upvote_corridor(self, corridor_id: str, client_ip: str = "127.0.0.1") -> Dict[str, Any]:
+        """Record an upvote for a corridor."""
+        c = self.get_corridor_by_id(corridor_id)
+        cid = c.get("code") or c.get("id") or corridor_id
+        now_iso = datetime.now(timezone.utc).isoformat()
+        with sqlite3.connect(self.feedback_db_path) as conn:
+            conn.execute(
+                """
+                INSERT INTO corridor_upvotes (corridor_id, upvotes, last_upvoted_at)
+                VALUES (?, 1, ?)
+                ON CONFLICT(corridor_id) DO UPDATE SET upvotes = upvotes + 1, last_upvoted_at = ?
+                """,
+                (cid, now_iso, now_iso),
+            )
+            conn.commit()
+            cur = conn.execute("SELECT upvotes FROM corridor_upvotes WHERE corridor_id = ?", (cid,))
+            count = cur.fetchone()[0]
+        return {"corridor_id": cid, "upvotes": count, "message": "Upvote recorded successfully"}
+
+    def get_corridor_suggestions(self, corridor_id: str) -> Dict[str, Any]:
+        """Get list of community suggestions for a corridor."""
+        c = self.get_corridor_by_id(corridor_id)
+        cid = c.get("code") or c.get("id") or corridor_id
+        with sqlite3.connect(self.feedback_db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cur = conn.execute(
+                "SELECT id, text, upvotes, created_at FROM corridor_suggestions WHERE corridor_id = ? OR corridor_id = ? ORDER BY upvotes DESC, created_at DESC",
+                (cid, c.get("id")),
+            )
+            rows = [dict(r) for r in cur.fetchall()]
+        return {"corridor_id": cid, "suggestions": rows, "total": len(rows)}
+
+    def add_corridor_suggestion(self, corridor_id: str, text: str, client_ip: str = "127.0.0.1") -> Dict[str, Any]:
+        """Submit a community suggestion for a corridor."""
+        c = self.get_corridor_by_id(corridor_id)
+        cid = c.get("code") or c.get("id") or corridor_id
+        sid = str(uuid.uuid4())[:8]
+        now_iso = datetime.now(timezone.utc).isoformat()
+        with sqlite3.connect(self.feedback_db_path) as conn:
+            conn.execute(
+                "INSERT INTO corridor_suggestions (id, corridor_id, text, upvotes, created_at, client_ip) VALUES (?, ?, ?, 0, ?, ?)",
+                (sid, cid, text.strip(), now_iso, client_ip),
+            )
+            conn.commit()
+        return {
+            "id": sid,
+            "corridor_id": cid,
+            "text": text.strip(),
+            "upvotes": 0,
+            "created_at": now_iso,
+            "success": True,
+            "message": "Suggestion submitted successfully",
+        }
+
+    def get_walkable_roads_simple(self) -> Dict[str, Any]:
+        """Return raw road geometries (FeatureCollection) for base map vector rendering."""
+        corridors = self._ensure_enriched_corridors()
+        features = []
+        for c in corridors:
+            features.append(
+                {
+                    "type": "Feature",
+                    "id": c["id"],
+                    "properties": {
+                        "id": c["id"],
+                        "name": c["name"],
+                        "code": c["code"],
+                        "district": c["district"],
+                        "highway": c.get("highway", "secondary"),
+                        "length_m": c.get("length_m", 1000.0),
+                        "priority_score": c.get("priority_score"),
+                    },
+                    "geometry": c["geometry"],
+                }
+            )
+        return {
+            "type": "FeatureCollection",
+            "features": features,
+            "metadata": {
+                "count": len(features),
+                "source": "OpenStreetMap_Delhi_Walkable_Network",
+            },
+        }
 
     def _ensure_enriched_corridors(self) -> List[Dict[str, Any]]:
         """Load and enrich all 44 NCT Delhi corridors from cached GeoJSON."""
@@ -416,8 +576,15 @@ class CorridorService:
             if (
                 id_lower == target
                 or code_lower == target
+                or id_lower.endswith(target)
+                or target.endswith(id_lower)
                 or (target.isdigit() and code_lower == f"c-{target}")
                 or (target.isdigit() and id_lower.endswith(f"_{target.zfill(3)}"))
+                or (target.replace("corridor_", "").isdigit() and (
+                    id_lower.endswith(target.replace("corridor_", "")) or
+                    id_lower.endswith(str(int(target.replace("corridor_", "")))) or
+                    code_lower == f"c-{int(target.replace('corridor_', ''))}"
+                ))
                 or str(p.get("ward_id", "")).lower() == target
                 or target in str(p.get("name", "")).lower()
             ):

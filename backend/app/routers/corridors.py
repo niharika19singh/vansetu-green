@@ -3,7 +3,7 @@ VanSetu GreenTech — Corridor Prioritization, Sensitivity & District Router.
 """
 import json
 from typing import Optional, Dict
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from app.config import settings
@@ -179,3 +179,40 @@ def explain_single_corridor(corridor_id: str, scenario: str = Query("baseline"))
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+class SuggestionCreate(BaseModel):
+    text: str = Field(..., min_length=3, max_length=300, description="Community suggestion text")
+
+
+@router.get("/roads/simple")
+def get_roads_simple():
+    """Get raw walkable road geometries for base map vector rendering."""
+    return corridor_service.get_walkable_roads_simple()
+
+
+@router.get("/corridors/{corridor_id}/upvotes")
+def get_corridor_upvotes(corridor_id: str):
+    """Get community upvote count for a corridor."""
+    return corridor_service.get_corridor_upvotes(corridor_id)
+
+
+@router.post("/corridors/{corridor_id}/upvote")
+def upvote_corridor(corridor_id: str, request: Request):
+    """Cast an upvote for a corridor."""
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    return corridor_service.upvote_corridor(corridor_id, client_ip)
+
+
+@router.get("/corridors/{corridor_id}/suggestions")
+def get_corridor_suggestions(corridor_id: str):
+    """Get community suggestions for a corridor."""
+    return corridor_service.get_corridor_suggestions(corridor_id)
+
+
+@router.post("/corridors/{corridor_id}/suggestions")
+def add_corridor_suggestion(corridor_id: str, body: SuggestionCreate, request: Request):
+    """Submit a community suggestion for a corridor."""
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    return corridor_service.add_corridor_suggestion(corridor_id, body.text, client_ip)
+

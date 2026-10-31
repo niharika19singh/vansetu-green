@@ -82,6 +82,22 @@ export const api = {
   getCorridorDetail: (corridorId, scenario = 'baseline') =>
     requestJson(`/api/corridors/${encodeURIComponent(corridorId)}?scenario=${encodeURIComponent(scenario)}`),
 
+  // Legacy Parity Endpoints: Walkable roads, community upvotes, and corridor suggestions
+  getRoadsSimple: () => requestJson('/api/roads/simple'),
+  getCorridorUpvotes: (corridorId) =>
+    requestJson(`/api/corridors/${encodeURIComponent(corridorId)}/upvotes`),
+  upvoteCorridor: (corridorId) =>
+    requestJson(`/api/corridors/${encodeURIComponent(corridorId)}/upvote`, {
+      method: 'POST',
+    }),
+  getCorridorSuggestions: (corridorId) =>
+    requestJson(`/api/corridors/${encodeURIComponent(corridorId)}/suggestions`),
+  addCorridorSuggestion: (corridorId, text) =>
+    requestJson(`/api/corridors/${encodeURIComponent(corridorId)}/suggestions`, {
+      method: 'POST',
+      body: JSON.stringify({ text }),
+    }),
+
   getScenarios: () => requestJson('/api/corridors/scenarios'),
 
   getSensitivityAnalysis: (scenario = 'baseline', district = null) => {
