@@ -1037,6 +1037,19 @@ class MekoService:
             new_ver = verification_status if verification_status is not None else row["verification_status"]
             new_ev = evidence_reference if evidence_reference is not None else row["evidence_reference"]
             struct_p = json.loads(row["structured_payload"] or "{}")
+
+            # P0 Requirement: Reject APPROVE for synthetic demonstration fixtures
+            is_synthetic_seed = (
+                memory_id in ("mem-survey-014", "mem-decision-c14-01", "mem-survey-001", "mem-draft-022")
+                or row["verification_status"] == "SYNTHETIC_DEMONSTRATION_SCENARIO"
+                or bool(struct_p.get("is_synthetic_demo"))
+            )
+            if is_synthetic_seed and verification_status in ("human_verified", "APPROVED"):
+                raise ValueError(
+                    "Approval Blocked: Synthetic demonstration fixtures cannot be approved or converted to genuine "
+                    "municipal institutional knowledge. Create a genuine field observation instead."
+                )
+
             struct_p["verification_status"] = new_ver
             struct_p["evidence_reference"] = new_ev
             now = _utc_now_iso()
@@ -1127,6 +1140,18 @@ class MekoService:
 
             dp_logical = row["datapack_logical"]
             self._enforce_datapack_access(dp_logical, agent_id)
+
+            struct_p = json.loads(row["structured_payload"] or "{}")
+            is_synthetic_seed = (
+                memory_id in ("mem-survey-014", "mem-decision-c14-01", "mem-survey-001", "mem-draft-022")
+                or row["verification_status"] == "SYNTHETIC_DEMONSTRATION_SCENARIO"
+                or bool(struct_p.get("is_synthetic_demo"))
+            )
+            if is_synthetic_seed:
+                raise ValueError(
+                    f"Promotion Blocked: Memory '{memory_id}' is a synthetic demonstration fixture and "
+                    "cannot be promoted to shared institutional knowledge."
+                )
 
             if row["verification_status"] != "human_verified":
                 raise ValueError(
@@ -1309,6 +1334,7 @@ class MekoService:
         scenario: str = "baseline",
         meko_enabled: bool = True,
         record_extracted_memory: bool = False,
+        include_demo_scenarios: bool = False,
     ) -> Dict[str, Any]:
         """
         Execute the 3-agent climate planning pipeline:
@@ -1381,19 +1407,29 @@ class MekoService:
             )
             recalled_decisions = dec_res["memories"]
 
-            # Extract site restrictions from verified knowledge or demonstration scenario memories
+            # Extract site restrictions: Normal mode enforces genuine human verification and ignores synthetic demo fixtures.
             restricted_set = set()
             for mem in recalled_knowledge + recalled_project_memories:
-                if mem["verification_status"] in ("human_verified", "SYNTHETIC_DEMONSTRATION_SCENARIO"):
-                    sp = mem.get("structured_payload", {})
-                    for r_int in sp.get("restricted_interventions", []):
-                        restricted_set.add(r_int)
-                    ev_ref = mem.get("evidence_reference")
-                    if ev_ref:
-                        recalled_evidence_refs.append(ev_ref)
-                        if "survey-014" in ev_ref or mem.get("memory_id") == "mem-survey-014":
-                            if "survey-014" not in recalled_evidence_refs:
-                                recalled_evidence_refs.append("survey-014")
+                v_stat = mem.get("verification_status")
+                sp = mem.get("structured_payload") or {}
+                is_demo = (
+                    v_stat == "SYNTHETIC_DEMONSTRATION_SCENARIO"
+                    or bool(sp.get("is_synthetic_demo"))
+                    or mem.get("memory_id") in ("mem-survey-014", "mem-decision-c14-01", "mem-survey-001", "mem-draft-022")
+                )
+                if is_demo and not include_demo_scenarios:
+                    continue
+                if not is_demo and v_stat != "human_verified":
+                    continue
+
+                for r_int in sp.get("restricted_interventions", []):
+                    restricted_set.add(r_int)
+                ev_ref = mem.get("evidence_reference")
+                if ev_ref:
+                    recalled_evidence_refs.append(ev_ref)
+                    if "survey-014" in ev_ref or mem.get("memory_id") == "mem-survey-014":
+                        if "survey-014" not in recalled_evidence_refs:
+                            recalled_evidence_refs.append("survey-014")
 
             if restricted_set:
                 site_restrictions_map[resolved_code] = sorted(list(restricted_set))
@@ -1557,10 +1593,12 @@ class MekoService:
         budget_inr_lakhs: Optional[float] = None,
         budget_lakh: Optional[float] = None,
         scenario: str = "baseline",
+        include_demo_scenarios: bool = True,
     ) -> Dict[str, Any]:
         """
         Run the exact same planning request with MEKO OFF and MEKO ON,
         proving that persistent Meko context changes the actual engineering recommendation.
+        Defaults to include_demo_scenarios=True to demonstrate the HackCBS seeded scenario.
         """
         effective_budget = budget_inr_lakhs if budget_inr_lakhs is not None else budget_lakh
         res_off = self.run_multi_agent_planning_workflow(
@@ -1570,6 +1608,7 @@ class MekoService:
             budget_inr_lakhs=effective_budget,
             scenario=scenario,
             meko_enabled=False,
+            include_demo_scenarios=include_demo_scenarios,
         )
         res_on = self.run_multi_agent_planning_workflow(
             user_query=user_query,
@@ -1578,6 +1617,7 @@ class MekoService:
             budget_inr_lakhs=effective_budget,
             scenario=scenario,
             meko_enabled=True,
+            include_demo_scenarios=include_demo_scenarios,
         )
 
         off_ids = [x["intervention_id"] for x in res_off["optimization_result"]["selected_interventions"]]
@@ -1735,12 +1775,14 @@ class MekoService:
         climate_priority: str = "heat_resilience",
         meko_enabled: bool = True,
         planner_id: str = "planner_niharika",
+        include_demo_scenarios: bool = False,
     ) -> Dict[str, Any]:
         return self.run_multi_agent_planning_workflow(
             corridor_id=corridor_id,
             ward_id=ward_id,
             budget_inr_lakhs=budget_lakh,
             meko_enabled=meko_enabled,
+            include_demo_scenarios=include_demo_scenarios,
         )
 
     def update_memory(

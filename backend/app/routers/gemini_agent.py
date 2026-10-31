@@ -26,6 +26,10 @@ class AgentPlanRequest(BaseModel):
     budget_lakh: float = Field(default=8.0, ge=0.5, le=5000.0)
     climate_priority: str = Field(default="heat_resilience")
     meko_enabled: bool = Field(default=True)
+    include_demo_scenarios: bool = Field(
+        default=False,
+        description="Explicit toggle to simulate synthetic demo scenarios (e.g. Survey-014). Defaults to False for normal planning.",
+    )
 
 
 class ToolInvokeRequest(BaseModel):
@@ -54,6 +58,7 @@ async def run_agent_planning_workflow(req: AgentPlanRequest) -> Dict[str, Any]:
         budget_lakh=req.budget_lakh,
         climate_priority=req.climate_priority,
         meko_enabled=req.meko_enabled,
+        include_demo_scenarios=req.include_demo_scenarios,
     )
 
 

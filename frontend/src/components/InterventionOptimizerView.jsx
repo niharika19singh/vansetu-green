@@ -18,6 +18,7 @@ export default function InterventionOptimizerView({
   const [budgetLakh, setBudgetLakh] = useState(8.0);
   const [climatePriority, setClimatePriority] = useState('heat_resilience');
   const [equityWeight, setEquityWeight] = useState(0.25);
+  const [includeDemoScenarios, setIncludeDemoScenarios] = useState(false);
   const [targetCorridorCode, setTargetCorridorCode] = useState(
     selectedCorridor?.code || 'C-14'
   );
@@ -39,6 +40,7 @@ export default function InterventionOptimizerView({
         climate_priority: climatePriority,
         equity_weight: Number(equityWeight),
         meko_enabled: mekoEnabled,
+        include_demo_scenarios: includeDemoScenarios,
       });
       setResult(res);
     } catch (err) {
@@ -46,7 +48,7 @@ export default function InterventionOptimizerView({
     } finally {
       setLoading(false);
     }
-  }, [budgetLakh, targetCorridorCode, climatePriority, equityWeight, mekoEnabled]);
+  }, [budgetLakh, targetCorridorCode, climatePriority, equityWeight, mekoEnabled, includeDemoScenarios]);
 
   useEffect(() => {
     executeOptimizer();
@@ -75,21 +77,41 @@ export default function InterventionOptimizerView({
           </p>
         </div>
 
-        {/* Meko Constraint Toggle */}
-        <div className="flex items-center gap-3 bg-slate-950 px-3 py-2 rounded-lg border border-slate-800">
-          <span className="text-xs font-medium text-slate-300">
-            Meko Institutional Site Memory:
-          </span>
-          <button
-            onClick={() => onToggleMeko(!mekoEnabled)}
-            className={`px-3 py-1 rounded-md text-xs font-bold transition ${
-              mekoEnabled
-                ? 'bg-emerald-600 text-white shadow'
-                : 'bg-slate-800 text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            {mekoEnabled ? 'MEKO ON (Recalls Survey-014)' : 'MEKO OFF (Stateless)'}
-          </button>
+        {/* Meko Constraint Toggle & Demo Scenario Simulator */}
+        <div className="flex flex-wrap items-center gap-3 bg-slate-950 px-3 py-2 rounded-lg border border-slate-800">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-slate-300">
+              Meko Memory:
+            </span>
+            <button
+              onClick={() => onToggleMeko(!mekoEnabled)}
+              className={`px-3 py-1 rounded-md text-xs font-bold transition ${
+                mekoEnabled
+                  ? 'bg-emerald-600 text-white shadow'
+                  : 'bg-slate-800 text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              {mekoEnabled ? 'MEKO ON' : 'MEKO OFF (Stateless)'}
+            </button>
+          </div>
+
+          {mekoEnabled && (
+            <div className="flex items-center gap-2 border-l border-slate-800 pl-3">
+              <span className="text-[11px] text-slate-400">
+                Demo Scenario (Survey-014):
+              </span>
+              <button
+                onClick={() => setIncludeDemoScenarios(!includeDemoScenarios)}
+                className={`px-2 py-0.5 rounded text-[11px] font-mono font-semibold transition ${
+                  includeDemoScenarios
+                    ? 'bg-amber-600/30 text-amber-300 border border-amber-500/50'
+                    : 'bg-slate-800 text-slate-400 hover:text-slate-300'
+                }`}
+              >
+                {includeDemoScenarios ? 'SIMULATING DEMO' : 'OFF (Verified Only)'}
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -214,17 +236,67 @@ export default function InterventionOptimizerView({
         </div>
       </div>
 
-      {/* Active Meko Site Constraints Alert */}
-      {result?.applied_site_restrictions?.length > 0 && (
-        <div className="bg-amber-950/40 border border-amber-500/40 rounded-xl p-3.5 text-xs flex items-start gap-3">
+      {/* Demo Scenario Simulation Warning Banner */}
+      {result?.demo_scenarios_active && (
+        <div className="bg-amber-950/40 border border-amber-500/50 rounded-xl p-3.5 text-xs flex items-start gap-3">
           <ShieldAlert className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
-          <div>
-            <div className="font-bold text-amber-200">
-              Meko Institutional Site Restriction Enforced (Evidence: {result.applied_site_restrictions[0].evidence_reference})
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-amber-200">
+                DEMONSTRATION SCENARIO ACTIVE (Synthetic Fixture Simulation)
+              </span>
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                SYNTHETIC DEMO ONLY
+              </span>
             </div>
-            <p className="text-amber-100/90 mt-0.5">
-              {result.applied_site_restrictions[0].reason}
+            <p className="text-amber-100/90 text-[11px]">
+              {result.demo_scenario_warning}
             </p>
+          </div>
+        </div>
+      )}
+
+      {/* Active Meko Site Constraints Details */}
+      {result?.applied_site_restrictions?.length > 0 && (
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-3.5 text-xs space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="font-bold text-slate-200 flex items-center gap-2">
+              <ShieldAlert className="w-4 h-4 text-emerald-400" />
+              <span>Enforced Site Restrictions ({result.applied_site_restrictions.length})</span>
+            </div>
+            <span className="text-[10px] text-slate-400 font-mono">
+              HiGHS MILP Pruning Constraints
+            </span>
+          </div>
+          <div className="space-y-2">
+            {result.applied_site_restrictions.map((restr, idx) => (
+              <div
+                key={`${restr.corridor_id}-${idx}`}
+                className="bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs space-y-1"
+              >
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <span className="font-semibold text-slate-200">
+                    Corridor: {restr.corridor_id} • Excluded: <code className="text-rose-300 font-mono">{restr.excluded_interventions?.join(', ')}</code>
+                  </span>
+                  <div className="flex items-center gap-1.5 text-[10px] font-mono">
+                    <span className={`px-1.5 py-0.5 rounded ${restr.is_synthetic_demo ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'}`}>
+                      {restr.is_synthetic_demo ? 'SYNTHETIC DEMO' : restr.verification_status}
+                    </span>
+                    <span className="text-slate-400">
+                      Datapack: {restr.source_datapack || 'vansetu-project-memory'}
+                    </span>
+                  </div>
+                </div>
+                <p className="text-slate-400 text-[11px]">
+                  {restr.reason}
+                </p>
+                {restr.evidence_reference && (
+                  <div className="text-[10px] font-mono text-slate-400">
+                    Evidence Ref: <span className="text-slate-300">{restr.evidence_reference}</span>
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         </div>
       )}

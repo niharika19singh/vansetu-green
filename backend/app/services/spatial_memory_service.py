@@ -164,6 +164,9 @@ def get_spatial_memory_pins(
         actual_ver = row_dict.get("verification_status") or "ACTIVE"
         badge_text = "SYNTHETIC DEMONSTRATION SCENARIO" if is_demo else f"MUNICIPAL RECORD ({actual_ver})"
 
+        # P0 Requirement: Exclude APPROVE and PROMOTE from available_lifecycle_actions for synthetic demo fixtures
+        lifecycle_actions = ["INSPECT", "FORGET"] if is_demo else ["APPROVE", "CORRECT", "PROMOTE", "FORGET", "SUPERSEDE"]
+
         pins.append({
             "memory_id": row_dict["memory_id"],
             "datapack_logical": row_dict["datapack_logical"],
@@ -191,7 +194,7 @@ def get_spatial_memory_pins(
             "observation_date": row_dict.get("observation_date"),
             "is_synthetic_demo": is_demo,
             "badge": badge_text,
-            "available_lifecycle_actions": ["APPROVE", "CORRECT", "PROMOTE", "FORGET", "SUPERSEDE"],
+            "available_lifecycle_actions": lifecycle_actions,
         })
 
     return {
@@ -227,10 +230,33 @@ def execute_spatial_memory_action(
 
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
-        mem_row = conn.execute("SELECT datapack_logical FROM meko_memories WHERE memory_id = ?", (memory_id,)).fetchone()
+        mem_row = conn.execute("SELECT * FROM meko_memories WHERE memory_id = ?", (memory_id,)).fetchone()
         if not mem_row:
             raise KeyError(f"Memory '{memory_id}' not found.")
         dp_logical = mem_row["datapack_logical"]
+        struct_p = {}
+        if mem_row["structured_payload"]:
+            try:
+                struct_p = json.loads(mem_row["structured_payload"])
+            except Exception:
+                struct_p = {}
+        is_synthetic = (
+            mem_row["memory_id"] in ("mem-survey-014", "mem-decision-c14-01", "mem-survey-001", "mem-draft-022")
+            or mem_row["verification_status"] == "SYNTHETIC_DEMONSTRATION_SCENARIO"
+            or bool(struct_p.get("is_synthetic_demo"))
+        )
+
+    # P0 Requirement: Reject APPROVE and PROMOTE for synthetic demonstration fixtures
+    if is_synthetic and act_upper == "APPROVE":
+        raise ValueError(
+            "Approval Blocked: Synthetic demonstration fixtures cannot be approved or converted to genuine "
+            "municipal institutional knowledge. Create a genuine field observation instead."
+        )
+    if is_synthetic and act_upper == "PROMOTE":
+        raise ValueError(
+            f"Promotion Blocked: Memory '{memory_id}' is a synthetic demonstration fixture and "
+            "cannot be promoted to shared institutional knowledge."
+        )
 
     # Enforce role-based agent identity compatible with Meko datapack boundaries
     if dp_logical == "vansetu-build":
@@ -350,7 +376,9 @@ def get_corridor_spatial_context_comparison(corridor_id: str) -> Dict[str, Any]:
         "retrieved_memories": active_pins,
     }
 
-    return {
+    has_demo_pin = any(p.get("is_synthetic_demo") for p in active_pins)
+
+    comparison_result = {
         "corridor_id": cid,
         "corridor_code": code,
         "corridor_name": corr.get("name"),
@@ -361,3 +389,9 @@ def get_corridor_spatial_context_comparison(corridor_id: str) -> Dict[str, Any]:
         },
         "recommendation_diverged": meko_off_rec["primary_recommendation"] != meko_on_rec["primary_recommendation"],
     }
+    if has_demo_pin:
+        comparison_result["simulation_notice"] = (
+            "DEMONSTRATION SCENARIO ACTIVE: Divergence driven by synthetic demo fixture (survey-014 / fictional utility line). "
+            "In genuine operations without verified municipal surveys, standard feasibility applies."
+        )
+    return comparison_result

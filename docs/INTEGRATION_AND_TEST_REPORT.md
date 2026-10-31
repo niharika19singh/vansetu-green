@@ -5,11 +5,11 @@
 This report documents the verification, scientific integrity remediation, performance optimization, and end-to-end automated testing of the 8 advanced research-backed features on the `vansetu-green` platform under branch `feature/climate-investment-intelligence`.
 
 - **Test Suite Results:**
-  - Backend Automated Test Suite: **72 passed in 7.16s (100% pass rate)**.
+  - Backend Automated Test Suite: **77 passed in 7.89s (100% pass rate)**.
   - Scientific Integrity Audit Suite (`test_scientific_integrity_audit.py`): **8 passed (100% pass rate)**.
-  - Final Remediation Audit Suite (`test_final_remediation_audit.py`): **13 passed (100% pass rate)**.
+  - Final Remediation Audit Suite (`test_final_remediation_audit.py`): **18 passed (100% pass rate)**.
   - Frontend Automated Test Suite: **4 passed in 87.1ms (100% pass rate)**.
-  - Frontend Production Build (`npm run build`): **Compiled cleanly in 2.20s (0 errors, 0 chunk warnings)**.
+  - Frontend Production Build (`npm run build`): **Compiled cleanly in 2.42s (0 errors, 0 chunk warnings)**.
 - **Bundle Optimization:**
   - Pre-optimization monolithic bundle: **907.24 kB** (triggered Vite chunk warning).
   - Post-optimization code-split entry bundle: **70.15 kB** (**92.3% reduction**).
@@ -118,3 +118,5 @@ dist/assets/vendor-recharts-BHsg0M1j.js                383.41 kB │ gzip: 105.3
 | **Segment Walkability & Pavement Audits** | Unverified pedestrian access explicit status; cool pavements set to `FIELD_VERIFICATION_REQUIRED` | `test_segment_suitability_unverified_walkability_and_cool_pavements` | **PASS** |
 | **Shade Gap Naming & Disclaimers** | Renamed to `is_unshaded_vegetation_gap`; planning parameters and comfort disclaimer added | `test_shade_continuity_gap_naming_and_planning_parameters` | **PASS** |
 | **Pareto Equity Traceability** | Traced social equity share directly to Census of India / Delhi Economic Survey | `test_pareto_optimizer_social_equity_traceable_provenance` | **PASS** |
+| **Optimizer Synthetic Memory Isolation** | `include_demo_scenarios` defaults to `False`; normal runs ignore synthetic records; explicit simulation mode returns warnings and restriction provenance | `test_normal_optimizer_ignores_synthetic_seed_memories`, `test_demo_optimizer_applies_synthetic_seed_memories_with_provenance_and_warning` | **PASS** |
+| **Approval & Promotion Bypass Closure** | Rejects `APPROVE` and `PROMOTE` on synthetic fixtures (`mem-survey-014`, etc.) with `ValueError`; UI lifecycle actions exclude approval/promotion | `test_synthetic_fixture_approval_blocked_in_meko_service`, `test_synthetic_fixture_promotion_blocked_in_meko_service`, `test_spatial_pins_lifecycle_actions_exclude_approve_and_promote_for_demo` | **PASS** |

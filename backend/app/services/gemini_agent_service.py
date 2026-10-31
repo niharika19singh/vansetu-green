@@ -139,6 +139,7 @@ def check_intervention_feasibility(
     corridor_id: str = "C-14",
     ward_id: str = "ward-12",
     meko_enabled: bool = True,
+    include_demo_scenarios: bool = False,
 ) -> Dict[str, Any]:
     """Check site constraints and engineering feasibility for a corridor using Meko memory."""
     corr = get_corridor_by_id(corridor_id) or get_corridor_by_id("C-14")
@@ -167,7 +168,18 @@ def check_intervention_feasibility(
     excluded: List[str] = []
     restrictions: List[Dict[str, Any]] = []
     for mem in recalled:
+        v_stat = mem.get("verification_status")
         sp = mem.get("structured_payload") or {}
+        is_demo = (
+            v_stat == "SYNTHETIC_DEMONSTRATION_SCENARIO"
+            or bool(sp.get("is_synthetic_demo"))
+            or mem.get("memory_id") in ("mem-survey-014", "mem-decision-c14-01", "mem-survey-001", "mem-draft-022")
+        )
+        if is_demo and not include_demo_scenarios:
+            continue
+        if not is_demo and v_stat != "human_verified":
+            continue
+
         r_ints = sp.get("restricted_interventions") or []
         txt_lower = (mem.get("content") or mem.get("content_text") or "").lower()
         if r_ints or "underground utility" in txt_lower or "66kv" in txt_lower or "tree-pit" in txt_lower:
@@ -182,6 +194,8 @@ def check_intervention_feasibility(
                     "reason": mem.get("content") or mem.get("content_text") or "",
                     "evidence_reference": mem.get("evidence_reference"),
                     "memory_id": mem.get("memory_id"),
+                    "verification_status": v_stat,
+                    "is_synthetic_demo": is_demo,
                 }
             )
 
@@ -190,11 +204,12 @@ def check_intervention_feasibility(
         "corridor_code": corr.get("code") if corr else corridor_id,
         "ward_id": resolved_ward,
         "meko_enabled": True,
+        "include_demo_scenarios": include_demo_scenarios,
         "recalled_memory_count": len(recalled),
         "excluded_interventions": excluded,
         "site_restrictions": restrictions,
         "feasibility_note": (
-            f"Recalled {len(recalled)} verified Meko memories. Excluded interventions due to subsurface constraints: {excluded}"
+            f"Recalled {len(recalled)} Meko memories. Excluded interventions due to subsurface constraints: {excluded}"
             if excluded
             else "Recalled Meko memories; no hard subsurface excavation exclusions active for this corridor."
         ),
@@ -243,6 +258,7 @@ def optimize_intervention_portfolio(
     budget_lakh: float = 8.0,
     climate_priority: str = "heat_resilience",
     meko_enabled: bool = True,
+    include_demo_scenarios: bool = False,
 ) -> Dict[str, Any]:
     """Run deterministic MILP budget optimization (`scipy.optimize.milp`) for the target corridor."""
     corr = get_corridor_by_id(corridor_id) or get_corridor_by_id("C-14")
@@ -250,6 +266,7 @@ def optimize_intervention_portfolio(
         corridor_id=corr["id"],
         ward_id=corr.get("ward_id", "ward-12"),
         meko_enabled=meko_enabled,
+        include_demo_scenarios=include_demo_scenarios,
     )
     return optimize_corridor_portfolio(
         corridors=[corr],
@@ -431,6 +448,7 @@ class GeminiAgentService:
         budget_lakh: float = 8.0,
         climate_priority: str = "heat_resilience",
         meko_enabled: bool = True,
+        include_demo_scenarios: bool = False,
     ) -> Dict[str, Any]:
         """
         Execute the full 5-step multi-tool climate planning workflow:
@@ -442,6 +460,8 @@ class GeminiAgentService:
            or deterministic structured synthesis grounded 100% in the tool outputs.
         """
         tool_trace: List[Dict[str, Any]] = []
+
+        eff_demo = include_demo_scenarios or ("survey-014" in prompt.lower()) or ("demo" in prompt.lower() and "scenario" in prompt.lower())
 
         def _invoke_tool(name: str, kwargs: Dict[str, Any]) -> Dict[str, Any]:
             fn = TOOL_REGISTRY[name]
@@ -463,7 +483,12 @@ class GeminiAgentService:
         )
         feasibility = _invoke_tool(
             "check_intervention_feasibility",
-            {"corridor_id": corridor_id, "ward_id": ward_id, "meko_enabled": meko_enabled},
+            {
+                "corridor_id": corridor_id,
+                "ward_id": ward_id,
+                "meko_enabled": meko_enabled,
+                "include_demo_scenarios": eff_demo,
+            },
         )
 
         # Step 2: Geospatial & Temporal Intelligence
@@ -484,6 +509,7 @@ class GeminiAgentService:
                 "budget_lakh": budget_lakh,
                 "climate_priority": climate_priority,
                 "meko_enabled": meko_enabled,
+                "include_demo_scenarios": eff_demo,
             },
         )
 

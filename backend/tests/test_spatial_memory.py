@@ -45,23 +45,33 @@ def test_corridor_spatial_context_comparison():
 
 
 def test_spatial_memory_lifecycle_action():
-    # Fetch pins first to get an existing memory_id
+    # Fetch pins first to get existing memory_ids
     pins_resp = client.get("/api/meko/spatial/pins")
     pins = pins_resp.json()["pins"]
-    mem_id = pins[0]["memory_id"]
+    demo_pin = next(p for p in pins if p["is_synthetic_demo"])
+    genuine_pin = next(p for p in pins if not p["is_synthetic_demo"])
 
-    # Test APPROVE action
-    resp = client.post("/api/meko/spatial/action", json={
-        "memory_id": mem_id,
+    # 1. P0 Requirement: Synthetic demonstration fixture APPROVE must be blocked
+    resp_demo = client.post("/api/meko/spatial/action", json={
+        "memory_id": demo_pin["memory_id"],
         "action": "APPROVE",
         "actor_agent": "test_agent",
     })
-    assert resp.status_code == 200
-    assert resp.json()["status"] == "success"
+    assert resp_demo.status_code == 400
+    assert "Approval Blocked" in resp_demo.json()["detail"]
 
-    # Test CORRECT action
+    # 2. Genuine non-synthetic memory APPROVE action succeeds
+    resp_gen = client.post("/api/meko/spatial/action", json={
+        "memory_id": genuine_pin["memory_id"],
+        "action": "APPROVE",
+        "actor_agent": "test_agent",
+    })
+    assert resp_gen.status_code == 200
+    assert resp_gen.json()["status"] == "success"
+
+    # 3. Test CORRECT action on genuine observation
     resp_corr = client.post("/api/meko/spatial/action", json={
-        "memory_id": mem_id,
+        "memory_id": genuine_pin["memory_id"],
         "action": "CORRECT",
         "actor_agent": "test_agent",
         "correction_text": "Updated field reality verified during joint PWD inspection.",

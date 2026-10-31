@@ -215,3 +215,113 @@ def test_pareto_optimizer_social_equity_traceable_provenance():
         assert "equity_provenance" in p
         assert "Census of India / Delhi Economic Survey" in p["equity_provenance"]["source"]
         assert len(p["equity_provenance"]["vulnerable_districts_evaluated"]) >= 5
+
+
+def test_normal_optimizer_ignores_synthetic_seed_memories():
+    """
+    P0 Regression Test: Normal optimization must apply only genuinely human_verified memories.
+    Synthetic demonstration fixtures (e.g. Survey-014 underground utility) must NOT change the
+    normal optimizer's feasible intervention set or exclude street trees on C-14.
+    """
+    from fastapi.testclient import TestClient
+    from app.main import app
+    client = TestClient(app)
+
+    # Normal run without demo scenarios (default)
+    res = client.post(
+        "/api/optimizer/run",
+        json={
+            "budget_lakh": 8.0,
+            "target_corridor_ids": ["C-14"],
+            "climate_priority": "heat_resilience",
+            "meko_enabled": True,
+            "include_demo_scenarios": False,
+        },
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert data["include_demo_scenarios"] is False
+    assert data["demo_scenarios_active"] is False
+    assert "demo_scenario_warning" not in data
+
+    # No synthetic demonstration restrictions applied
+    for restr in data.get("applied_site_restrictions", []):
+        assert restr.get("is_synthetic_demo") is not True
+
+    # Feasible set includes linear street trees on C-14
+    selected_ids = [item["intervention_id"] for item in data["selected_interventions"]]
+    assert "linear_street_trees" in selected_ids
+
+
+def test_demo_optimizer_applies_synthetic_seed_memories_with_provenance_and_warning():
+    """
+    P0 Regression Test: Explicit demo run (include_demo_scenarios=True) applies synthetic demo
+    fixtures, returning provenance metadata and clear demo warning.
+    """
+    from fastapi.testclient import TestClient
+    from app.main import app
+    client = TestClient(app)
+
+    res = client.post(
+        "/api/optimizer/run",
+        json={
+            "budget_lakh": 8.0,
+            "target_corridor_ids": ["C-14"],
+            "climate_priority": "heat_resilience",
+            "meko_enabled": True,
+            "include_demo_scenarios": True,
+        },
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert data["include_demo_scenarios"] is True
+    assert data["demo_scenarios_active"] is True
+    assert "DEMONSTRATION SCENARIO ACTIVE" in data["demo_scenario_warning"]
+
+    # Applied restrictions list includes provenance metadata
+    demo_restr = next(r for r in data["applied_site_restrictions"] if r["is_synthetic_demo"])
+    assert demo_restr["verification_status"] == "SYNTHETIC_DEMONSTRATION_SCENARIO"
+    assert demo_restr["source_datapack"] == "vansetu-project-memory"
+    assert demo_restr["memory_id"] == "mem-survey-014"
+
+    # Linear street trees excluded due to simulated demo restriction
+    selected_ids = [item["intervention_id"] for item in data["selected_interventions"]]
+    assert "linear_street_trees" not in selected_ids
+
+
+def test_synthetic_fixture_approval_blocked_in_meko_service():
+    """
+    P0 Regression Test: Close approval bypass. Reject APPROVE for synthetic seed records.
+    """
+    meko = get_meko_service()
+    with pytest.raises(ValueError, match="Approval Blocked: Synthetic demonstration fixtures cannot be approved"):
+        meko.update_or_verify_memory(
+            memory_id="mem-survey-014",
+            verification_status="human_verified",
+            agent_id="municipal_reviewer",
+        )
+
+
+def test_synthetic_fixture_promotion_blocked_in_meko_service():
+    """
+    P0 Regression Test: Close promotion bypass. Reject PROMOTE for synthetic seed records.
+    """
+    meko = get_meko_service()
+    for mid in ("mem-survey-014", "mem-decision-c14-01", "mem-survey-001", "mem-draft-022"):
+        with pytest.raises(ValueError, match="Promotion Blocked"):
+            meko.promote_memory(memory_id=mid, agent_id="municipal_reviewer")
+
+
+def test_spatial_pins_lifecycle_actions_exclude_approve_and_promote_for_demo():
+    """
+    P0 Regression Test: UI available_lifecycle_actions must exclude APPROVE and PROMOTE for demo fixtures.
+    """
+    pins = get_spatial_memory_pins()["pins"]
+    demo_pins = [p for p in pins if p["is_synthetic_demo"]]
+    assert len(demo_pins) > 0
+    for dp in demo_pins:
+        actions = dp["available_lifecycle_actions"]
+        assert "APPROVE" not in actions
+        assert "PROMOTE" not in actions
+        assert "INSPECT" in actions
+        assert "FORGET" in actions

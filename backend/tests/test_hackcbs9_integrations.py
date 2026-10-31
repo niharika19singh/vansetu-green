@@ -40,25 +40,45 @@ def test_budget_optimizer_adherence_and_meko_constraints():
     off_ids = [item["intervention_id"] for item in data_off["selected_interventions"]]
     assert "linear_street_trees" in off_ids
 
-    # 2. MEKO ON on C-14 with ₹8.0 Lakh budget -> excludes trees/bioswales due to survey-014
-    res_on = client.post(
+    # 2. Normal run: MEKO ON on C-14 without demo scenarios -> synthetic survey-014 does NOT exclude trees
+    res_normal = client.post(
         "/api/optimizer/run",
         json={
             "budget_lakh": 8.0,
             "target_corridor_ids": ["C-14"],
             "climate_priority": "heat_resilience",
             "meko_enabled": True,
+            "include_demo_scenarios": False,
         },
     )
-    assert res_on.status_code == 200
-    data_on = res_on.json()
-    assert data_on["total_capex_lakh_inr"] <= 8.0
-    on_ids = [item["intervention_id"] for item in data_on["selected_interventions"]]
-    assert "linear_street_trees" not in on_ids
-    assert "roadside_bioswales" not in on_ids
-    assert "architectural_shade_structures" in on_ids
-    assert "cool_pavements" in on_ids
-    assert len(data_on["rejected_alternatives"]) > 0
+    assert res_normal.status_code == 200
+    data_normal = res_normal.json()
+    assert data_normal["demo_scenarios_active"] is False
+    normal_ids = [item["intervention_id"] for item in data_normal["selected_interventions"]]
+    assert "linear_street_trees" in normal_ids
+
+    # 3. Explicit Demo run: MEKO ON with include_demo_scenarios=True -> simulates survey-014 exclusion
+    res_demo = client.post(
+        "/api/optimizer/run",
+        json={
+            "budget_lakh": 8.0,
+            "target_corridor_ids": ["C-14"],
+            "climate_priority": "heat_resilience",
+            "meko_enabled": True,
+            "include_demo_scenarios": True,
+        },
+    )
+    assert res_demo.status_code == 200
+    data_demo = res_demo.json()
+    assert data_demo["total_capex_lakh_inr"] <= 8.0
+    assert data_demo["demo_scenarios_active"] is True
+    assert "DEMONSTRATION SCENARIO ACTIVE" in data_demo["demo_scenario_warning"]
+    demo_ids = [item["intervention_id"] for item in data_demo["selected_interventions"]]
+    assert "linear_street_trees" not in demo_ids
+    assert "roadside_bioswales" not in demo_ids
+    assert "architectural_shade_structures" in demo_ids
+    assert "cool_pavements" in demo_ids
+    assert len(data_demo["rejected_alternatives"]) > 0
 
 
 def test_meko_datapack_isolation_rbac():
@@ -165,15 +185,16 @@ def test_gemini_agent_tools_and_multi_step_workflow():
     assert r_inv.status_code == 200
     assert r_inv.json()["output"]["code"] == "C-14"
 
-    # Run full multi-step planning workflow
+    # Run full multi-step planning workflow with explicit demo simulation for Survey-014
     r_plan = client.post(
         "/api/agent/plan",
         json={
-            "prompt": "Recommend interventions for Ward 12, Corridor C-14, with a budget of ₹8 lakh.",
+            "prompt": "Recommend interventions for Ward 12, Corridor C-14, with a budget of ₹8 lakh (Survey-014 simulation).",
             "corridor_id": "C-14",
             "ward_id": "ward-12",
             "budget_lakh": 8.0,
             "meko_enabled": True,
+            "include_demo_scenarios": True,
         },
     )
     assert r_plan.status_code == 200
