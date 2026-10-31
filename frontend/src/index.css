@@ -59,3 +59,11 @@
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(16, 185, 129, 0.7);
 }
+
+/* Custom Floating Corridor Label Leaflet Icon override */
+.vansetu-floating-corridor-label-marker {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+

@@ -30,6 +30,7 @@ import {
   GeoJSON,
   Polyline,
   CircleMarker,
+  Marker,
   Popup,
   Tooltip,
   useMap,
@@ -380,8 +381,118 @@ const RASTER_LAYERS = [
   },
 ];
 
+// =========================================================================
+// CORRIDOR GEOMETRY & MIDPOINT CALCULATION UTILITIES
+// =========================================================================
+
+export function parseGeometryToLatLngs(geometry) {
+  if (!geometry || !geometry.coordinates) return [];
+  const { type, coordinates } = geometry;
+  if (type === 'MultiLineString') {
+    return coordinates.map((line) => line.map(([lng, lat]) => [lat, lng]));
+  }
+  // LineString: [[lng, lat], ...]
+  if (Array.isArray(coordinates[0]) && typeof coordinates[0][0] === 'number') {
+    return coordinates.map(([lng, lat]) => [lat, lng]);
+  }
+  // Nested LineString array: [[[lng, lat], ...]]
+  if (Array.isArray(coordinates[0]) && Array.isArray(coordinates[0][0])) {
+    return coordinates[0].map(([lng, lat]) => [lat, lng]);
+  }
+  return [];
+}
+
+export function getFlatLatLngs(latLngs) {
+  if (!latLngs || !latLngs.length) return [];
+  if (typeof latLngs[0][0] === 'number') {
+    return latLngs;
+  }
+  return latLngs.flat();
+}
+
+/**
+ * Calculates the exact geographic midpoint along the polyline path
+ * via cumulative Euclidean distance interpolation.
+ */
+export function getCorridorMidpoint(flatLatLngs) {
+  if (!flatLatLngs || flatLatLngs.length === 0) return null;
+  if (flatLatLngs.length === 1) return flatLatLngs[0];
+  if (flatLatLngs.length === 2) {
+    return [
+      (flatLatLngs[0][0] + flatLatLngs[1][0]) / 2,
+      (flatLatLngs[0][1] + flatLatLngs[1][1]) / 2,
+    ];
+  }
+
+  let totalDist = 0;
+  const dists = [0];
+  for (let i = 0; i < flatLatLngs.length - 1; i++) {
+    const dLat = flatLatLngs[i + 1][0] - flatLatLngs[i][0];
+    const dLng = flatLatLngs[i + 1][1] - flatLatLngs[i][1];
+    const dist = Math.sqrt(dLat * dLat + dLng * dLng);
+    totalDist += dist;
+    dists.push(totalDist);
+  }
+
+  const halfDist = totalDist / 2;
+  for (let i = 0; i < dists.length - 1; i++) {
+    if (dists[i + 1] >= halfDist) {
+      const segLen = dists[i + 1] - dists[i];
+      const t = segLen > 0 ? (halfDist - dists[i]) / segLen : 0;
+      return [
+        flatLatLngs[i][0] + t * (flatLatLngs[i + 1][0] - flatLatLngs[i][0]),
+        flatLatLngs[i][1] + t * (flatLatLngs[i + 1][1] - flatLatLngs[i][1]),
+      ];
+    }
+  }
+
+  return flatLatLngs[Math.floor(flatLatLngs.length / 2)];
+}
+
+export function getCorridorColor(corr) {
+  if (corr.severity_color) return corr.severity_color;
+  const score = corr.priority_score ?? corr.score;
+  if (typeof score === 'number') {
+    if (score >= 0.72) return '#ef4444'; // Critical Priority
+    if (score >= 0.58) return '#f97316'; // High Priority
+    if (score >= 0.45) return '#f59e0b'; // Moderate Priority (warm amber)
+    return '#10b981'; // Low Priority (buffered)
+  }
+  return '#f97316';
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function MapViewportController({ selectedCorridor, fitTrigger, resetTrigger, targetLocation }) {
   const map = useMap();
+  const prevCorridorIdRef = useRef(null);
+
+  // Initialize custom Leaflet stacking panes to ensure selected corridor
+  // and floating label always sit high above all rasters and unselected vectors
+  useEffect(() => {
+    if (!map.getPane('selectedCorridorCasingPane')) {
+      const casing = map.createPane('selectedCorridorCasingPane');
+      casing.style.zIndex = '610';
+      casing.style.pointerEvents = 'none';
+    }
+    if (!map.getPane('selectedCorridorHighlightPane')) {
+      const line = map.createPane('selectedCorridorHighlightPane');
+      line.style.zIndex = '620';
+    }
+    if (!map.getPane('selectedCorridorLabelPane')) {
+      const label = map.createPane('selectedCorridorLabelPane');
+      label.style.zIndex = '650';
+      label.style.pointerEvents = 'none';
+    }
+  }, [map]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -390,17 +501,20 @@ function MapViewportController({ selectedCorridor, fitTrigger, resetTrigger, tar
     return () => clearTimeout(timer);
   }, [map]);
 
-  // Fit to selected corridor
+  // Fit to selected corridor (explicit button trigger)
   useEffect(() => {
     if (fitTrigger > 0 && selectedCorridor) {
-      const coords = selectedCorridor.geometry?.coordinates || [];
-      if (coords.length > 0) {
-        const latLngs = coords.map(([lng, lat]) => [lat, lng]);
-        const bounds = L.latLngBounds(latLngs);
+      const latLngs = parseGeometryToLatLngs(selectedCorridor.geometry);
+      const flat = getFlatLatLngs(latLngs);
+      if (flat.length > 0) {
+        const bounds = L.latLngBounds(flat);
         if (bounds.isValid()) {
-          map.fitBounds(bounds, { padding: [60, 60], maxZoom: 14, animate: true });
+          map.fitBounds(bounds, { padding: [80, 80], maxZoom: 15, animate: true });
           return;
         }
+      }
+      if (selectedCorridor.centroid) {
+        map.flyTo(selectedCorridor.centroid, 14, { duration: 0.8 });
       }
     }
   }, [fitTrigger, selectedCorridor, map]);
@@ -419,11 +533,24 @@ function MapViewportController({ selectedCorridor, fitTrigger, resetTrigger, tar
     }
   }, [resetTrigger, map]);
 
-  // Normal corridor select auto-pan
+  // Auto-pan and fit bounds when selectedCorridor changes
   useEffect(() => {
-    if (selectedCorridor && selectedCorridor.centroid) {
+    if (!selectedCorridor) return;
+    if (prevCorridorIdRef.current === selectedCorridor.id) return;
+    prevCorridorIdRef.current = selectedCorridor.id;
+
+    const latLngs = parseGeometryToLatLngs(selectedCorridor.geometry);
+    const flat = getFlatLatLngs(latLngs);
+    if (flat.length > 0) {
+      const bounds = L.latLngBounds(flat);
+      if (bounds.isValid()) {
+        map.fitBounds(bounds, { padding: [80, 80], maxZoom: 15, animate: true });
+        return;
+      }
+    }
+    if (selectedCorridor.centroid) {
       const [lat, lng] = selectedCorridor.centroid;
-      map.flyTo([lat, lng], Math.max(map.getZoom(), 13), { duration: 0.8 });
+      map.flyTo([lat, lng], Math.max(map.getZoom(), 14), { duration: 0.8 });
     }
   }, [selectedCorridor, map]);
 
@@ -748,16 +875,16 @@ export default function InteractiveMap({
             data={districtsGeoJson}
             style={(feature) => {
               const dName = feature?.properties?.district || feature?.properties?.NAME || '';
-              const isSelected =
+              const isDistrictSelected =
                 selectedDistrict &&
                 selectedDistrict !== 'All Districts' &&
                 dName.toLowerCase() === selectedDistrict.toLowerCase();
               return {
-                color: isSelected ? '#10b981' : '#64748b',
-                weight: isSelected ? 2.5 : 1.2,
-                dashArray: isSelected ? '' : '4 4',
-                fillColor: isSelected ? '#10b981' : '#0f172a',
-                fillOpacity: isSelected ? 0.12 : 0.02,
+                color: isDistrictSelected ? '#10b981' : '#64748b',
+                weight: isDistrictSelected ? 2.5 : 1.2,
+                dashArray: isDistrictSelected ? '' : '4 4',
+                fillColor: isDistrictSelected ? '#10b981' : '#0f172a',
+                fillOpacity: isDistrictSelected ? 0.12 : 0.02,
               };
             }}
             onEachFeature={(feature, layer) => {
@@ -795,32 +922,26 @@ export default function InteractiveMap({
           />
         )}
 
-        {/* 10. 44 Walkable Urban Corridors */}
+        {/* 10. Walkable Urban Corridors - Unselected Network */}
         {activeLayers.corridors &&
-          corridors.map((corr) => {
-            const coords = corr.geometry?.coordinates || [];
-            if (!coords.length) return null;
-            const latLngs = coords.map(([lng, lat]) => [lat, lng]);
-            const isSelected = selectedCorridor?.id === corr.id;
+          corridors
+            .filter((corr) => corr.id !== selectedCorridor?.id)
+            .map((corr) => {
+              const latLngs = parseGeometryToLatLngs(corr.geometry);
+              if (!latLngs.length) return null;
+              const color = getCorridorColor(corr);
+              const score = corr.priority_score ?? corr.score;
 
-            return (
-              <React.Fragment key={corr.id}>
-                {isSelected && (
-                  <Polyline
-                    positions={latLngs}
-                    pathOptions={{
-                      color: '#34d399',
-                      weight: 11,
-                      opacity: 0.45,
-                    }}
-                  />
-                )}
+              return (
                 <Polyline
+                  key={corr.id}
                   positions={latLngs}
                   pathOptions={{
-                    color: isSelected ? '#10b981' : corr.severity_color || '#f97316',
-                    weight: isSelected ? 6 : 4,
-                    opacity: isSelected ? 1.0 : 0.88,
+                    color: color,
+                    weight: selectedCorridor ? 3.5 : 4.5,
+                    opacity: selectedCorridor ? 0.70 : 0.88,
+                    lineCap: 'round',
+                    lineJoin: 'round',
                   }}
                   eventHandlers={{
                     click: (e) => {
@@ -832,21 +953,133 @@ export default function InteractiveMap({
                   <Tooltip sticky>
                     <div className="text-xs font-sans">
                       <div className="font-bold text-slate-900">
-                        #{corr.rank} {corr.name}
+                        {corr.code ? `${corr.code} • ` : ''}
+                        {corr.rank ? `#${corr.rank} ` : ''}
+                        {corr.name}
                       </div>
                       <div className="text-slate-700">
-                        District: {corr.district} | Score: {corr.priority_score?.toFixed(3)}
+                        District: {corr.district} | Score:{' '}
+                        {typeof score === 'number' ? score.toFixed(3) : score}
                       </div>
                       <div className="text-slate-600">
                         LST: {corr.lst_mean}°C (1km native: {corr.lst_native_mean}°C) | NDVI:{' '}
                         {corr.ndvi_mean} | AQI: {corr.aqi}
                       </div>
+                      <div className="text-slate-500 text-[10px] mt-0.5">
+                        Length: {corr.length_km ? `${corr.length_km.toFixed(2)} km` : 'N/A'} • Status:{' '}
+                        {corr.status || 'Active'}
+                      </div>
                     </div>
                   </Tooltip>
                 </Polyline>
-              </React.Fragment>
-            );
-          })}
+              );
+            })}
+
+        {/* 11. Prominently Highlighted Selected Corridor (Bright Cyan Core + Contrast Casing + Floating Label) */}
+        {activeLayers.corridors && selectedCorridor && (() => {
+          const latLngs = parseGeometryToLatLngs(selectedCorridor.geometry);
+          if (!latLngs.length) return null;
+          const flat = getFlatLatLngs(latLngs);
+          const midpoint = getCorridorMidpoint(flat);
+          const score = selectedCorridor.priority_score ?? selectedCorridor.score;
+          const scoreFormatted =
+            typeof score === 'number' ? score.toFixed(2) : (score || 'N/A');
+          const rankVal = selectedCorridor.rank ?? selectedCorridor.priority_rank;
+
+          return (
+            <React.Fragment key={`selected-${selectedCorridor.id}`}>
+              {/* Outer Cyan Halo / Bloom */}
+              <Polyline
+                positions={latLngs}
+                pane="selectedCorridorCasingPane"
+                pathOptions={{
+                  pane: 'selectedCorridorCasingPane',
+                  color: '#00f5d4',
+                  weight: 16,
+                  opacity: 0.22,
+                  lineCap: 'round',
+                  lineJoin: 'round',
+                }}
+              />
+
+              {/* High-Contrast Dark Casing Outline Beneath */}
+              <Polyline
+                positions={latLngs}
+                pane="selectedCorridorCasingPane"
+                pathOptions={{
+                  pane: 'selectedCorridorCasingPane',
+                  color: '#021811',
+                  weight: 11,
+                  opacity: 0.96,
+                  lineCap: 'round',
+                  lineJoin: 'round',
+                }}
+              />
+
+              {/* Vibrant Cyan / Turquoise Highlight Core */}
+              <Polyline
+                positions={latLngs}
+                pane="selectedCorridorHighlightPane"
+                pathOptions={{
+                  pane: 'selectedCorridorHighlightPane',
+                  color: '#00f5d4',
+                  weight: 6.5,
+                  opacity: 1.0,
+                  lineCap: 'round',
+                  lineJoin: 'round',
+                }}
+                eventHandlers={{
+                  click: (e) => {
+                    e.originalEvent.stopPropagation();
+                    onSelectCorridor(selectedCorridor);
+                  },
+                }}
+              >
+                <Tooltip sticky>
+                  <div className="text-xs font-sans">
+                    <div className="font-bold text-slate-900">
+                      {selectedCorridor.code ? `${selectedCorridor.code} • ` : ''}
+                      {rankVal ? `#${rankVal} ` : ''}
+                      {selectedCorridor.name}
+                    </div>
+                    <div className="text-slate-700">
+                      District: {selectedCorridor.district} | Score:{' '}
+                      {typeof score === 'number' ? score.toFixed(3) : score}
+                    </div>
+                    <div className="text-slate-600">
+                      LST: {selectedCorridor.lst_mean}°C | NDVI: {selectedCorridor.ndvi_mean} | AQI:{' '}
+                      {selectedCorridor.aqi}
+                    </div>
+                  </div>
+                </Tooltip>
+              </Polyline>
+
+              {/* Floating Corridor Label Positioned Along Midpoint */}
+              {midpoint && (
+                <Marker
+                  position={midpoint}
+                  pane="selectedCorridorLabelPane"
+                  interactive={false}
+                  zIndexOffset={2000}
+                  icon={L.divIcon({
+                    className: 'vansetu-floating-corridor-label-marker',
+                    html: `
+                      <div data-testid="selected-corridor-floating-label" class="pointer-events-none select-none inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#071c16]/95 backdrop-blur-md border border-[#00f5d4]/80 shadow-[0_4px_20px_rgba(0,0,0,0.65)] text-xs text-white transform -translate-x-1/2 -translate-y-full mb-3 whitespace-nowrap">
+                        <span class="w-2.5 h-2.5 rounded-full bg-[#00f5d4] shadow-[0_0_8px_#00f5d4] animate-pulse"></span>
+                        <span class="font-bold text-white tracking-wide">${escapeHtml(selectedCorridor.name)}</span>
+                        <span class="text-slate-400">|</span>
+                        <span class="text-[#00f5d4] font-mono font-bold">${scoreFormatted} Score</span>
+                        ${rankVal ? `<span class="px-1.5 py-0.5 rounded bg-amber-400/20 text-amber-300 font-bold border border-amber-400/30 text-[10px] font-mono">#${rankVal}</span>` : ''}
+                      </div>
+                    `,
+                    iconSize: [0, 0],
+                    iconAnchor: [0, 0],
+                  })}
+                />
+              )}
+            </React.Fragment>
+          );
+        })()}
 
         {/* 11. CPCB Air Quality Monitoring Stations */}
         {activeLayers.aqi &&

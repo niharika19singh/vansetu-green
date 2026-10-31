@@ -185,15 +185,22 @@ export default function MapExplorerView({
                 return (
                   <div
                     key={c.id}
+                    data-testid={`corridor-list-item-${c.id}`}
                     onClick={() => onSelectCorridor(c)}
                     className={`p-2.5 rounded-2xl border cursor-pointer transition text-xs ${
                       isSelected
-                        ? 'bg-emerald-950/80 border-emerald-400 text-white shadow'
+                        ? 'bg-[#00f5d4]/10 border-[#00f5d4] text-white shadow-[0_0_12px_rgba(0,245,212,0.15)] ring-1 ring-[#00f5d4]/50'
                         : 'bg-[#12392B]/40 border-white/5 hover:border-white/20 text-slate-300'
                     }`}
                   >
                     <div className="flex items-center justify-between mb-1">
-                      <span className="font-mono text-[10px] font-bold px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                      <span
+                        className={`font-mono text-[10px] font-bold px-1.5 py-0.2 rounded border ${
+                          isSelected
+                            ? 'bg-[#00f5d4]/20 text-[#00f5d4] border-[#00f5d4]/40'
+                            : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                        }`}
+                      >
                         {c.code || `#${c.rank}`}
                       </span>
                       <span

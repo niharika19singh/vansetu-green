@@ -306,4 +306,89 @@ test('Role-Based Experience & Personas: Persona consistency, sidebar labels, and
   assert.ok(clientSrc.includes('DELHI_TRANSIT_HUBS'), 'Client must define DELHI_TRANSIT_HUBS');
 });
 
+test('Corridor Map Highlighting & Selection Visualization: Parity, Cyan Highlight, Casing, Floating Label, and Geometry Integrity', async () => {
+  const mapPath = path.join(frontendRoot, 'src/components/InteractiveMap.jsx');
+  assert.ok(fs.existsSync(mapPath), 'InteractiveMap.jsx must exist');
+  const mapSrc = fs.readFileSync(mapPath, 'utf-8');
+
+  // 1. Selected Corridor Highlighting & Visual Styling
+  assert.ok(mapSrc.includes('#00f5d4'), 'Selected corridor must use bright cyan/turquoise highlight color (#00f5d4)');
+  assert.ok(mapSrc.includes('#021811') || mapSrc.includes('#021a12'), 'Selected corridor must have high-contrast dark casing beneath');
+  assert.ok(mapSrc.includes("lineCap: 'round'"), 'Selected corridor must use smooth rounded line caps');
+  assert.ok(mapSrc.includes("lineJoin: 'round'"), 'Selected corridor must use smooth rounded line joins');
+  assert.ok(mapSrc.includes('weight: 6.5') || mapSrc.includes('weight: 6'), 'Inner highlight line must be thick and clearly visible');
+  assert.ok(mapSrc.includes('weight: 11') || mapSrc.includes('weight: 12'), 'Contrasting casing outline must be wide enough to frame the core line');
+
+  // 2. High Stacking Order Panes (Above Rasters and Unselected Vectors)
+  assert.ok(mapSrc.includes('selectedCorridorCasingPane'), 'Map must create dedicated selectedCorridorCasingPane');
+  assert.ok(mapSrc.includes('selectedCorridorHighlightPane'), 'Map must create dedicated selectedCorridorHighlightPane');
+  assert.ok(mapSrc.includes('selectedCorridorLabelPane'), 'Map must create dedicated selectedCorridorLabelPane');
+  assert.ok(mapSrc.includes("zIndex = '610'"), 'Casing pane must sit at high z-index (610)');
+  assert.ok(mapSrc.includes("zIndex = '620'"), 'Highlight line pane must sit above casing pane (620)');
+  assert.ok(mapSrc.includes("zIndex = '650'"), 'Label pane must sit above line pane (650)');
+
+  // 3. Floating Corridor Label at Midpoint
+  assert.ok(mapSrc.includes('data-testid="selected-corridor-floating-label"'), 'Must render data-testid="selected-corridor-floating-label"');
+  assert.ok(mapSrc.includes('getCorridorMidpoint'), 'Must compute exact geographic midpoint for floating label placement');
+  assert.ok(mapSrc.includes('bg-[#071c16]/95'), 'Floating label must have compact dark background');
+  assert.ok(mapSrc.includes('border-[#00f5d4]'), 'Floating label must feature cyan accent border');
+  assert.ok(mapSrc.includes('animate-pulse'), 'Floating label must feature pulsing cyan status indicator');
+
+  // 4. Unselected Corridors Styling
+  assert.ok(mapSrc.includes('getCorridorColor'), 'Unselected corridors must use category color function');
+  assert.ok(mapSrc.includes('#ef4444'), 'Category colors must include Critical Red (#ef4444)');
+  assert.ok(mapSrc.includes('#f97316'), 'Category colors must include High Orange (#f97316)');
+  assert.ok(mapSrc.includes('#f59e0b') || mapSrc.includes('#eab308'), 'Category colors must include Moderate Amber');
+  assert.ok(mapSrc.includes('#10b981'), 'Category colors must include Low Emerald (#10b981)');
+
+  // 5. Synchronized Interaction & Bounds Fitting
+  assert.ok(mapSrc.includes('map.fitBounds(bounds'), 'Corridor selection must auto-pan and fit bounds via map.fitBounds');
+  assert.ok(mapSrc.includes('prevCorridorIdRef'), 'Map controller must track previous corridor to prevent jitter');
+
+  // 6. MapExplorerView list synchronization
+  const explorerPath = path.join(frontendRoot, 'src/views/MapExplorerView.jsx');
+  const explorerSrc = fs.readFileSync(explorerPath, 'utf-8');
+  assert.ok(explorerSrc.includes('corridor-list-item-'), 'MapExplorerView must assign testids to corridor list items');
+  assert.ok(explorerSrc.includes('#00f5d4'), 'MapExplorerView active list selection must visually synchronize with cyan theme');
+
+  // 7. Strict Prohibition of Rectangular / Bounding Box Artifacts for Corridors
+  assert.ok(!mapSrc.includes('<Rectangle'), 'Strictly NO Rectangle components in InteractiveMap');
+  assert.ok(!mapSrc.includes('dashArray: isSelected'), 'No dashed bounding box styling for corridor selection');
+
+  // 8. Dynamic Geometry & Midpoint Computation Test
+  const { parseGeometryToLatLngs, getFlatLatLngs, getCorridorMidpoint, getCorridorColor } = await import(
+    `file://${path.resolve(frontendRoot, 'src/utils/corridorGeometry.js')}`
+  );
+
+  const mockLineString = {
+    type: 'LineString',
+    coordinates: [
+      [77.2285, 28.6562],
+      [77.2300, 28.6561],
+      [77.2335, 28.6560],
+    ],
+  };
+
+  const latLngs = parseGeometryToLatLngs(mockLineString);
+  assert.strictEqual(latLngs.length, 3, 'Must parse 3 coordinate pairs');
+  assert.strictEqual(latLngs[0][0], 28.6562, 'Latitude must be first in latLng pair');
+  assert.strictEqual(latLngs[0][1], 77.2285, 'Longitude must be second in latLng pair');
+
+  const flat = getFlatLatLngs(latLngs);
+  assert.strictEqual(flat.length, 3, 'Flat array must contain 3 coordinates');
+
+  const midpoint = getCorridorMidpoint(flat);
+  assert.ok(midpoint, 'Midpoint must be calculated');
+  assert.ok(midpoint[0] >= 28.6560 && midpoint[0] <= 28.6562, 'Midpoint latitude must fall along corridor path');
+  assert.ok(midpoint[1] >= 77.2285 && midpoint[1] <= 77.2335, 'Midpoint longitude must fall along corridor path');
+
+  // Category colors
+  assert.strictEqual(getCorridorColor({ priority_score: 0.80 }), '#ef4444');
+  assert.strictEqual(getCorridorColor({ priority_score: 0.65 }), '#f97316');
+  assert.strictEqual(getCorridorColor({ priority_score: 0.50 }), '#f59e0b');
+  assert.strictEqual(getCorridorColor({ priority_score: 0.30 }), '#10b981');
+  assert.strictEqual(getCorridorColor({ severity_color: '#custom12' }), '#custom12');
+});
+
+
 
