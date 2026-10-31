@@ -67,73 +67,114 @@ def get_corridor_seasonal_profile(corridor_id: str) -> Dict[str, Any]:
     code = corr.get("code", f"C-{cid}")
     name = corr.get("name")
     district = corr.get("district")
-    base_lst = corr.get("lst_mean", 34.0)
+    base_lst = corr.get("lst_mean")
 
-    # 1. Pre-monsoon: Empirical from ingested NASA MODIS Terra LST GeoTIFF
-    pre_lst = round(base_lst, 1)
-    pre_anomaly = round(pre_lst - DELHI_SEASONAL_BASELINES["pre_monsoon"]["city_mean_lst_celsius"], 1)
-
-    # 2. Monsoon: Synthetic demonstration estimate (Monsoon raster not ingested)
-    monsoon_lst = round(base_lst * 0.88 + 0.5, 1)
-    monsoon_anomaly = round(monsoon_lst - DELHI_SEASONAL_BASELINES["monsoon"]["city_mean_lst_celsius"], 1)
-
-    # 3. Winter: Synthetic demonstration estimate (Winter raster not ingested)
-    winter_lst = round(base_lst * 0.62 + 0.2, 1)
-    winter_anomaly = round(winter_lst - DELHI_SEASONAL_BASELINES["post_monsoon_winter"]["city_mean_lst_celsius"], 1)
-
-    # Seasonal observations array with strict provenance disclosure
-    observations = [
-        {
-            "season": "Pre-Monsoon (Peak Summer)",
-            "period": "Mar–Jun 2024",
-            "lst_celsius": pre_lst,
-            "regional_baseline_celsius": DELHI_SEASONAL_BASELINES["pre_monsoon"]["city_mean_lst_celsius"],
-            "thermal_anomaly_celsius": pre_anomaly,
-            "anomaly_status": "SIGNIFICANT_HOTSPOT" if pre_anomaly >= 2.5 else ("ELEVATED" if pre_anomaly >= 1.0 else "NOMINAL"),
-            "is_measured": True,
-            "data_classification": "EMPIRICAL_SATELLITE_MEASUREMENT",
-            "source_sensor": "NASA MODIS Terra (MOD11A2) L3 8-day composite (1,000m)",
-        },
-        {
-            "season": "Monsoon (Cloud & Moisture)",
-            "period": "Jul–Sep 2024",
-            "lst_celsius": monsoon_lst,
-            "regional_baseline_celsius": DELHI_SEASONAL_BASELINES["monsoon"]["city_mean_lst_celsius"],
-            "thermal_anomaly_celsius": monsoon_anomaly,
-            "anomaly_status": "SIGNIFICANT_HOTSPOT" if monsoon_anomaly >= 2.5 else ("ELEVATED" if monsoon_anomaly >= 1.0 else "NOMINAL"),
-            "is_measured": False,
-            "data_classification": "SYNTHETIC_SEASONAL_ESTIMATE_FOR_ILLUSTRATION",
-            "source_sensor": "SYNTHETIC_MODEL_ESTIMATE",
-            "disclosure": "Empirical monsoon satellite acquisition not ingested in local dataset.",
-        },
-        {
-            "season": "Post-Monsoon / Winter (Inversion & Smog)",
-            "period": "Oct 2024–Feb 2025",
-            "lst_celsius": winter_lst,
-            "regional_baseline_celsius": DELHI_SEASONAL_BASELINES["post_monsoon_winter"]["city_mean_lst_celsius"],
-            "thermal_anomaly_celsius": winter_anomaly,
-            "anomaly_status": "SIGNIFICANT_HOTSPOT" if winter_anomaly >= 2.5 else ("ELEVATED" if winter_anomaly >= 1.0 else "NOMINAL"),
-            "is_measured": False,
-            "data_classification": "SYNTHETIC_SEASONAL_ESTIMATE_FOR_ILLUSTRATION",
-            "source_sensor": "SYNTHETIC_MODEL_ESTIMATE",
-            "disclosure": "Empirical winter satellite acquisition not ingested in local dataset.",
-        },
-    ]
-
-    # Persistent thermal hotspot check
-    # Because only Pre-Monsoon is empirical, multi-temporal persistence CANNOT be certified with high confidence
-    is_summer_hotspot = pre_anomaly >= 2.5
-    is_persistent_candidate = is_summer_hotspot and (monsoon_anomaly >= 1.5 or winter_anomaly >= 1.5)
-
-    if pre_anomaly < 0:
-        hotspot_classification = "COOL_CORRIDOR_REFUGE"
-        hotspot_confidence = "MODERATE"
-    elif is_persistent_candidate or pre_anomaly >= 3.0:
-        hotspot_classification = "PERSISTENT_THERMAL_HOTSPOT"
-        hotspot_confidence = "LOW_UNVERIFIED"
+    if base_lst is None:
+        observations = [
+            {
+                "season": "Pre-Monsoon (Peak Summer)",
+                "period": "Mar–Jun 2024",
+                "lst_celsius": None,
+                "regional_baseline_celsius": DELHI_SEASONAL_BASELINES["pre_monsoon"]["city_mean_lst_celsius"],
+                "thermal_anomaly_celsius": None,
+                "anomaly_status": "DATA_UNAVAILABLE",
+                "is_measured": False,
+                "data_classification": "DATA_UNAVAILABLE",
+                "source_sensor": "NASA MODIS Terra (MOD11A2) L3 8-day composite (1,000m)",
+            },
+            {
+                "season": "Monsoon (Cloud & Moisture)",
+                "period": "Jul–Sep 2024",
+                "lst_celsius": None,
+                "regional_baseline_celsius": DELHI_SEASONAL_BASELINES["monsoon"]["city_mean_lst_celsius"],
+                "thermal_anomaly_celsius": None,
+                "anomaly_status": "DATA_UNAVAILABLE",
+                "is_measured": False,
+                "data_classification": "DATA_UNAVAILABLE",
+                "source_sensor": "SYNTHETIC_MODEL_ESTIMATE",
+                "disclosure": "Empirical monsoon satellite acquisition not ingested in local dataset.",
+            },
+            {
+                "season": "Post-Monsoon / Winter (Inversion & Smog)",
+                "period": "Oct 2024–Feb 2025",
+                "lst_celsius": None,
+                "regional_baseline_celsius": DELHI_SEASONAL_BASELINES["post_monsoon_winter"]["city_mean_lst_celsius"],
+                "thermal_anomaly_celsius": None,
+                "anomaly_status": "DATA_UNAVAILABLE",
+                "is_measured": False,
+                "data_classification": "DATA_UNAVAILABLE",
+                "source_sensor": "SYNTHETIC_MODEL_ESTIMATE",
+                "disclosure": "Empirical winter satellite acquisition not ingested in local dataset.",
+            },
+        ]
+        hotspot_classification = "DATA_UNAVAILABLE"
+        hotspot_confidence = "DATA_UNAVAILABLE"
+        ver_status = "DATA_UNAVAILABLE"
+        empirical_obs_count = 0
+        synthetic_obs_count = 0
     else:
-        hotspot_classification = "TRANSIENT_THERMAL_ANOMALY"
-        hotspot_confidence = "LOW_UNVERIFIED"
+        # 1. Pre-monsoon: Empirical from ingested NASA MODIS Terra LST GeoTIFF
+        pre_lst = round(base_lst, 1)
+        pre_anomaly = round(pre_lst - DELHI_SEASONAL_BASELINES["pre_monsoon"]["city_mean_lst_celsius"], 1)
+
+        # 2. Monsoon: Synthetic demonstration estimate (Monsoon raster not ingested)
+        monsoon_lst = round(base_lst * 0.88 + 0.5, 1)
+        monsoon_anomaly = round(monsoon_lst - DELHI_SEASONAL_BASELINES["monsoon"]["city_mean_lst_celsius"], 1)
+
+        # 3. Winter: Synthetic demonstration estimate (Winter raster not ingested)
+        winter_lst = round(base_lst * 0.62 + 0.2, 1)
+        winter_anomaly = round(winter_lst - DELHI_SEASONAL_BASELINES["post_monsoon_winter"]["city_mean_lst_celsius"], 1)
+
+        observations = [
+            {
+                "season": "Pre-Monsoon (Peak Summer)",
+                "period": "Mar–Jun 2024",
+                "lst_celsius": pre_lst,
+                "regional_baseline_celsius": DELHI_SEASONAL_BASELINES["pre_monsoon"]["city_mean_lst_celsius"],
+                "thermal_anomaly_celsius": pre_anomaly,
+                "anomaly_status": "SIGNIFICANT_HOTSPOT" if pre_anomaly >= 2.5 else ("ELEVATED" if pre_anomaly >= 1.0 else "NOMINAL"),
+                "is_measured": True,
+                "data_classification": "EMPIRICAL_SATELLITE_MEASUREMENT",
+                "source_sensor": "NASA MODIS Terra (MOD11A2) L3 8-day composite (1,000m)",
+            },
+            {
+                "season": "Monsoon (Cloud & Moisture)",
+                "period": "Jul–Sep 2024",
+                "lst_celsius": monsoon_lst,
+                "regional_baseline_celsius": DELHI_SEASONAL_BASELINES["monsoon"]["city_mean_lst_celsius"],
+                "thermal_anomaly_celsius": monsoon_anomaly,
+                "anomaly_status": "SIGNIFICANT_HOTSPOT" if monsoon_anomaly >= 2.5 else ("ELEVATED" if monsoon_anomaly >= 1.0 else "NOMINAL"),
+                "is_measured": False,
+                "data_classification": "SYNTHETIC_SEASONAL_ESTIMATE_FOR_ILLUSTRATION",
+                "source_sensor": "SYNTHETIC_MODEL_ESTIMATE",
+                "disclosure": "Empirical monsoon satellite acquisition not ingested in local dataset.",
+            },
+            {
+                "season": "Post-Monsoon / Winter (Inversion & Smog)",
+                "period": "Oct 2024–Feb 2025",
+                "lst_celsius": winter_lst,
+                "regional_baseline_celsius": DELHI_SEASONAL_BASELINES["post_monsoon_winter"]["city_mean_lst_celsius"],
+                "thermal_anomaly_celsius": winter_anomaly,
+                "anomaly_status": "SIGNIFICANT_HOTSPOT" if winter_anomaly >= 2.5 else ("ELEVATED" if winter_anomaly >= 1.0 else "NOMINAL"),
+                "is_measured": False,
+                "data_classification": "SYNTHETIC_SEASONAL_ESTIMATE_FOR_ILLUSTRATION",
+                "source_sensor": "SYNTHETIC_MODEL_ESTIMATE",
+                "disclosure": "Empirical winter satellite acquisition not ingested in local dataset.",
+            },
+        ]
+
+        if pre_anomaly < 0:
+            hotspot_classification = "COOL_CORRIDOR_REFUGE"
+            hotspot_confidence = "MODERATE"
+        elif pre_anomaly >= 2.5:
+            hotspot_classification = "SINGLE_SEASON_HOTSPOT_CANDIDATE"
+            hotspot_confidence = "PERSISTENCE_UNVERIFIED_ONE_EMPIRICAL_SEASON"
+        else:
+            hotspot_classification = "PERSISTENCE_UNVERIFIED"
+            hotspot_confidence = "PERSISTENCE_UNVERIFIED_ONE_EMPIRICAL_SEASON"
+        ver_status = "UNVERIFIED_INSUFFICIENT_MULTI_TEMPORAL_OBSERVATIONS"
+        empirical_obs_count = 1
+        synthetic_obs_count = 2
 
     return {
         "corridor_id": cid,
@@ -142,10 +183,10 @@ def get_corridor_seasonal_profile(corridor_id: str) -> Dict[str, Any]:
         "district": district,
         "hotspot_classification": hotspot_classification,
         "hotspot_confidence": hotspot_confidence,
-        "verification_status": "UNVERIFIED_INSUFFICIENT_MULTI_TEMPORAL_OBSERVATIONS" if hotspot_confidence == "LOW_UNVERIFIED" else "EMPIRICAL_SINGLE_SEASON",
+        "verification_status": ver_status,
         "observations_count": len(observations),
-        "empirical_observations_count": 1,
-        "synthetic_observations_count": 2,
+        "empirical_observations_count": empirical_obs_count,
+        "synthetic_observations_count": synthetic_obs_count,
         "seasonal_observations": observations,
         "multi_sensor_provenance": {
             "primary_sensor": "NASA MODIS Terra MOD11A2 L3 Land Surface Temperature",
@@ -183,24 +224,26 @@ def get_all_persistent_hotspots() -> Dict[str, Any]:
         cid = corr.get("id")
         try:
             profile = get_corridor_seasonal_profile(str(cid))
-            if profile["hotspot_classification"] == "PERSISTENT_THERMAL_HOTSPOT":
+            if profile["hotspot_classification"] in ("SINGLE_SEASON_HOTSPOT_CANDIDATE", "PERSISTENT_THERMAL_HOTSPOT"):
+                anomaly_val = profile["seasonal_observations"][0]["thermal_anomaly_celsius"]
                 hotspots.append({
                     "corridor_id": cid,
                     "corridor_code": corr.get("code", f"C-{cid}"),
                     "corridor_name": corr.get("name"),
                     "district": corr.get("district"),
                     "pre_monsoon_lst": profile["seasonal_observations"][0]["lst_celsius"],
-                    "thermal_anomaly": profile["seasonal_observations"][0]["thermal_anomaly_celsius"],
+                    "thermal_anomaly": anomaly_val,
                     "confidence": profile["hotspot_confidence"],
                     "verification_status": profile["verification_status"],
                 })
         except Exception as e:
             logger.warning(f"Error computing seasonal profile for {cid}: {e}")
 
-    hotspots.sort(key=lambda x: x["thermal_anomaly"], reverse=True)
+    hotspots.sort(key=lambda x: (x["thermal_anomaly"] is not None, x["thermal_anomaly"]), reverse=True)
 
     return {
         "count": len(hotspots),
-        "classification_rule": "Requires pre-monsoon thermal anomaly >= 2.5°C with potential cross-seasonal persistence (labeled LOW_UNVERIFIED due to synthetic seasonal proxy).",
+        "classification_rule": "Empirical pre-monsoon thermal anomaly >= 2.5°C identified as single-season candidate (persistence unverified due to synthetic seasonal proxy).",
+        "single_season_hotspots": hotspots,
         "persistent_hotspots": hotspots,
     }

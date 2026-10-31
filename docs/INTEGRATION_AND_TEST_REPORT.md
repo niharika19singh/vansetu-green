@@ -5,10 +5,11 @@
 This report documents the verification, scientific integrity remediation, performance optimization, and end-to-end automated testing of the 8 advanced research-backed features on the `vansetu-green` platform under branch `feature/climate-investment-intelligence`.
 
 - **Test Suite Results:**
-  - Backend Automated Test Suite: **59 passed in 8.30s (100% pass rate)**.
+  - Backend Automated Test Suite: **72 passed in 7.16s (100% pass rate)**.
   - Scientific Integrity Audit Suite (`test_scientific_integrity_audit.py`): **8 passed (100% pass rate)**.
-  - Frontend Automated Test Suite: **4 passed in 89.4ms (100% pass rate)**.
-  - Frontend Production Build (`npm run build`): **Compiled cleanly in 2.24s (0 errors, 0 chunk warnings)**.
+  - Final Remediation Audit Suite (`test_final_remediation_audit.py`): **13 passed (100% pass rate)**.
+  - Frontend Automated Test Suite: **4 passed in 87.1ms (100% pass rate)**.
+  - Frontend Production Build (`npm run build`): **Compiled cleanly in 2.20s (0 errors, 0 chunk warnings)**.
 - **Bundle Optimization:**
   - Pre-optimization monolithic bundle: **907.24 kB** (triggered Vite chunk warning).
   - Post-optimization code-split entry bundle: **70.15 kB** (**92.3% reduction**).
@@ -107,3 +108,13 @@ dist/assets/vendor-recharts-BHsg0M1j.js                383.41 kB │ gzip: 105.3
 | **Spatial Meko Memory Service** | Eliminated fake central coordinates; synchronized real `MekoService` methods; role-scoping | `test_spatial_memory_unlocated_pin_handling` | **PASS** |
 | **Project Readiness Planner** | Rejected empty portfolios; dynamic readiness score from gate weights; IOMETE category linkage | `test_project_readiness_rejection_of_empty_portfolio` | **PASS** |
 | **Frontend Vite Architecture** | Code splitting via manualChunks + `React.lazy` across views 5–17 and modals; 92% entry bundle drop | Vite production build log | **PASS** |
+| **Meko Demonstration Memories** | Sanitized seed memories as `SYNTHETIC_DEMONSTRATION_SCENARIO`; blocked unverified promotion | `test_meko_seed_records_are_synthetic_demo_and_unpromoted` | **PASS** |
+| **Meko Remote Fallback** | Surfaced explicit `sync_status`, `remote_status`, `local_status`, and error logs on remote failure | `test_meko_remote_sync_failure_and_local_fallback` | **PASS** |
+| **Spatial Memory Pins Zero-Fabrication** | Centroid proxy explicit labeling; zero invented author or segment defaults | `test_spatial_memory_pins_zero_fabrication_and_centroid_proxy` | **PASS** |
+| **Seasonal Heat Persistence** | Classified single pre-monsoon empirical season as candidate; missing LST as unavailable | `test_seasonal_heat_missing_lst_returns_data_unavailable` | **PASS** |
+| **Evidence Passport Freshness** | Documented rubric methodology; dynamic ISO UTC timestamp generation | `test_evidence_passport_quality_methodology_and_dynamic_timestamp` | **PASS** |
+| **Impact Baseline Enforcement** | Mandatory empirical baseline metadata; flagged `BASELINE_DATA_PENDING` on planned works | `test_impact_monitoring_empirical_requires_all_fields_and_pending_status` | **PASS** |
+| **Readiness Conditional Packages** | Work packages generated conditionally per archetype mix with re-normalized cost percentages | `test_project_readiness_conditional_work_packages_and_renormalization` | **PASS** |
+| **Segment Walkability & Pavement Audits** | Unverified pedestrian access explicit status; cool pavements set to `FIELD_VERIFICATION_REQUIRED` | `test_segment_suitability_unverified_walkability_and_cool_pavements` | **PASS** |
+| **Shade Gap Naming & Disclaimers** | Renamed to `is_unshaded_vegetation_gap`; planning parameters and comfort disclaimer added | `test_shade_continuity_gap_naming_and_planning_parameters` | **PASS** |
+| **Pareto Equity Traceability** | Traced social equity share directly to Census of India / Delhi Economic Survey | `test_pareto_optimizer_social_equity_traceable_provenance` | **PASS** |

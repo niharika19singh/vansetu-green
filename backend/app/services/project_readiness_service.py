@@ -173,10 +173,13 @@ def create_project_from_portfolio(
     portfolio_name: str,
     budget_lakhs: float,
     corridors: List[Dict[str, Any]],
+    interventions: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """
-    Generate an 8-package municipal implementation plan from an optimized portfolio.
+    Generate a tailored municipal implementation plan from an optimized portfolio.
     Zero-fabrication rule: rejects empty corridor portfolios.
+    Work packages are conditionally generated based on active intervention archetypes,
+    with re-normalized budget allocations.
     """
     if not corridors:
         raise ValueError("Cannot create readiness project with an empty corridor portfolio.")
@@ -188,12 +191,46 @@ def create_project_from_portfolio(
     _init_readiness_db()
     proj_id = f"PROJ-DEL-{datetime.now().strftime('%Y%m%d%H%M%S%f')}-{uuid.uuid4().hex[:4]}"
     now_iso = datetime.now().isoformat()
-    packages = []
 
-    # Build initial work package set
+    # Determine relevant work packages based on requested or extracted interventions
+    active_int_names = []
+    if interventions:
+        active_int_names = [str(i).lower() for i in interventions]
+    else:
+        for c in corridors:
+            ints = c.get("selected_interventions") or c.get("interventions") or []
+            for item in ints:
+                if isinstance(item, dict):
+                    active_int_names.append(str(item.get("id") or item.get("name", "")).lower())
+                elif isinstance(item, str):
+                    active_int_names.append(item.lower())
+
+    # If no specific interventions are defined, include standard comprehensive package mix
+    has_specific_filter = bool(active_int_names)
+    has_trees = not has_specific_filter or any("tree" in i or "swale" in i or "bioswale" in i for i in active_int_names)
+    has_shade = not has_specific_filter or any("shade" in i or "canopy" in i for i in active_int_names)
+    has_pavement = not has_specific_filter or any("pavement" in i or "albedo" in i or "cool" in i for i in active_int_names)
+
+    selected_templates = []
     for tmpl in WORK_PACKAGE_TEMPLATES:
+        code = tmpl["code"]
+        if code in ("WP-1", "WP-2", "WP-8"):
+            selected_templates.append(tmpl)
+        elif code in ("WP-3", "WP-4", "WP-5") and has_trees:
+            selected_templates.append(tmpl)
+        elif code == "WP-6" and has_shade:
+            selected_templates.append(tmpl)
+        elif code == "WP-7" and has_pavement:
+            selected_templates.append(tmpl)
+
+    # Re-normalize cost percentages among generated packages
+    total_template_pct = sum(t["cost_percentage"] for t in selected_templates) or 100.0
+
+    packages = []
+    for tmpl in selected_templates:
         pkg_id = f"{proj_id}-{tmpl['code']}"
-        alloc = round(budget_lakhs * (tmpl["cost_percentage"] / 100.0), 2)
+        normalized_pct = (tmpl["cost_percentage"] / total_template_pct) * 100.0
+        alloc = round(budget_lakhs * (normalized_pct / 100.0), 2)
         gate = "2_FEASIBILITY_ESTIMATED" if tmpl["code"] in ["WP-1", "WP-2"] else "1_CONCEPT_IDENTIFIED"
         packages.append({
             "package_id": pkg_id,
@@ -292,6 +329,7 @@ def get_project_readiness_plan(project_id: str) -> Dict[str, Any]:
     return {
         "project": proj,
         "overall_readiness_percentage": overall_readiness_pct,
+        "readiness_score_type": "INITIAL_PLANNING_STAGE_INDICATOR",
         "readiness_gates": READINESS_GATES,
         "work_packages_count": len(packages),
         "work_packages": packages,

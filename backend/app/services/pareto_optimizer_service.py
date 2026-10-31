@@ -21,6 +21,7 @@ import numpy as np
 
 from app.services.optimizer_service import InterventionOptimizerService
 from app.services.corridor_service import get_all_corridors
+from app.services.scoring_service import DISTRICT_VULNERABILITY_INDEX
 
 logger = logging.getLogger(__name__)
 
@@ -140,7 +141,11 @@ def run_pareto_optimization(
             total_lifecycle = sol.get("total_lifecycle_5yr_inr_lakhs", total_capex + total_opex_5yr)
 
             # Calculate Social Equity Share (% of CapEx allocated to high-vulnerability districts)
-            vulnerable_districts = {"North East Delhi", "East Delhi", "Shahdara", "Central Delhi", "North West Delhi"}
+            # Traceable lookup from Census of India / Delhi Economic Survey via scoring_service
+            vulnerable_districts = {
+                d for d, info in DISTRICT_VULNERABILITY_INDEX.items()
+                if info.get("index", 0.0) >= 0.74
+            }
             vuln_capex = 0.0
             for item in sel_items:
                 c_dist = item.get("district", "")
@@ -169,6 +174,12 @@ def run_pareto_optimization(
                 "lifecycle_cost_lakhs": round(total_lifecycle, 2),
                 "climate_priority_total": clim_priority_sum,
                 "equity_share_percent": equity_share_pct,
+                "policy_defined_district_allocation_share": equity_share_pct,
+                "equity_provenance": {
+                    "source": "Census of India / Delhi Economic Survey via scoring_service.DISTRICT_VULNERABILITY_INDEX",
+                    "vulnerable_districts_evaluated": sorted(list(vulnerable_districts)),
+                    "classification_threshold": "vulnerability_index >= 0.74",
+                },
                 "selected_interventions_count": len(sel_items),
                 "corridors_covered_count": len(selected_corridors),
                 "total_trees_deployed": total_trees,
@@ -243,7 +254,7 @@ def run_pareto_optimization(
         "methodology": "SAMPLED_NON_DOMINATED_PORTFOLIO_SET",
         "objective_functions": [
             {"name": "Climate Priority", "direction": "MAXIMIZE", "metric": "Cumulative Tri-Vector Priority Points"},
-            {"name": "Social Equity", "direction": "MAXIMIZE", "metric": "% CapEx in vulnerable districts"},
+            {"name": "Social Equity", "direction": "MAXIMIZE", "metric": "policy_defined_district_allocation_share (% CapEx in vulnerable districts via Census of India / Delhi Economic Survey)"},
             {"name": "5-Yr Maintenance Burden", "direction": "MINIMIZE", "metric": "5-Year Cumulative OpEx (₹ Lakhs)"},
         ],
         "pareto_frontier_count": len(pareto_frontier),

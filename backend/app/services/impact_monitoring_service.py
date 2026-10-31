@@ -204,8 +204,13 @@ def get_deployment_detail(deployment_id: str) -> Dict[str, Any]:
             except Exception as e:
                 logger.warning(f"Could not load control corridor {control_id}: {e}")
 
+        monitoring_status = "ACTIVE"
+        if not base or (base.get("ndvi_mean") is None and base.get("lst_celsius") is None):
+            monitoring_status = "BASELINE_DATA_PENDING"
+
         return {
             "deployment": d,
+            "monitoring_status": monitoring_status,
             "empirical_deltas": {
                 "ndvi_change": ndvi_delta,
                 "lst_celsius_change": lst_delta,
@@ -237,8 +242,10 @@ def get_deployment_detail(deployment_id: str) -> Dict[str, Any]:
 def create_deployment(data: Dict[str, Any]) -> Dict[str, Any]:
     """Register a new intervention deployment."""
     _init_db()
-    cid = str(data.get("corridor_id", "14"))
+    cid = str(data.get("corridor_id", "C-14"))
     corr = get_corridor_by_id(cid)
+    if not corr and not cid.startswith("C-") and not cid.startswith("delhi_"):
+        corr = get_corridor_by_id(f"C-{cid}") or get_corridor_by_id(f"delhi_corridor_{int(cid):03d}")
     if not corr:
         raise ValueError(f"Corridor '{cid}' not found.")
 
@@ -248,12 +255,39 @@ def create_deployment(data: Dict[str, Any]) -> Dict[str, Any]:
     name = corr.get("name")
     district = corr.get("district")
 
-    baseline = data.get("baseline_metrics", {
-        "ndvi_mean": corr.get("ndvi_mean", 0.22),
-        "lst_celsius": corr.get("lst_mean", 34.0),
-        "observation_period": "Pre-Monsoon 2024",
-        "source": "Pre-intervention raster baseline",
-    })
+    data_type = data.get("data_type", "PLANNED")
+    allowed_types = {
+        "PLANNED",
+        "FIELD_REPORTED_UNVERIFIED",
+        "SYNTHETIC_DEMO",
+        "EMPIRICAL_MONITORING",
+        "FIELD_REPORTED_ESTIMATE",
+    }
+    if data_type not in allowed_types:
+        raise ValueError(f"Invalid data_type '{data_type}'. Allowed: {allowed_types}")
+
+    lifecycle_status = data.get("lifecycle_status", "PLANNED")
+    baseline = data.get("baseline_metrics")
+
+    if data_type == "EMPIRICAL_MONITORING":
+        if not baseline or not isinstance(baseline, dict):
+            raise ValueError("baseline_metrics dictionary is required for EMPIRICAL_MONITORING deployments.")
+        if baseline.get("ndvi_mean") is None and baseline.get("lst_celsius") is None:
+            raise ValueError("EMPIRICAL_MONITORING requires at least 'ndvi_mean' or 'lst_celsius' in baseline_metrics.")
+        for field in ("source", "observation_date", "measurement_period", "verification_status"):
+            if not baseline.get(field):
+                raise ValueError(f"EMPIRICAL_MONITORING requires '{field}' in baseline_metrics.")
+    elif data_type == "PLANNED" or lifecycle_status == "PLANNED":
+        baseline = baseline or {}
+    else:
+        if baseline is None:
+            # Empirical corridor raster values if available, else None without fake constants
+            baseline = {
+                "ndvi_mean": corr.get("ndvi_mean"),
+                "lst_celsius": corr.get("lst_mean"),
+                "observation_period": "Pre-Monsoon 2024",
+                "source": "Pre-intervention raster baseline",
+            }
 
     record = {
         "id": dep_id,
@@ -262,7 +296,7 @@ def create_deployment(data: Dict[str, Any]) -> Dict[str, Any]:
         "corridor_name": name,
         "district": district,
         "archetype": data.get("archetype", "Linear Street Trees"),
-        "lifecycle_status": data.get("lifecycle_status", "PLANNED"),
+        "lifecycle_status": lifecycle_status,
         "planned_date": data.get("planned_date", datetime.now().strftime("%Y-%m-%d")),
         "completion_date": data.get("completion_date"),
         "capex_inr_lakhs": float(data.get("capex_inr_lakhs", 15.0)),
@@ -273,9 +307,9 @@ def create_deployment(data: Dict[str, Any]) -> Dict[str, Any]:
         "baseline_metrics": json.dumps(baseline),
         "post_metrics": json.dumps(data.get("post_metrics", {})),
         "notes": data.get("notes", "Registered via VanSetu Climate Action Implementation"),
-        "is_synthetic_demo": 0,
+        "is_synthetic_demo": 1 if data_type == "SYNTHETIC_DEMO" else int(data.get("is_synthetic_demo", 0)),
         "verification_status": data.get("verification_status", "PENDING_FIELD_VERIFICATION"),
-        "data_type": data.get("data_type", "FIELD_REPORTED_ESTIMATE"),
+        "data_type": data_type,
         "updated_at": datetime.now().isoformat(),
     }
 

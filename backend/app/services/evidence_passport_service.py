@@ -16,6 +16,7 @@ Consolidates empirical evidence for an urban corridor into a rigorous, auditable
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from app.services.corridor_service import get_all_corridors, get_corridor_by_id
@@ -210,11 +211,17 @@ def generate_corridor_evidence_passport(corridor_id: str) -> Dict[str, Any]:
     completeness_score = round((active_count / total_signals) * 100.0, 1)
 
     # 4.3 Temporal Freshness: Weighted acquisition recency
-    # Sentinel-2 (Pre-Monsoon 2024, ~6 months): 75.0
-    # MODIS (Pre-Monsoon 2024, ~6 months): 75.0
-    # AQI: 95.0 if live telemetry, 65.0 if historical baseline, 0 if missing
-    aqi_freshness = 95.0 if aqi_is_live else (65.0 if aqi_val is not None else 0.0)
-    freshness_score = round(0.35 * 75.0 + 0.35 * 75.0 + 0.30 * aqi_freshness, 1)
+    # If no real sensor data exists, freshness is unavailable
+    if ndvi_val is None and lst_display is None and aqi_val is None:
+        freshness_score = None
+        freshness_status = "FRESHNESS_UNAVAILABLE"
+    else:
+        # Sentinel-2 (Pre-Monsoon 2024 composite): 75.0
+        # MODIS (Pre-Monsoon 2024 composite): 75.0
+        # AQI: 95.0 if live telemetry, 65.0 if historical baseline, 0 if missing
+        aqi_freshness = 95.0 if aqi_is_live else (65.0 if aqi_val is not None else 0.0)
+        freshness_score = round(0.35 * 75.0 + 0.35 * 75.0 + 0.30 * aqi_freshness, 1)
+        freshness_status = "ESTIMATED_SEASONAL_EPOCH"
 
     # 4.4 Spatial Representativeness: Distance decay & spatial resolution
     if aqi_dist_km is not None:
@@ -236,6 +243,9 @@ def generate_corridor_evidence_passport(corridor_id: str) -> Dict[str, Any]:
         "evidence_quality": {
             "score": quality_score,
             "grade": "HIGH" if quality_score >= 80 else ("MEDIUM" if quality_score >= 60 else "LOW"),
+            "methodology": "HEURISTIC_EVALUATION_RUBRIC",
+            "rubric_weights": {"sentinel2_ndvi_10m": 90.0, "modis_lst_1km": 70.0, "cpcb_point_aqi": 85.0},
+            "limitations": "Heuristic rubric based on spatial resolution and calibration documentation; not an empirical uncertainty propagation model.",
             "rationale": "Evaluated from sensor native spatial resolution (10m Sentinel-2 BOA vs 1km MODIS Terra LST) and calibration metadata.",
         },
         "evidence_completeness": {
@@ -246,7 +256,8 @@ def generate_corridor_evidence_passport(corridor_id: str) -> Dict[str, Any]:
         },
         "temporal_freshness": {
             "score": freshness_score,
-            "grade": "GOOD" if freshness_score >= 75 else "MODERATE",
+            "status": freshness_status,
+            "grade": "GOOD" if (freshness_score and freshness_score >= 75) else "MODERATE",
             "rationale": f"Sentinel-2 & MODIS datasets cover pre-monsoon 2024 composite. AQI uses {'live API feed' if aqi_is_live else 'CPCB baseline reference observation'}.",
         },
         "spatial_representativeness": {
@@ -310,6 +321,6 @@ def generate_corridor_evidence_passport(corridor_id: str) -> Dict[str, Any]:
         "what_requires_verification": what_requires_verification,
         "data_quality_dimensions": data_quality_dimensions,
         "evidence_improvement_recommendations": recommendations,
-        "passport_generated_at": "2026-10-31T16:05:00+05:30",
+        "passport_generated_at": datetime.now(timezone.utc).isoformat(),
         "provenance_standard": "VanSetu Evidence-Aware Scientific Governance Specification v2.1 (Zero-Fabrication Standard)",
     }

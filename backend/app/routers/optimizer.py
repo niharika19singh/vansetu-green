@@ -87,9 +87,11 @@ async def run_budget_optimizer(req: OptimizerRunRequest) -> Dict[str, Any]:
                 datapack_ids=["vansetu-project-memory", "vansetu-climate-knowledge"],
                 corridor_id=corr["id"],
                 ward_id=corr.get("ward_id"),
-                only_verified=True,
+                only_verified=False,
             )
             for mem in recalled:
+                if mem.get("verification_status") not in ("human_verified", "SYNTHETIC_DEMONSTRATION_SCENARIO"):
+                    continue
                 sp = mem.get("structured_payload") or {}
                 r_ints = sp.get("restricted_interventions") or []
                 txt_lower = (mem.get("content") or mem.get("content_text") or "").lower()

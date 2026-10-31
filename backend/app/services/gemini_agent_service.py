@@ -162,7 +162,7 @@ def check_intervention_feasibility(
         datapack_ids=["vansetu-project-memory", "vansetu-climate-knowledge"],
         corridor_id=resolved_cid,
         ward_id=resolved_ward,
-        only_verified=True,
+        only_verified=False,
     )
     excluded: List[str] = []
     restrictions: List[Dict[str, Any]] = []
@@ -226,7 +226,7 @@ def get_previous_planning_decisions(
         datapack_ids=["vansetu-planning-decisions", "vansetu-project-memory"],
         corridor_id=resolved_cid,
         ward_id=resolved_ward,
-        only_verified=True,
+        only_verified=False,
     )
     return {
         "corridor_id": resolved_cid,

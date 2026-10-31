@@ -122,8 +122,10 @@ def analyze_corridor_shade_continuity(corridor_id: str) -> Dict[str, Any]:
             "segment_index": idx,
             "length_m": seg_len_m,
             "measured_ndvi": sampled_ndvi,
+            "vegetation_canopy_proxy_percent": canopy_coverage_pct,
             "canopy_coverage_percent": canopy_coverage_pct,
             "shade_classification": shade_class,
+            "is_unshaded_vegetation_gap": is_gap,
             "is_thermal_gap": is_gap,
             "midpoint": {"lat": mid_lat, "lng": mid_lng},
             "data_source": "Sentinel-2 L2A (10m) BOA Surface Reflectance via raster_service" if sampled_ndvi is not None else "UNAVAILABLE",
@@ -187,6 +189,11 @@ def analyze_corridor_shade_continuity(corridor_id: str) -> Dict[str, Any]:
             "recommended_shade_bridge": gap["shade_bridge_recommended"],
             "trees_or_modules_required": trees_needed,
             "estimated_investment_lakhs": round((trees_needed * 0.12), 2),
+            "planning_parameters": {
+                "tree_spacing_m": 8.0,
+                "estimated_unit_cost_inr": 12000,
+                "basis": "Illustrative municipal planning estimate based on CPWD 2023 norms, configurable per ward.",
+            },
             "unit_cost_source": "CPWD Schedule of Rates 2023 / Horticulture Norms (~₹12,000 per sapling including tree guard and 3-year survival maintenance)",
             "expected_connectivity_impact": "Creates continuous shaded pedestrian corridor linking toward transit.",
         })
@@ -219,6 +226,10 @@ def analyze_corridor_shade_continuity(corridor_id: str) -> Dict[str, Any]:
             "distance_calculation_method": "Straight-line Euclidean distance (Haversine); pedestrian street network routing is unmeasured.",
         },
         "segments": segments_shade,
+        "scientific_disclaimer": (
+            "NDVI canopy reflects optical top-of-canopy vegetation reflectance proxy (Sentinel-2 10m); "
+            "does not measure direct physical shade, shadow angles, or human physiological thermal comfort."
+        ),
         "scientific_guardrail": (
             "No pedestrian footfall volume is fabricated. Pedestrian vulnerability is established strictly "
             "from OpenStreetMap transit connectivity and physical canopy continuity sampled from 10m Sentinel-2 surface reflectance."

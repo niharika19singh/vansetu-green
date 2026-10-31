@@ -387,8 +387,15 @@ def evaluate_segment_suitability(
     """
     corridor_code = corridor.get("code", f"C-{corridor.get('id', '??')}")
     segment_id = f"{corridor_code}-S{segment_index}"
-    highway = corridor.get("highway", "secondary")
-    is_walkable = bool(corridor.get("is_walkable", True))
+    highway = corridor.get("highway")
+
+    is_walkable_raw = corridor.get("is_walkable")
+    if is_walkable_raw is None:
+        is_walkable = None
+        walkable_status = "UNVERIFIED_PEDESTRIAN_ACCESS"
+    else:
+        is_walkable = bool(is_walkable_raw)
+        walkable_status = "CONFIRMED_PEDESTRIAN_ACCESS" if is_walkable else "NON_WALKABLE_HIGHWAY"
 
     # Real segment length from great-circle coordinates
     seg_km = haversine_km(seg_coords[0][1], seg_coords[0][0], seg_coords[-1][1], seg_coords[-1][0])
@@ -398,14 +405,19 @@ def evaluate_segment_suitability(
     mid_idx = len(seg_coords) // 2
     midpoint = {"lat": seg_coords[mid_idx][1], "lng": seg_coords[mid_idx][0]}
 
-    # Typical ROW from Master Plan guideline (explicitly labelled as guideline estimate, not measured width)
-    row_guideline_m = TYPICAL_HIGHWAY_ROW_GUIDELINES_M.get(highway, 18.0)
+    # Typical ROW from Master Plan guideline (None if unknown highway class)
+    if highway in TYPICAL_HIGHWAY_ROW_GUIDELINES_M:
+        row_guideline_m = TYPICAL_HIGHWAY_ROW_GUIDELINES_M[highway]
+        row_status = "TYPICAL_CROSS_SECTION_GUIDELINE_ESTIMATE"
+    else:
+        row_guideline_m = None
+        row_status = "UNKNOWN_HIGHWAY_CLASS_NO_ROW_GUIDELINE"
 
     # Honest site geometry disclosure
     site_geometry = {
-        "corridor_highway_class": highway,
+        "corridor_highway_class": highway or "unknown",
         "row_width_guideline_m": row_guideline_m,
-        "row_width_status": "TYPICAL_CROSS_SECTION_GUIDELINE_ESTIMATE",
+        "row_width_status": row_status,
         "estimated_sidewalk_width_m": None,
         "exact_sidewalk_width_m": None,
         "sidewalk_width_status": "UNMEASURED_REQUIRES_TOTAL_STATION_SURVEY",
@@ -415,6 +427,7 @@ def evaluate_segment_suitability(
         "waterlogging_risk": "UNVERIFIED_DRAINAGE_STUDY_REQUIRED",
         "irc_103_compliance": "PENDING_FIELD_MEASUREMENT",
         "is_walkable": is_walkable,
+        "walkable_status": walkable_status,
         "missing_evidence_list": [
             "Actual sidewalk curb-to-property width measurement",
             "BSES overhead 11kV electrical wire clearance scan",
@@ -427,10 +440,14 @@ def evaluate_segment_suitability(
     archetypes_evaluation: Dict[str, Any] = {}
 
     # 1. Linear Street Trees
-    if not is_walkable:
+    if is_walkable is False:
         tree_state = "NOT_FEASIBLE"
         tree_reason = "Corridor is classified as non-walkable; pedestrian greening prohibited along high-speed carriageway."
         tree_alt = "Median Barrier Greening or High-Albedo Pavements"
+    elif is_walkable is None:
+        tree_state = "FIELD_VERIFICATION_REQUIRED"
+        tree_reason = "Pedestrian access unverified; physical excavation requires on-ground walkway survey, GPR utility scan, and IRC:103 clear walkway audit (>= 1.8m)."
+        tree_alt = "Living Green Walls or Cantilevered Shade Structures if sidewalk < 1.8m"
     else:
         tree_state = "FIELD_VERIFICATION_REQUIRED"
         tree_reason = "Candidate based on highway classification; physical excavation requires GPR subsurface utility scan and IRC:103 clear walkway audit (>= 1.8m)."
@@ -445,10 +462,14 @@ def evaluate_segment_suitability(
     }
 
     # 2. Roadside Bioswales
-    if not is_walkable:
+    if is_walkable is False:
         swale_state = "NOT_FEASIBLE"
         swale_reason = "Non-walkable corridor; bioswale construction would compromise roadside safety runoff buffers."
         swale_alt = None
+    elif is_walkable is None:
+        swale_state = "FIELD_VERIFICATION_REQUIRED"
+        swale_reason = "Pedestrian access unverified; requires subgrade percolation core testing (IS 2720 Part 28) and drainage alignment survey."
+        swale_alt = "Permeable Pavers with Subsurface Infiltration Trenches"
     else:
         swale_state = "FIELD_VERIFICATION_REQUIRED"
         swale_reason = "Requires subgrade percolation core testing (IS 2720 Part 28) and storm drain invert alignment survey."
@@ -482,9 +503,8 @@ def evaluate_segment_suitability(
     }
 
     # 5. High-Albedo Cool Pavements
-    # Feasible estimate because surface solar-reflective coating requires zero subterranean excavation
-    pave_state = "FEASIBLE_ESTIMATE"
-    pave_reason = "Surface elastomeric solar-reflective coating (SRI >= 78) applied to existing pavement requires zero subterranean excavation."
+    pave_state = "FIELD_VERIFICATION_REQUIRED"
+    pave_reason = "Requires substrate adhesion, skid resistance verification (IRC:SP:98), and road surface structural soundness audit prior to application."
     archetypes_evaluation["high_albedo_cool_pavements"] = {
         "name": "High-Albedo Cool Pavements",
         "feasibility_state": pave_state,

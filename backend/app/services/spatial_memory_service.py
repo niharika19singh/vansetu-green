@@ -46,13 +46,34 @@ def _get_corridor_coords_map() -> Dict[str, Tuple[float, float]]:
     corridors = get_all_corridors()
     lookup = {}
     for c in corridors:
-        coords = c.get("coordinates", [])
-        if not coords and "geometry" in c:
-            coords = c["geometry"].get("coordinates", [])
-        if coords:
-            mid = coords[len(coords) // 2]
-            lookup[str(c.get("id"))] = (mid[1], mid[0])
-            lookup[str(c.get("code"))] = (mid[1], mid[0])
+        c_coord = None
+        cent = c.get("centroid")
+        if cent and len(cent) >= 2:
+            c_coord = (float(cent[0]), float(cent[1]))
+        else:
+            coords = c.get("coordinates", [])
+            if not coords and "geometry" in c:
+                coords = c["geometry"].get("coordinates", [])
+            if coords:
+                m = coords[len(coords) // 2]
+                c_coord = (float(m[1]), float(m[0]))
+
+        if c_coord:
+            cid = str(c.get("id", ""))
+            code = str(c.get("code", ""))
+            if cid:
+                lookup[cid] = c_coord
+            if code:
+                lookup[code] = c_coord
+                lookup[code.upper()] = c_coord
+                lookup[code.lower()] = c_coord
+                if code.startswith("C-"):
+                    num_s = code[2:]
+                    lookup[num_s] = c_coord
+                    try:
+                        lookup[str(int(num_s))] = c_coord
+                    except ValueError:
+                        pass
     return lookup
 
 
@@ -102,14 +123,20 @@ def get_spatial_memory_pins(
         lng = payload.get("lng")
         c_id = row_dict.get("corridor_id") or payload.get("corridor_id")
         has_coords = True
+        coord_source = "FIELD_RECORD_EXACT"
+        coord_precision = "POINT_COORDINATES"
 
         if lat is None or lng is None:
             if c_id and str(c_id) in corridor_coords:
                 lat, lng = corridor_coords[str(c_id)]
+                coord_source = "CORRIDOR_CENTROID_PROXY"
+                coord_precision = "CORRIDOR_CENTROID_PROXY (Corridor midpoint used; not a precise GPS ground-survey fix)"
             else:
                 lat = None
                 lng = None
                 has_coords = False
+                coord_source = "COORDINATES_UNAVAILABLE"
+                coord_precision = "UNAVAILABLE"
 
         # Infer category
         m_type = (row_dict.get("memory_type") or "").upper()
@@ -145,21 +172,23 @@ def get_spatial_memory_pins(
             "color": cfg["color"],
             "icon": cfg["icon"],
             "corridor_id": c_id,
-            "corridor_code": f"C-{c_id}" if c_id and not str(c_id).startswith("C-") else (str(c_id) if c_id else "UNASSIGNED"),
-            "segment_id": payload.get("segment_id", f"{c_id}-S1" if c_id else "UNASSIGNED"),
-            "ward_id": row_dict.get("ward_id") or payload.get("ward_id", "Ward-Unassigned"),
+            "corridor_code": f"C-{c_id}" if c_id and not str(c_id).startswith("C-") else (str(c_id) if c_id else None),
+            "segment_id": payload.get("segment_id"),
+            "ward_id": row_dict.get("ward_id") or payload.get("ward_id"),
             "has_spatial_coordinates": has_coords,
             "coordinates": {
                 "lat": round(float(lat), 5) if lat is not None else None,
                 "lng": round(float(lng), 5) if lng is not None else None,
             },
+            "coordinate_source": coord_source,
+            "coordinate_precision": coord_precision,
             "summary": row_dict.get("content_text", ""),
-            "author_agent": row_dict.get("agent_id", "climate_planner_agent"),
-            "author_teammate": row_dict.get("author_teammate", "Niharika Singh"),
+            "author_agent": row_dict.get("agent_id"),
+            "author_teammate": row_dict.get("author_teammate"),
             "verification_status": actual_ver,
             "is_promoted": bool(row_dict.get("promoted", 0)),
             "validity_status": row_dict.get("validity_status", "ACTIVE"),
-            "observation_date": row_dict.get("observation_date", "2024-05-15"),
+            "observation_date": row_dict.get("observation_date"),
             "is_synthetic_demo": is_demo,
             "badge": badge_text,
             "available_lifecycle_actions": ["APPROVE", "CORRECT", "PROMOTE", "FORGET", "SUPERSEDE"],
@@ -209,6 +238,7 @@ def execute_spatial_memory_action(
     else:
         effective_agent = actor_agent if actor_agent not in {"niharika-coding-agent", "kunal-coding-agent"} else "municipal_reviewer"
 
+    res: Dict[str, Any] = {}
     if act_upper == "APPROVE":
         res = meko_svc.update_or_verify_memory(
             memory_id=memory_id,
@@ -227,22 +257,13 @@ def execute_spatial_memory_action(
         )
         msg = f"Memory {memory_id} corrected with reviewer feedback."
     elif act_upper == "PROMOTE":
-        try:
-            # If not yet human_verified, verify first so promote_memory passes safety rules
-            meko_svc.update_or_verify_memory(
-                memory_id=memory_id,
-                agent_id=effective_agent,
-                verification_status="human_verified",
-            )
-            res = meko_svc.promote_memory(
-                memory_id=memory_id,
-                agent_id=effective_agent,
-                reviewer_note="Promoted via Spatial Institutional Memory Reviewer",
-            )
-            msg = f"Memory {memory_id} promoted to shared cross-agent institutional knowledge."
-        except Exception as e:
-            logger.warning(f"Error during promote_memory: {e}")
-            msg = f"Memory {memory_id} promotion processed."
+        # Strictly promote using MekoService promote_memory: fails if verification_status != 'human_verified'
+        res = meko_svc.promote_memory(
+            memory_id=memory_id,
+            agent_id=effective_agent,
+            reviewer_note=correction_text or "Promoted via Spatial Institutional Memory Reviewer",
+        )
+        msg = f"Memory {memory_id} promoted to shared cross-agent institutional knowledge."
     elif act_upper == "FORGET":
         res = meko_svc.delete_memory(
             memory_id=memory_id,
@@ -265,6 +286,10 @@ def execute_spatial_memory_action(
         "timestamp": now_iso,
         "message": msg,
         "transport_mode": meko_svc.transport_mode,
+        "sync_status": res.get("sync_status"),
+        "remote_status": res.get("remote_status"),
+        "local_status": res.get("local_status"),
+        "remote_error": res.get("remote_error"),
     }
 
 
