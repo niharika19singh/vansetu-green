@@ -165,6 +165,19 @@ function getRequiredRole(viewId) {
   return 'government_admin';
 }
 
+function getInitialView() {
+  try {
+    if (typeof window !== 'undefined' && window.location) {
+      const params = new URLSearchParams(window.location.search);
+      const qv = params.get('view');
+      if (qv && ROLE_PERMISSIONS_VIEW[qv]) return qv;
+      const hash = (window.location.hash || '').replace('#', '');
+      if (hash && ROLE_PERMISSIONS_VIEW[hash]) return hash;
+    }
+  } catch {}
+  return 'govt_overview';
+}
+
 const NAV_VIEWS = [
   { id: 'overview', label: '1. Climate Overview', icon: LayoutDashboard },
   { id: 'map', label: '2. Interactive Map', icon: Map },
@@ -187,8 +200,19 @@ const NAV_VIEWS = [
 ];
 
 export default function App() {
-  const [activeView, setActiveView] = useState('govt_overview');
+  const [activeView, _setActiveViewState] = useState(getInitialView);
   const [mekoEnabled, setMekoEnabled] = useState(true);
+
+  const setActiveView = useCallback((newView) => {
+    _setActiveViewState(newView);
+    try {
+      if (typeof window !== 'undefined' && window.history && window.history.replaceState) {
+        const url = new URL(window.location.href);
+        url.searchParams.set('view', newView);
+        window.history.replaceState({}, '', url.toString());
+      }
+    } catch {}
+  }, []);
 
   // Phase 12: RBAC & Government Platform State
   const [currentRole, setCurrentRole] = useState('government_admin');
@@ -200,7 +224,7 @@ export default function App() {
   const [token, setToken] = useState(null);
   const [switchingRole, setSwitchingRole] = useState(false);
 
-  const handleSwitchRole = useCallback(async (role) => {
+  const handleSwitchRole = useCallback(async (role, targetView = null) => {
     setSwitchingRole(true);
     try {
       const res = await api.demoSwitchRole(role);
@@ -211,22 +235,41 @@ export default function App() {
         role: res.role,
         organization: res.organization,
       });
-      if (role === 'government_admin' || role === 'government_engineer') {
-        setActiveView('govt_overview');
-      } else if (role === 'pro_professional') {
-        setActiveView('pro_dashboard');
-      } else {
-        setActiveView('public_overview');
+
+      let nextView = targetView;
+      if (!nextView || !isViewAuthorized(nextView, res.role)) {
+        if (role === 'government_admin' || role === 'government_engineer') {
+          nextView = 'govt_overview';
+        } else if (role === 'pro_professional') {
+          nextView = 'pro_dashboard';
+        } else {
+          nextView = 'public_overview';
+        }
       }
+      setActiveView(nextView);
     } catch (err) {
-      console.error('Failed to switch role', err);
+      // In staging/production environments where demo auth is restricted, default to public citizen
+      console.warn('Demo persona switching unavailable; defaulting to Public Citizen', err);
+      setToken(null);
+      setCurrentRole('normal_user');
+      setCurrentUser({
+        user_id: 'public_citizen',
+        role: 'normal_user',
+        organization: 'Public Citizen',
+      });
+      let nextView = targetView;
+      if (!nextView || !isViewAuthorized(nextView, 'normal_user')) {
+        nextView = 'public_overview';
+      }
+      setActiveView(nextView);
     } finally {
       setSwitchingRole(false);
     }
-  }, []);
+  }, [setActiveView]);
 
   useEffect(() => {
-    handleSwitchRole('government_admin');
+    const initView = getInitialView();
+    handleSwitchRole('government_admin', initView);
   }, [handleSwitchRole]);
 
   const [corridors, setCorridors] = useState([]);
