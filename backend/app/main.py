@@ -43,6 +43,7 @@ from app.routers import (
     impact_monitoring,
     spatial_memory,
     project_readiness,
+    ml_interventions,
 )
 
 logging.basicConfig(
@@ -107,6 +108,7 @@ app.include_router(seasonal_heat.router)
 app.include_router(impact_monitoring.router)
 app.include_router(spatial_memory.router)
 app.include_router(project_readiness.router)
+app.include_router(ml_interventions.router)
 
 
 @app.get("/", tags=["System"])

@@ -252,4 +252,34 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify(payload),
     }),
+
+  // Phase 11: Machine Learning Intervention Intelligence Engine
+  getMlModelStatus: () => requestJson('/api/ml/model-status'),
+  getMlDataStatus: () => requestJson('/api/ml/data-status'),
+  getSegmentFeatures: (segmentId) =>
+    requestJson(`/api/ml/features/${encodeURIComponent(segmentId)}`),
+  recommendInterventions: (payload) =>
+    requestJson('/api/ml/interventions/recommend', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  submitSiteAssessment: (payload) =>
+    requestJson('/api/ml/site-assessments', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  reviewSiteAssessment: (assessmentId, payload) =>
+    requestJson(`/api/ml/site-assessments/${encodeURIComponent(assessmentId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }),
+  listSiteAssessments: (params = {}) => {
+    const q = new URLSearchParams(params).toString();
+    return requestJson(`/api/ml/site-assessments${q ? `?${q}` : ''}`);
+  },
+  submitOutcomeObservation: (payload) =>
+    requestJson('/api/ml/outcome-observations', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
 };

@@ -22,6 +22,7 @@ import {
   Activity,
   Compass,
   ShieldCheck,
+  Cpu,
 } from 'lucide-react';
 import { api } from './api/client';
 import InteractiveMap from './components/InteractiveMap';
@@ -45,6 +46,7 @@ const SeasonalHeatIntelligenceView = React.lazy(() => import('./components/Seaso
 const ImpactMonitoringView = React.lazy(() => import('./components/ImpactMonitoringView'));
 const SpatialMemoryMapView = React.lazy(() => import('./components/SpatialMemoryMapView'));
 const ProjectReadinessView = React.lazy(() => import('./components/ProjectReadinessView'));
+const InterventionIntelligenceView = React.lazy(() => import('./components/InterventionIntelligenceView'));
 
 function ViewLoadingFallback() {
   return (
@@ -75,6 +77,7 @@ const NAV_VIEWS = [
   { id: 'impact', label: '15. Impact Monitoring', icon: Activity },
   { id: 'spatial_memory', label: '16. Spatial Memory Map', icon: Brain },
   { id: 'readiness', label: '17. Project Readiness (WP 1-8)', icon: FolderKanban },
+  { id: 'intervention_intelligence', label: '18. Intervention Intelligence (ML)', icon: Cpu },
 ];
 
 export default function App() {
@@ -600,6 +603,14 @@ export default function App() {
             <EquityAndProvenanceView
               provenance={provenance}
               statsSummary={statsSummary}
+            />
+          )}
+
+          {/* View 18: Delhi Intervention Intelligence ML Pipeline */}
+          {activeView === 'intervention_intelligence' && (
+            <InterventionIntelligenceView
+              selectedCorridor={selectedCorridor}
+              onSelectCorridor={setSelectedCorridor}
             />
           )}
         </React.Suspense>
