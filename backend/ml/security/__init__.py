@@ -6,8 +6,11 @@ from ml.security.auth import (
     AuthManager,
     Permission,
     ReviewerRole,
+    UserRole,
+    PUBLIC_ANONYMOUS_USER,
     get_auth_manager,
     get_current_user,
+    get_optional_current_user,
     require_permission,
 )
 
@@ -16,7 +19,10 @@ __all__ = [
     "AuthManager",
     "Permission",
     "ReviewerRole",
+    "UserRole",
+    "PUBLIC_ANONYMOUS_USER",
     "get_auth_manager",
     "get_current_user",
+    "get_optional_current_user",
     "require_permission",
 ]

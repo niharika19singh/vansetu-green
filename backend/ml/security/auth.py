@@ -62,6 +62,13 @@ def get_token_hmac_secret() -> str:
 
 
 class ReviewerRole(str, Enum):
+    # Core Government-First Platform Roles
+    GOVERNMENT_ADMIN = "GOVERNMENT_ADMIN"
+    GOVERNMENT_ENGINEER = "GOVERNMENT_ENGINEER"
+    PRO_PROFESSIONAL = "PRO_PROFESSIONAL"
+    NORMAL_USER = "NORMAL_USER"
+
+    # Pre-existing ML Reviewer / Field Staff Roles (backward compatible)
     FIELD_ASSESSOR = "FIELD_ASSESSOR"
     AUTHORIZED_REVIEWER = "AUTHORIZED_REVIEWER"
     SENIOR_REVIEWER = "SENIOR_REVIEWER"
@@ -73,6 +80,7 @@ UserRole = ReviewerRole
 
 
 class Permission(str, Enum):
+    # Existing ML Review & Label Permissions
     SUBMIT_ASSESSMENT = "SUBMIT_ASSESSMENT"
     VIEW_ASSESSMENTS = "VIEW_ASSESSMENTS"
     REVIEW_ASSESSMENT = "REVIEW_ASSESSMENT"
@@ -88,16 +96,88 @@ class Permission(str, Enum):
     MANAGE_USERS = "MANAGE_USERS"
     MANAGE_REGISTRY = "MANAGE_REGISTRY"
 
+    # Government-First Platform Permissions
+    VIEW_PUBLIC_MAP = "VIEW_PUBLIC_MAP"
+    VIEW_CORRIDOR_INTELLIGENCE = "VIEW_CORRIDOR_INTELLIGENCE"
+    VIEW_SEGMENT_ANALYSIS = "VIEW_SEGMENT_ANALYSIS"
+    CUSTOMIZE_SCENARIOS = "CUSTOMIZE_SCENARIOS"
+    OPTIMIZE_PORTFOLIO = "OPTIMIZE_PORTFOLIO"
+    OPTIMIZE_CORRIDOR_COST = "OPTIMIZE_CORRIDOR_COST"
+    BROWSE_TENDERS = "BROWSE_TENDERS"
+    SUBMIT_PROPOSAL = "SUBMIT_PROPOSAL"
+    MANAGE_TENDERS = "MANAGE_TENDERS"
+    ASSIGN_TENDER = "ASSIGN_TENDER"
+    ALLOCATE_CORRIDOR = "ALLOCATE_CORRIDOR"
+    VIEW_ALL_ASSIGNMENTS = "VIEW_ALL_ASSIGNMENTS"
+    MANAGE_PROFESSIONALS = "MANAGE_PROFESSIONALS"
+    MANAGE_HOSPITAL_SOURCES = "MANAGE_HOSPITAL_SOURCES"
+    VIEW_REGIONAL_HEALTH = "VIEW_REGIONAL_HEALTH"
+    APPROVE_PROJECT_COSTS = "APPROVE_PROJECT_COSTS"
+    VIEW_GOVERNMENT_AUDIT = "VIEW_GOVERNMENT_AUDIT"
+
 
 # Authoritative role-permission mappings
 ROLE_PERMISSIONS: Dict[ReviewerRole, Set[Permission]] = {
+    ReviewerRole.GOVERNMENT_ADMIN: {
+        Permission.VIEW_PUBLIC_MAP,
+        Permission.VIEW_CORRIDOR_INTELLIGENCE,
+        Permission.VIEW_SEGMENT_ANALYSIS,
+        Permission.CUSTOMIZE_SCENARIOS,
+        Permission.OPTIMIZE_PORTFOLIO,
+        Permission.OPTIMIZE_CORRIDOR_COST,
+        Permission.BROWSE_TENDERS,
+        Permission.MANAGE_TENDERS,
+        Permission.ASSIGN_TENDER,
+        Permission.ALLOCATE_CORRIDOR,
+        Permission.VIEW_ALL_ASSIGNMENTS,
+        Permission.MANAGE_PROFESSIONALS,
+        Permission.MANAGE_HOSPITAL_SOURCES,
+        Permission.VIEW_REGIONAL_HEALTH,
+        Permission.APPROVE_PROJECT_COSTS,
+        Permission.VIEW_GOVERNMENT_AUDIT,
+        Permission.MANAGE_USERS,
+        Permission.MANAGE_REGISTRY,
+    },
+    ReviewerRole.GOVERNMENT_ENGINEER: {
+        Permission.VIEW_PUBLIC_MAP,
+        Permission.VIEW_CORRIDOR_INTELLIGENCE,
+        Permission.VIEW_SEGMENT_ANALYSIS,
+        Permission.CUSTOMIZE_SCENARIOS,
+        Permission.OPTIMIZE_PORTFOLIO,
+        Permission.OPTIMIZE_CORRIDOR_COST,
+        Permission.BROWSE_TENDERS,
+        Permission.VIEW_ALL_ASSIGNMENTS,
+        Permission.VIEW_REGIONAL_HEALTH,
+    },
+    ReviewerRole.ADMINISTRATOR: set(Permission),
+    ReviewerRole.PRO_PROFESSIONAL: {
+        Permission.VIEW_PUBLIC_MAP,
+        Permission.VIEW_CORRIDOR_INTELLIGENCE,
+        Permission.VIEW_SEGMENT_ANALYSIS,
+        Permission.CUSTOMIZE_SCENARIOS,
+        Permission.OPTIMIZE_PORTFOLIO,
+        Permission.OPTIMIZE_CORRIDOR_COST,
+        Permission.BROWSE_TENDERS,
+        Permission.SUBMIT_PROPOSAL,
+        Permission.VIEW_REGIONAL_HEALTH,
+        Permission.SUBMIT_ASSESSMENT,
+        Permission.VIEW_ASSESSMENTS,
+        Permission.SUBMIT_OUTCOME,
+        Permission.VIEW_EVIDENCE,
+    },
     ReviewerRole.FIELD_ASSESSOR: {
+        Permission.VIEW_PUBLIC_MAP,
+        Permission.VIEW_CORRIDOR_INTELLIGENCE,
+        Permission.VIEW_SEGMENT_ANALYSIS,
         Permission.SUBMIT_ASSESSMENT,
         Permission.VIEW_ASSESSMENTS,
         Permission.SUBMIT_OUTCOME,
         Permission.VIEW_EVIDENCE,
     },
     ReviewerRole.AUTHORIZED_REVIEWER: {
+        Permission.VIEW_PUBLIC_MAP,
+        Permission.VIEW_CORRIDOR_INTELLIGENCE,
+        Permission.VIEW_SEGMENT_ANALYSIS,
         Permission.SUBMIT_ASSESSMENT,
         Permission.VIEW_ASSESSMENTS,
         Permission.REVIEW_ASSESSMENT,
@@ -107,6 +187,9 @@ ROLE_PERMISSIONS: Dict[ReviewerRole, Set[Permission]] = {
         Permission.VIEW_EVIDENCE,
     },
     ReviewerRole.SENIOR_REVIEWER: {
+        Permission.VIEW_PUBLIC_MAP,
+        Permission.VIEW_CORRIDOR_INTELLIGENCE,
+        Permission.VIEW_SEGMENT_ANALYSIS,
         Permission.SUBMIT_ASSESSMENT,
         Permission.VIEW_ASSESSMENTS,
         Permission.REVIEW_ASSESSMENT,
@@ -114,12 +197,17 @@ ROLE_PERMISSIONS: Dict[ReviewerRole, Set[Permission]] = {
         Permission.APPROVE_ASSESSMENT,
         Permission.REJECT_ASSESSMENT,
         Permission.PROMOTE_MODEL,
+        Permission.ROLLBACK_MODEL,
         Permission.VERIFY_OUTCOME,
         Permission.SUBMIT_OUTCOME,
         Permission.VERIFY_EVIDENCE,
         Permission.VIEW_EVIDENCE,
     },
-    ReviewerRole.ADMINISTRATOR: set(Permission),
+    ReviewerRole.NORMAL_USER: {
+        Permission.VIEW_PUBLIC_MAP,
+        Permission.VIEW_CORRIDOR_INTELLIGENCE,
+        Permission.VIEW_REGIONAL_HEALTH,
+    },
 }
 
 
@@ -132,10 +220,16 @@ class AuthenticatedUser:
     organization: str
     is_active: bool = True
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    expires_at: Optional[str] = None
+    is_demo: bool = False
 
     def has_permission(self, permission: Permission) -> bool:
         if not self.is_active:
             return False
+        if self.expires_at:
+            now_iso = datetime.now(timezone.utc).isoformat()
+            if self.expires_at < now_iso:
+                return False
         perms = ROLE_PERMISSIONS.get(self.role, set())
         return permission in perms
 
@@ -346,6 +440,7 @@ class CredentialStore:
                         role=role_enum,
                         organization=row["organization"],
                         is_active=bool(row["is_active"]),
+                        expires_at=row["expires_at"],
                     )
 
             # 2. Self-migrating fallback for legacy salt/hash rows where token_hmac is NULL
@@ -382,6 +477,7 @@ class CredentialStore:
                         role=role_enum,
                         organization=r["organization"],
                         is_active=bool(r["is_active"]),
+                        expires_at=r["expires_at"],
                     )
 
         return None
@@ -499,20 +595,30 @@ class AuthManager:
         username: Optional[str] = None,
         full_name: Optional[str] = None,
         organization: Optional[str] = None,
+        expires_in_seconds: Optional[int] = None,
+        is_demo: bool = False,
     ) -> Tuple[str, AuthenticatedUser]:
-        """Utility for test suites to dynamically generate credentials without hardcoding."""
+        """Utility for test suites and demo auth to dynamically generate credentials."""
         uid = user_id or f"USER_{role.value}_{secrets.token_hex(4)}"
         u_name = username or f"user_{secrets.token_hex(4)}"
         f_name = full_name or f"Accredited Officer {role.value}"
         org = organization or "NCT Delhi Climate Infrastructure Cell"
+        expires_at_iso: Optional[str] = None
+        if expires_in_seconds is not None:
+            expires_at_iso = datetime.fromtimestamp(
+                time.time() + expires_in_seconds, timezone.utc
+            ).isoformat()
+
         user = AuthenticatedUser(
             user_id=uid,
             username=u_name,
             full_name=f_name,
             role=role,
             organization=org,
+            expires_at=expires_at_iso,
+            is_demo=is_demo,
         )
-        token = self.store.create_token(user)
+        token = self.store.create_token(user, expires_at=expires_at_iso)
         self._ephemeral_tokens[token] = user
         return token, user
 
@@ -520,14 +626,37 @@ class AuthManager:
         if not token:
             return None
         token_clean = token.strip()
+        now_iso = datetime.now(timezone.utc).isoformat()
         # 1. Check ephemeral test mappings (constant-time check)
-        for reg_token, user in self._ephemeral_tokens.items():
+        for reg_token, user in list(self._ephemeral_tokens.items()):
             if hmac.compare_digest(reg_token, token_clean):
-                if user.is_active:
-                    return user
-                return None
+                if not user.is_active:
+                    return None
+                if user.expires_at and user.expires_at < now_iso:
+                    return None
+                return user
         # 2. Check hashed database store
         return self.store.authenticate(token_clean)
+
+    def revoke_token(self, raw_token: str) -> bool:
+        """Revoke a token from both in-memory ephemeral registry and database store."""
+        if not raw_token:
+            return False
+        token_clean = raw_token.strip()
+        for reg_token, user in list(self._ephemeral_tokens.items()):
+            if hmac.compare_digest(reg_token, token_clean):
+                self._ephemeral_tokens[reg_token] = AuthenticatedUser(
+                    user_id=user.user_id,
+                    username=user.username,
+                    full_name=user.full_name,
+                    role=user.role,
+                    organization=user.organization,
+                    is_active=False,
+                    created_at=user.created_at,
+                    expires_at=user.expires_at,
+                    is_demo=user.is_demo,
+                )
+        return self.store.revoke_token(token_clean)
 
     def check_rate_limit(self, client_key: str) -> bool:
         """Process-local sliding-window rate limiter. Returns True if allowed, False if exceeded."""
@@ -605,6 +734,41 @@ async def get_current_user(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=f"Rate limit exceeded: Maximum {mgr.rate_limit_max_requests} requests per minute allowed.",
         )
+
+    return user
+
+
+PUBLIC_ANONYMOUS_USER = AuthenticatedUser(
+    user_id="PUBLIC_ANON",
+    username="public.guest",
+    full_name="Public Visitor",
+    role=ReviewerRole.NORMAL_USER,
+    organization="General Public",
+)
+
+
+async def get_optional_current_user(
+    request: Request,
+    auth_header: Optional[HTTPAuthorizationCredentials] = Security(security_bearer),
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+) -> AuthenticatedUser:
+    """
+    FastAPI dependency that attempts authentication, defaulting gracefully
+    to PUBLIC_ANONYMOUS_USER (NORMAL_USER role) if no token is provided.
+    """
+    token: Optional[str] = None
+    if auth_header and auth_header.credentials:
+        token = auth_header.credentials
+    elif x_api_key:
+        token = x_api_key
+
+    if not token:
+        return PUBLIC_ANONYMOUS_USER
+
+    mgr = get_auth_manager()
+    user = mgr.authenticate_token(token)
+    if not user:
+        return PUBLIC_ANONYMOUS_USER
 
     return user
 
