@@ -185,3 +185,162 @@ def health_check():
             },
         },
     }
+
+
+@app.get("/api/acceptance-matrix", tags=["System"])
+def get_prize_acceptance_matrix():
+    """
+    Return the Official Track Compliance and Final Prize Acceptance Dashboard (Section J)
+    using the 7 required lifecycle statuses:
+    NOT STARTED, IN PROGRESS, IMPLEMENTED, TESTED, CONNECTED, DEMO VERIFIED, ELIGIBILITY CONFIRMED.
+    """
+    meko_svc = get_meko_service()
+    tiger_svc = get_tiger_data_service()
+    check_t = meko_svc.verify_check_t()
+    meko_live = bool(settings.meko_api_key and settings.meko_api_key.strip())
+    gemini_live = bool(settings.gemini_api_key and settings.gemini_api_key.strip())
+    tiger_live = bool(tiger_svc.pg_connected)
+    do_live = bool(settings.do_spaces_endpoint and settings.do_spaces_bucket and settings.do_spaces_key)
+
+    return {
+        "allowed_statuses": [
+            "NOT STARTED",
+            "IN PROGRESS",
+            "IMPLEMENTED",
+            "TESTED",
+            "CONNECTED",
+            "DEMO VERIFIED",
+            "ELIGIBILITY CONFIRMED",
+        ],
+        "meko_scoring_weights": {
+            "idea": 20,
+            "mekos_role": 30,
+            "build_and_execution": 25,
+            "built_with_meko": 10,
+            "meko_feature_proposal": 10,
+            "build_in_public": 5,
+            "total": 100,
+        },
+        "tracks": [
+            {
+                "id": "greentech_primary",
+                "name": "GreenTech (Primary Category) + MILP Budget Optimizer",
+                "status": "DEMO VERIFIED",
+                "gates": {
+                    "IMPLEMENTED": True,
+                    "TESTED": True,
+                    "CONNECTED": True,
+                    "DEMO VERIFIED": True,
+                    "ELIGIBILITY CONFIRMED": False,
+                },
+                "notes": "Native 10m Sentinel-2 NDVI, 1km MODIS LST, 5 scenarios, and scipy.optimize.milp verified. Confirm pre-existing reference timing rules with organizers (Section I).",
+            },
+            {
+                "id": "meko_track_a",
+                "name": "YugabyteDB / Meko — Track A: Open Project (Build AI That Remembers)",
+                "status": "CONNECTED" if meko_live else "DEMO VERIFIED",
+                "gates": {
+                    "IMPLEMENTED": True,
+                    "TESTED": True,
+                    "CONNECTED": meko_live,
+                    "DEMO VERIFIED": True,
+                    "ELIGIBILITY CONFIRMED": False,
+                },
+                "check_t_passed": check_t["check_t_passed"],
+                "promoted_build_decisions": check_t["total_promoted_decisions"],
+                "notes": "Criteria A1-A5, MEKO ON vs OFF outcome diff on C-14, Check T (12 decisions), and PDF proposal verified. Set MEKO_API_KEY in .env for live cloud MCP.",
+            },
+            {
+                "id": "mlh_gemini",
+                "name": "MLH — Best Use of Google Gemini API",
+                "status": "CONNECTED" if gemini_live else "DEMO VERIFIED",
+                "gates": {
+                    "IMPLEMENTED": True,
+                    "TESTED": True,
+                    "CONNECTED": gemini_live,
+                    "DEMO VERIFIED": True,
+                    "ELIGIBILITY CONFIRMED": False,
+                },
+                "notes": "google-genai SDK with gemini-3.8-flash and 8 deterministic backend tools verified. Set GEMINI_API_KEY in .env for live LLM call.",
+            },
+            {
+                "id": "mlh_tiger_data",
+                "name": "MLH — Best Use of Tiger Data (TimescaleDB)",
+                "status": "CONNECTED" if tiger_live else "DEMO VERIFIED",
+                "gates": {
+                    "IMPLEMENTED": True,
+                    "TESTED": True,
+                    "CONNECTED": tiger_live,
+                    "DEMO VERIFIED": True,
+                    "ELIGIBILITY CONFIRMED": False,
+                },
+                "notes": "environmental_observations hypertable & corridor_daily_summary continuous aggregate verified with explicit is_simulated flags. Set TIGER_DATA_URL for live Timescale Cloud.",
+            },
+            {
+                "id": "mlh_digitalocean",
+                "name": "MLH — Best Use of DigitalOcean",
+                "status": "CONNECTED" if do_live else "TESTED",
+                "gates": {
+                    "IMPLEMENTED": True,
+                    "TESTED": True,
+                    "CONNECTED": do_live,
+                    "DEMO VERIFIED": False,
+                    "ELIGIBILITY CONFIRMED": False,
+                },
+                "notes": ".do/app.yaml, backend/Dockerfile, frontend/Dockerfile, and DO Spaces raster fallback implemented and tested. Deploy via doctl apps create to confirm public URL.",
+            },
+            {
+                "id": "best_social_innovation",
+                "name": "Best Social Innovation",
+                "status": "DEMO VERIFIED",
+                "gates": {
+                    "IMPLEMENTED": True,
+                    "TESTED": True,
+                    "CONNECTED": True,
+                    "DEMO VERIFIED": True,
+                    "ELIGIBILITY CONFIRMED": False,
+                },
+                "notes": "Vulnerability-weighted MILP allocation and anonymized community observations with human verification gate verified.",
+            },
+            {
+                "id": "iomete_procurement_studio",
+                "name": "IOMETE — Make Complex Tech Easy to Buy (Conditional)",
+                "status": "DEMO VERIFIED",
+                "conditional_sponsor_confirmation_required": True,
+                "gates": {
+                    "IMPLEMENTED": True,
+                    "TESTED": True,
+                    "CONNECTED": True,
+                    "DEMO VERIFIED": True,
+                    "ELIGIBILITY CONFIRMED": False,
+                },
+                "notes": "6 climate tech categories, lifecycle cost comparison, vendor questions, and Draft RFP generator verified. Requires on-site IOMETE mentor confirmation (Section H).",
+            },
+            {
+                "id": "mlh_dev_writing",
+                "name": "MLH — DEV Writing Challenge (Optional)",
+                "status": "IMPLEMENTED",
+                "gates": {
+                    "IMPLEMENTED": True,
+                    "TESTED": False,
+                    "CONNECTED": False,
+                    "DEMO VERIFIED": False,
+                    "ELIGIBILITY CONFIRMED": False,
+                },
+                "notes": "Technical article draft in docs/DEV_WRITING_CHALLENGE_DRAFT.md. Publish only with team approval and event confirmation.",
+            },
+            {
+                "id": "mlh_mongodb_atlas",
+                "name": "MLH — MongoDB Atlas (Optional)",
+                "status": "NOT STARTED",
+                "notes": "Intentionally omitted per Section F to avoid duplicating Tiger Data or Meko responsibilities.",
+            },
+            {
+                "id": "mlh_vultr_solana",
+                "name": "MLH — Vultr & Solana",
+                "status": "NOT STARTED",
+                "notes": "Excluded per Section F; not in selected prize scope.",
+            },
+        ],
+    }
+

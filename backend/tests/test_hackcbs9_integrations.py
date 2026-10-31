@@ -273,3 +273,34 @@ def test_digitalocean_deployment_artifacts_exist():
     assert (REPO_ROOT / "frontend" / "Dockerfile").exists()
     assert (REPO_ROOT / "docker-compose.yml").exists()
     assert (REPO_ROOT / "AGENTS.md").exists()
+
+
+def test_addendum_acceptance_matrix_and_meko_checklist_artifacts():
+    """Verify Addendum deliverables: MEKO_TRACK_A_ACCEPTANCE.md, PDF proposal, DEV draft, and /api/acceptance-matrix."""
+    acceptance_md = REPO_ROOT / "docs" / "MEKO_TRACK_A_ACCEPTANCE.md"
+    proposal_pdf = REPO_ROOT / "docs" / "MEKO_GEO_TEMPORAL_MEMORY_PROPOSAL.pdf"
+    dev_draft_md = REPO_ROOT / "docs" / "DEV_WRITING_CHALLENGE_DRAFT.md"
+    assert acceptance_md.exists()
+    assert proposal_pdf.exists() and proposal_pdf.stat().st_size > 1000
+    assert dev_draft_md.exists()
+
+    txt = acceptance_md.read_text(encoding="utf-8")
+    for criterion in ("A1", "A2", "A3", "A4", "A5"):
+        assert criterion in txt
+
+    r_mat = client.get("/api/acceptance-matrix")
+    assert r_mat.status_code == 200
+    mat = r_mat.json()
+    assert mat["allowed_statuses"] == [
+        "NOT STARTED",
+        "IN PROGRESS",
+        "IMPLEMENTED",
+        "TESTED",
+        "CONNECTED",
+        "DEMO VERIFIED",
+        "ELIGIBILITY CONFIRMED",
+    ]
+    assert mat["meko_scoring_weights"]["total"] == 100
+    for tr in mat["tracks"]:
+        assert tr["status"] in mat["allowed_statuses"]
+

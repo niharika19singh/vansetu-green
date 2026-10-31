@@ -56,18 +56,20 @@ Prompt: **`"Recommend interventions for Ward 12, Corridor C-14, with a budget of
 ## 4. Architecture & Documentation Index
 
 - [`AGENTS.md`](file:///Users/user/Documents/TeleSol-mac-release/vansetu-green/AGENTS.md) — Coding-Agent Meko Protocol & Strict Datapack RBAC Table
+- [`docs/MEKO_TRACK_A_ACCEPTANCE.md`](file:///Users/user/Documents/TeleSol-mac-release/vansetu-green/docs/MEKO_TRACK_A_ACCEPTANCE.md) — Official Meko Track A Judging Checklist (A1–A5) & 100-Point Scoring Matrix
 - [`docs/MEKO_TRACK_A.md`](file:///Users/user/Documents/TeleSol-mac-release/vansetu-green/docs/MEKO_TRACK_A.md) — YugabyteDB / Meko Track A Architecture & 5 Capabilities
 - [`docs/MEKO_BUILD_DATAPACK.md`](file:///Users/user/Documents/TeleSol-mac-release/vansetu-green/docs/MEKO_BUILD_DATAPACK.md) — Shared Build Datapack (`vansetu-build`) & Check T Report (12 Promoted Decisions)
 - [`docs/MEKO_PRODUCT_DATAPACKS.md`](file:///Users/user/Documents/TeleSol-mac-release/vansetu-green/docs/MEKO_PRODUCT_DATAPACKS.md) — Runtime Product Datapacks & Geospatial Memory Schema
-- [`docs/MEKO_GEO_TEMPORAL_MEMORY_PROPOSAL.md`](file:///Users/user/Documents/TeleSol-mac-release/vansetu-green/docs/MEKO_GEO_TEMPORAL_MEMORY_PROPOSAL.md) — Meko Feature Proposal: First-Class `spatial_scope` & `temporal_window`
+- [`docs/MEKO_GEO_TEMPORAL_MEMORY_PROPOSAL.md`](file:///Users/user/Documents/TeleSol-mac-release/vansetu-green/docs/MEKO_GEO_TEMPORAL_MEMORY_PROPOSAL.md) & [`docs/MEKO_GEO_TEMPORAL_MEMORY_PROPOSAL.pdf`](file:///Users/user/Documents/TeleSol-mac-release/vansetu-green/docs/MEKO_GEO_TEMPORAL_MEMORY_PROPOSAL.pdf) — Meko Feature Proposal: First-Class `spatial_scope` & `temporal_window` (Markdown + 2-Page PDF)
 - [`docs/GEMINI_INTEGRATION.md`](file:///Users/user/Documents/TeleSol-mac-release/vansetu-green/docs/GEMINI_INTEGRATION.md) — Google Gemini 3.8 Flash (`google-genai`) 8-Tool Function-Calling Architecture
 - [`docs/TIGER_DATA_ARCHITECTURE.md`](file:///Users/user/Documents/TeleSol-mac-release/vansetu-green/docs/TIGER_DATA_ARCHITECTURE.md) — Tiger Data (TimescaleDB) Hypertable & Continuous Aggregate Architecture
 - [`docs/DIGITALOCEAN_DEPLOYMENT.md`](file:///Users/user/Documents/TeleSol-mac-release/vansetu-green/docs/DIGITALOCEAN_DEPLOYMENT.md) — DigitalOcean App Platform (`.do/app.yaml`) & Spaces Pipeline
-- [`docs/IOMETE_PROCUREMENT_STUDIO.md`](file:///Users/user/Documents/TeleSol-mac-release/vansetu-green/docs/IOMETE_PROCUREMENT_STUDIO.md) — IOMETE Climate Technology Procurement Studio ("Make Complex Tech Easy to Buy")
+- [`docs/IOMETE_PROCUREMENT_STUDIO.md`](file:///Users/user/Documents/TeleSol-mac-release/vansetu-green/docs/IOMETE_PROCUREMENT_STUDIO.md) — IOMETE Climate Technology Procurement Studio ("Make Complex Tech Easy to Buy" — Conditional)
 - [`docs/SOCIAL_IMPACT.md`](file:///Users/user/Documents/TeleSol-mac-release/vansetu-green/docs/SOCIAL_IMPACT.md) — Equity-Aware Climate Planning & Anonymized Community Observations
-- [`docs/PRIZE_COVERAGE_MATRIX.md`](file:///Users/user/Documents/TeleSol-mac-release/vansetu-green/docs/PRIZE_COVERAGE_MATRIX.md) — HackCBS 9.0 Track & Sponsor Verification Matrix
+- [`docs/PRIZE_COVERAGE_MATRIX.md`](file:///Users/user/Documents/TeleSol-mac-release/vansetu-green/docs/PRIZE_COVERAGE_MATRIX.md) — Official Track Compliance & Final Prize Acceptance Dashboard (`NOT STARTED` $\to$ `ELIGIBILITY CONFIRMED`)
+- [`docs/DEV_WRITING_CHALLENGE_DRAFT.md`](file:///Users/user/Documents/TeleSol-mac-release/vansetu-green/docs/DEV_WRITING_CHALLENGE_DRAFT.md) — MLH / DEV Writing Challenge Technical Article Draft (Conditional)
 - [`docs/DEMO_SCRIPT.md`](file:///Users/user/Documents/TeleSol-mac-release/vansetu-green/docs/DEMO_SCRIPT.md) — 5-Minute Two-Person Live Demo Script (Niharika & Kunal)
-- [`docs/TESTING_REPORT.md`](file:///Users/user/Documents/TeleSol-mac-release/vansetu-green/docs/TESTING_REPORT.md) — Automated Test Suite Report (`33/33` Passing)
+- [`docs/TESTING_REPORT.md`](file:///Users/user/Documents/TeleSol-mac-release/vansetu-green/docs/TESTING_REPORT.md) — Automated Test Suite Report (`34/34` Passing)
 - [`docs/DATA_PROVENANCE.md`](file:///Users/user/Documents/TeleSol-mac-release/vansetu-green/docs/DATA_PROVENANCE.md) — Scientific Provenance & Native vs. Display Resolution Disclosure
 
 ---
