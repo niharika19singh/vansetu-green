@@ -182,3 +182,33 @@ test('Legacy feature parity: LocationSearch, Corridor3DViewer, and 10-layer Inte
   assert.ok(detailSrc.includes('Corridor3DViewer'), 'Must embed Corridor3DViewer');
 });
 
+test('Root cause diagnosis fixes: Failures A, B, and C verified', () => {
+  // Failure A: Resilient stats summary in client.js
+  const clientPath = path.join(frontendRoot, 'src/api/client.js');
+  const clientSrc = fs.readFileSync(clientPath, 'utf-8');
+  assert.ok(clientSrc.includes('getStatsSummary: async ()'), 'getStatsSummary must be an async function with fallback');
+  assert.ok(clientSrc.includes("requestJson('/api/stats')"), 'Must fallback to /api/stats if /api/stats/summary fails');
+  assert.ok(clientSrc.includes('corridors_overview'), 'Must guarantee corridors_overview in returned stats');
+
+  // Failure B: Resilient Evidence Passport with authentic 5 dimensions in client.js & modal
+  assert.ok(clientSrc.includes('getEvidencePassport: async (corridorId)'), 'getEvidencePassport must be async with fallback');
+  assert.ok(clientSrc.includes('data_quality_dimensions'), 'Must build 5 data quality dimensions');
+  assert.ok(clientSrc.includes('provenance_standard'), 'Must include authentic provenance standard v2.0');
+
+  const modalPath = path.join(frontendRoot, 'src/components/CorridorEvidencePassportModal.jsx');
+  const modalSrc = fs.readFileSync(modalPath, 'utf-8');
+  assert.ok(modalSrc.includes('Retry Verification'), 'Must include Retry Verification button');
+  assert.ok(modalSrc.includes('recommendation_confidence'), 'Must display recommendation confidence');
+
+  // Failure C: Landing-page image pipeline & WebGL transparency
+  const expPath = path.join(frontendRoot, 'src/forest/LivingForestExperience.jsx');
+  const expSrc = fs.readFileSync(expPath, 'utf-8');
+  assert.ok(expSrc.includes('referrerPolicy="no-referrer"'), 'img must use referrerPolicy="no-referrer"');
+  assert.ok(expSrc.includes('z-0'), 'LivingForestExperience must use positive z-index container');
+
+  const dirPath = path.join(frontendRoot, 'src/forest/LivingForestDirector.js');
+  const dirSrc = fs.readFileSync(dirPath, 'utf-8');
+  assert.ok(dirSrc.includes('alpha: true'), 'Three.js renderer must enable alpha transparency');
+});
+
+

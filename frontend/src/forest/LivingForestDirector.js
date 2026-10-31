@@ -40,9 +40,10 @@ export class LivingForestDirector {
     this.renderer = new THREE.WebGLRenderer({
       canvas: this.canvas,
       antialias: true,
-      alpha: false,
+      alpha: true,
       powerPreference: 'high-performance',
     });
+    this.renderer.setClearColor(0x000000, 0);
     this.renderer.setSize(width, height);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -93,6 +94,7 @@ export class LivingForestDirector {
     this.forestMaterial = new THREE.ShaderMaterial({
       vertexShader: ForestWaterVertexShader,
       fragmentShader: ForestWaterFragmentShader,
+      transparent: true,
       uniforms: {
         uForestTex: { value: forestTex },
         uTime: { value: 0 },

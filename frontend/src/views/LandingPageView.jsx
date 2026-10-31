@@ -56,14 +56,14 @@ export default function LandingPageView({
       <LivingForestExperience interactiveWater={true} />
 
       {/* Atmospheric Vignette for readability */}
-      <div className="fixed inset-0 -z-10 pointer-events-none bg-gradient-to-b from-[#071C16]/25 via-transparent to-[#071C16]/80" />
+      <div className="fixed inset-0 z-[1] pointer-events-none bg-gradient-to-b from-[#071C16]/25 via-transparent to-[#071C16]/80" />
 
       {/* =========================================================================
           SECTION 1: HERO — COMPLETELY UNINTERRUPTED (ZERO TOP BUTTONS)
           ========================================================================= */}
       <section
         id="hero"
-        className="min-h-screen flex flex-col justify-center px-6 sm:px-14 lg:px-24 pt-20 pb-16 relative"
+        className="min-h-screen flex flex-col justify-center px-6 sm:px-14 lg:px-24 pt-20 pb-16 relative z-10"
       >
         <div className="max-w-2xl space-y-7">
           {/* Elegant Headline */}
@@ -115,7 +115,7 @@ export default function LandingPageView({
           ========================================================================= */}
       <section
         id="urban-challenge"
-        className="min-h-[85vh] flex flex-col justify-center px-6 sm:px-14 lg:px-24 py-24 bg-[#071C16]/85 backdrop-blur-2xl border-t border-white/10"
+        className="min-h-[85vh] flex flex-col justify-center px-6 sm:px-14 lg:px-24 py-24 bg-[#071C16]/85 backdrop-blur-2xl border-t border-white/10 relative z-10"
       >
         <div className="max-w-3xl space-y-4">
           <div className="text-xs font-mono font-bold uppercase tracking-wider text-emerald-300">
@@ -188,7 +188,7 @@ export default function LandingPageView({
           ========================================================================= */}
       <section
         id="how-it-works"
-        className="min-h-[85vh] flex flex-col justify-center px-6 sm:px-14 lg:px-24 py-24 bg-[#071C16]/95 border-t border-white/10"
+        className="min-h-[85vh] flex flex-col justify-center px-6 sm:px-14 lg:px-24 py-24 bg-[#071C16]/95 border-t border-white/10 relative z-10"
       >
         <div className="max-w-3xl space-y-4">
           <div className="text-xs font-mono font-bold uppercase tracking-wider text-emerald-300">
@@ -255,7 +255,7 @@ export default function LandingPageView({
           ========================================================================= */}
       <section
         id="map-preview"
-        className="min-h-[80vh] flex flex-col justify-center px-6 sm:px-14 lg:px-24 py-24 bg-[#071C16]/90 border-t border-white/10 relative overflow-hidden"
+        className="min-h-[80vh] flex flex-col justify-center px-6 sm:px-14 lg:px-24 py-24 bg-[#071C16]/90 border-t border-white/10 relative overflow-hidden z-10"
       >
         <div className="max-w-5xl mx-auto w-full grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
           <div className="lg:col-span-5 space-y-6">
@@ -309,7 +309,7 @@ export default function LandingPageView({
           ========================================================================= */}
       <section
         id="capabilities"
-        className="min-h-[85vh] flex flex-col justify-center px-6 sm:px-14 lg:px-24 py-24 bg-[#071C16]/95 border-t border-white/10"
+        className="min-h-[85vh] flex flex-col justify-center px-6 sm:px-14 lg:px-24 py-24 bg-[#071C16]/95 border-t border-white/10 relative z-10"
       >
         <div className="max-w-3xl space-y-4">
           <div className="text-xs font-mono font-bold uppercase tracking-wider text-emerald-300">
@@ -396,7 +396,7 @@ export default function LandingPageView({
           ========================================================================= */}
       <section
         id="closing-cta"
-        className="min-h-[70vh] flex flex-col justify-center items-center text-center px-6 sm:px-14 py-24 bg-[#071C16] border-t border-white/10 relative"
+        className="min-h-[70vh] flex flex-col justify-center items-center text-center px-6 sm:px-14 py-24 bg-[#071C16] border-t border-white/10 relative z-10"
       >
         <div className="max-w-2xl space-y-6">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-950/60 border border-emerald-400/30 text-emerald-300 text-xs font-semibold">

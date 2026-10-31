@@ -35,19 +35,20 @@ export default function LivingForestExperience({
   }, [onRipple]);
 
   return (
-    <div className="fixed inset-0 w-full h-full overflow-hidden -z-20 pointer-events-none select-none">
+    <div className="fixed inset-0 w-full h-full overflow-hidden pointer-events-none select-none z-0">
       {/* Required Landing Page Background Asset with Local Fallback */}
       <img
         src={bgSrc}
+        referrerPolicy="no-referrer"
         onError={() => setBgSrc(LOCAL_BG)}
         alt="Living Forest and Water Background"
-        className="absolute inset-0 w-full h-full object-cover -z-30 opacity-90 transition-opacity duration-1000"
+        className="absolute inset-0 w-full h-full object-cover object-center z-0 opacity-90 transition-opacity duration-1000"
       />
 
       {/* WebGL 3D Water & Forest Shader Canvas */}
       <canvas
         ref={canvasRef}
-        className={`w-full h-full block ${
+        className={`absolute inset-0 w-full h-full block z-[1] ${
           interactiveWater ? 'pointer-events-auto' : 'pointer-events-none'
         }`}
         style={{ touchAction: 'none' }}
