@@ -341,12 +341,16 @@ dist/assets/vendor-recharts-j4EvgYd0.js                 383.41 kB │ gzip: 105.
 
 ## 14. Actual GitHub Actions Run Links and Status
 
-- Previous Clean Run (UI Refactoring commit `3f28229`):
-  - Run ID: `41226528619`
-  - URL: `https://github.com/niharika19singh/vansetu-green/actions/runs/41226528619`
-  - Status: Both jobs (`frontend-test-and-build`, `backend-test`) **SUCCESS / GREEN**
-- Upcoming Run on commit push will be tracked under the repository workflow runs at:
-  - `https://github.com/niharika19singh/vansetu-green/actions`
+- **Remediation CI Run (Commit `d307b04`):**
+  - **Run ID:** `41230737671`
+  - **URL:** `https://github.com/niharika19singh/vansetu-green/actions/runs/41230737671`
+  - **Conclusion:** **SUCCESS / GREEN (100% Passed)**
+  - **Job 1 (Frontend Test & Production Build):** SUCCESS (Node 20, 11 tests passed, Vite build succeeded in 2.6s)
+  - **Job 2 (Backend Pytest & Scientific Validation):** SUCCESS (Python 3.13, 131 tests passed in 12.03s, security scan passed)
+- **Previous Clean Run (UI Refactoring Commit `3f28229`):**
+  - **Run ID:** `41226528619`
+  - **URL:** `https://github.com/niharika19singh/vansetu-green/actions/runs/41226528619`
+  - **Status:** Both jobs (`frontend-test-and-build`, `backend-test`) **SUCCESS / GREEN**
 
 ---
 
@@ -355,6 +359,7 @@ dist/assets/vendor-recharts-j4EvgYd0.js                 383.41 kB │ gzip: 105.
 - **Working Branch:** `feature/vansetu-govt-rbac-tender-ui`
 - **Target Branch:** `feature/delhi-intervention-ml-pipeline`
 - **Pull Request:** `https://github.com/niharika19singh/vansetu-green/pull/2` (remains in **Draft** status, not merged, not closed)
+- **Verified Remediation Commit:** `d307b04a90232a08f8d3bb488b8dae413ba38d5a`
 - **Previous Commit:** `3f28229cb2fc8223f1e988fd93a31ae8b8e96bcd`
 - **Protected Branches Untouched:**
   - `main`
