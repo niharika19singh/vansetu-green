@@ -78,6 +78,14 @@ def get_corridor_cost_baseline(
     tender_svc = get_tender_service()
     avail = tender_svc.get_corridor_availability(corridor_id, current_user=current_user)
 
+    recent_approvals = tender_svc.list_budget_approvals(corridor_id)
+    latest_approval = recent_approvals[0] if recent_approvals else None
+    approved_budget = (
+        latest_approval["approved_budget_lakh"]
+        if latest_approval and latest_approval["action"] == "APPROVE"
+        else avail.get("approved_budget_lakh")
+    )
+
     # Standard per-km indicative intervention benchmarks
     interventions_benchmark = []
     for k, spec in INTERVENTION_SPECS.items():
@@ -113,9 +121,11 @@ def get_corridor_cost_baseline(
         "district": corr.get("district", "NCT Delhi"),
         "length_m": corr.get("length_m", 1000.0),
         "current_allocation_status": avail["status"],
-        "government_approved_budget_lakh": avail.get("approved_budget_lakh"),
+        "government_approved_budget_lakh": approved_budget,
+        "latest_budget_decision": latest_approval,
         "assigned_org": avail.get("assigned_org"),
         "benchmarks": interventions_benchmark,
+        "benchmark_source": "CPWD Delhi Schedule of Rates (DSR 2023) and municipal green infrastructure standards",
         "default_recommended_budget_lakh": round((corr.get("length_m", 1000.0) / 1000.0) * 12.0, 1),
     }
 
@@ -174,19 +184,49 @@ def optimize_corridor_cost(
 
     lifecycle_total = round(total_capex + (total_opex_annual * req.lifecycle_years), 2)
 
-    # Generate realistic alternative trade-off packages
+    # Solve realistic alternative trade-off packages using actual MILP solver instances
+    alt1_res = optimize_corridor_portfolio(
+        corridors=[corr],
+        budget_lakh=req.budget_lakh,
+        climate_priority="air_quality",
+        equity_weight=0.25,
+        site_restrictions=site_restrictions,
+    )
+    alt1_items = alt1_res.get("selected_interventions", [])
+    alt1_capex = sum(float(it.get("capex_inr_lakhs") or it.get("capex_lakh_inr") or it.get("total_cost_lakh") or 0.0) for it in alt1_items)
+    alt1_opex = sum(float(it.get("annual_opex_inr_lakhs") or it.get("annual_opex_lakh_inr") or (float(it.get("capex_inr_lakhs") or it.get("total_cost_lakh") or 0.0) * 0.08)) for it in alt1_items)
+    alt1_lifecycle = round(alt1_capex + (alt1_opex * req.lifecycle_years), 2)
+
+    alt2_res = optimize_corridor_portfolio(
+        corridors=[corr],
+        budget_lakh=round(req.budget_lakh * 0.85, 2),
+        climate_priority="heat_resilience",
+        equity_weight=0.5,
+        site_restrictions=site_restrictions,
+    )
+    alt2_items = alt2_res.get("selected_interventions", [])
+    alt2_capex = sum(float(it.get("capex_inr_lakhs") or it.get("capex_lakh_inr") or it.get("total_cost_lakh") or 0.0) for it in alt2_items)
+    alt2_opex = sum(float(it.get("annual_opex_inr_lakhs") or it.get("annual_opex_lakh_inr") or (float(it.get("capex_inr_lakhs") or it.get("total_cost_lakh") or 0.0) * 0.08)) for it in alt2_items)
+    alt2_lifecycle = round(alt2_capex + (alt2_opex * req.lifecycle_years), 2)
+
     alternatives = [
         {
-            "portfolio_name": "Maximum Thermal Shield (Cool Pavements + Shade Kiosks)",
-            "capex_lakh": round(total_capex * 0.92, 2),
-            "lifecycle_cost_lakh": round(lifecycle_total * 0.88, 2),
-            "trade_off": "Rapid thermal relief; lower ecological co-benefits and stormwater absorption.",
+            "portfolio_name": "Air Quality Maximization Package (Street Trees & Bioswales)",
+            "capex_lakh": round(alt1_capex, 2),
+            "annual_opex_lakh": round(alt1_opex, 3),
+            "lifecycle_cost_lakh": alt1_lifecycle,
+            "trade_off": "Prioritizes PM2.5/PM10 air filtration and stormwater retention; requires utility coordination.",
+            "is_solver_optimized": True,
+            "selected_interventions": [it.get("archetype") or it.get("intervention_id") for it in alt1_items],
         },
         {
-            "portfolio_name": "Living Bio-Retention Package (Street Trees + Bioswales)",
-            "capex_lakh": round(total_capex * 1.05, 2),
-            "lifecycle_cost_lakh": round(lifecycle_total * 1.10, 2),
-            "trade_off": "Higher air quality filtration and stormwater resilience; requires utility clearance.",
+            "portfolio_name": "Constrained Capital Resilience Package (85% Budget Ceiling)",
+            "capex_lakh": round(alt2_capex, 2),
+            "annual_opex_lakh": round(alt2_opex, 3),
+            "lifecycle_cost_lakh": alt2_lifecycle,
+            "trade_off": "Rapid deployment under constrained capital allocation; focuses strictly on highest thermal impact nodes.",
+            "is_solver_optimized": True,
+            "selected_interventions": [it.get("archetype") or it.get("intervention_id") for it in alt2_items],
         },
     ]
 
@@ -230,19 +270,14 @@ def approve_or_reject_corridor_budget(
     """
     Approve or reject a corridor project budget.
     Requires APPROVE_PROJECT_COSTS (Government Admin only).
-    Logs auditable budget decision.
+    Persists decision to corridor_budget_approvals, updates allocation, and writes to audit logs.
     """
     tender_svc = get_tender_service()
-    avail = tender_svc.get_corridor_availability(corridor_id, current_user=current_user)
-
-    now = _utc_now_iso()
-    return {
-        "corridor_id": corridor_id,
-        "action": req.action,
-        "approved_budget_lakh": req.approved_budget_lakh,
-        "approved_by": current_user.user_id,
-        "approved_at": now,
-        "approval_notes": req.approval_notes,
-        "status": "BUDGET_APPROVED" if req.action == "APPROVE" else "BUDGET_REJECTED",
-        "message": f"Government project budget of ₹{req.approved_budget_lakh} Lakhs recorded for Corridor {corridor_id}.",
-    }
+    return tender_svc.record_budget_approval(
+        corridor_id=corridor_id,
+        action=req.action,
+        approved_budget_lakh=req.approved_budget_lakh,
+        approval_notes=req.approval_notes,
+        user=current_user,
+        proposal_id=req.proposal_id,
+    )

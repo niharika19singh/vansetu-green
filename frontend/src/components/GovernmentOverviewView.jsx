@@ -88,7 +88,7 @@ export default function GovernmentOverviewView({
     };
   }, [token]);
 
-  const totalCorridors = corridors.length || 30;
+  const totalCorridors = corridors && corridors.length > 0 ? corridors.length : 30;
   const allocatedCount = assignments.filter((a) =>
     ['ALLOCATED', 'IN_PROGRESS', 'UNDER_REVIEW'].includes(a.status)
   ).length;
@@ -106,7 +106,7 @@ export default function GovernmentOverviewView({
     .slice(0, 5)
     .map((h) => ({
       name: h.district,
-      cases: h.reported_heatstroke_cases_30d || 0,
+      cases: h.reported_heatstroke_cases_30d ?? h.heatstroke_emergency_attendances ?? 0,
       mult: h.vulnerability_multiplier || 1.0,
     }));
 

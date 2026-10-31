@@ -76,8 +76,8 @@ export default function RegionalHealthIntelligenceView({ token }) {
           <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 text-xs font-mono">
             <Shield className="w-3.5 h-3.5 text-emerald-400" />
             <span className="text-slate-400">ABDM Integration:</span>
-            <span className="text-emerald-300 font-bold">
-              {abhaStatus?.status || 'SANDBOX_CONFIGURED'}
+            <span className={abhaStatus?.status === 'SANDBOX_CONFIGURED' ? 'text-emerald-300 font-bold' : 'text-slate-300 font-bold'}>
+              {abhaStatus?.status || abhaStatus?.integration_state || 'NOT_CONFIGURED'}
             </span>
             <span className="text-[10px] text-slate-500">(Zero PII)</span>
           </div>
@@ -129,7 +129,7 @@ export default function RegionalHealthIntelligenceView({ token }) {
                       {hasData ? (
                         <div className="flex items-center gap-1.5 text-slate-200">
                           <Building2 className="w-3.5 h-3.5 text-emerald-400" />
-                          <span>{ind.reporting_facility || 'LNJP Hospital / Safdarjung'}</span>
+                          <span>{ind.reporting_facility || ind.hospital_name || 'Participating Tertiary Hospital'}</span>
                         </div>
                       ) : (
                         <span className="text-slate-500 italic">No reporting hospital</span>
@@ -139,7 +139,7 @@ export default function RegionalHealthIntelligenceView({ token }) {
                     <td className="py-3 px-4 font-mono">
                       {hasData ? (
                         <span className="font-bold text-amber-300">
-                          {ind.reported_heatstroke_cases_30d} cases
+                          {ind.reported_heatstroke_cases_30d ?? ind.heatstroke_emergency_attendances ?? 0} cases
                         </span>
                       ) : (
                         <span className="text-slate-500">—</span>
@@ -149,7 +149,7 @@ export default function RegionalHealthIntelligenceView({ token }) {
                     <td className="py-3 px-4 font-mono">
                       {hasData ? (
                         <span className="text-slate-300">
-                          {ind.reported_heat_exhaustion_cases_30d} cases
+                          {ind.reported_heat_exhaustion_cases_30d ?? ind.heat_illness_visits ?? 0} cases
                         </span>
                       ) : (
                         <span className="text-slate-500">—</span>

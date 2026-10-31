@@ -118,8 +118,37 @@ class Permission(str, Enum):
 
 # Authoritative role-permission mappings
 ROLE_PERMISSIONS: Dict[ReviewerRole, Set[Permission]] = {
-    ReviewerRole.GOVERNMENT_ADMIN: set(Permission),
-    ReviewerRole.GOVERNMENT_ENGINEER: set(Permission),
+    ReviewerRole.GOVERNMENT_ADMIN: {
+        Permission.VIEW_PUBLIC_MAP,
+        Permission.VIEW_CORRIDOR_INTELLIGENCE,
+        Permission.VIEW_SEGMENT_ANALYSIS,
+        Permission.CUSTOMIZE_SCENARIOS,
+        Permission.OPTIMIZE_PORTFOLIO,
+        Permission.OPTIMIZE_CORRIDOR_COST,
+        Permission.BROWSE_TENDERS,
+        Permission.MANAGE_TENDERS,
+        Permission.ASSIGN_TENDER,
+        Permission.ALLOCATE_CORRIDOR,
+        Permission.VIEW_ALL_ASSIGNMENTS,
+        Permission.MANAGE_PROFESSIONALS,
+        Permission.MANAGE_HOSPITAL_SOURCES,
+        Permission.VIEW_REGIONAL_HEALTH,
+        Permission.APPROVE_PROJECT_COSTS,
+        Permission.VIEW_GOVERNMENT_AUDIT,
+        Permission.MANAGE_USERS,
+        Permission.MANAGE_REGISTRY,
+    },
+    ReviewerRole.GOVERNMENT_ENGINEER: {
+        Permission.VIEW_PUBLIC_MAP,
+        Permission.VIEW_CORRIDOR_INTELLIGENCE,
+        Permission.VIEW_SEGMENT_ANALYSIS,
+        Permission.CUSTOMIZE_SCENARIOS,
+        Permission.OPTIMIZE_PORTFOLIO,
+        Permission.OPTIMIZE_CORRIDOR_COST,
+        Permission.BROWSE_TENDERS,
+        Permission.VIEW_ALL_ASSIGNMENTS,
+        Permission.VIEW_REGIONAL_HEALTH,
+    },
     ReviewerRole.ADMINISTRATOR: set(Permission),
     ReviewerRole.PRO_PROFESSIONAL: {
         Permission.VIEW_PUBLIC_MAP,
@@ -140,12 +169,6 @@ ROLE_PERMISSIONS: Dict[ReviewerRole, Set[Permission]] = {
         Permission.VIEW_PUBLIC_MAP,
         Permission.VIEW_CORRIDOR_INTELLIGENCE,
         Permission.VIEW_SEGMENT_ANALYSIS,
-        Permission.CUSTOMIZE_SCENARIOS,
-        Permission.OPTIMIZE_PORTFOLIO,
-        Permission.OPTIMIZE_CORRIDOR_COST,
-        Permission.BROWSE_TENDERS,
-        Permission.SUBMIT_PROPOSAL,
-        Permission.VIEW_REGIONAL_HEALTH,
         Permission.SUBMIT_ASSESSMENT,
         Permission.VIEW_ASSESSMENTS,
         Permission.SUBMIT_OUTCOME,
@@ -155,12 +178,6 @@ ROLE_PERMISSIONS: Dict[ReviewerRole, Set[Permission]] = {
         Permission.VIEW_PUBLIC_MAP,
         Permission.VIEW_CORRIDOR_INTELLIGENCE,
         Permission.VIEW_SEGMENT_ANALYSIS,
-        Permission.CUSTOMIZE_SCENARIOS,
-        Permission.OPTIMIZE_PORTFOLIO,
-        Permission.OPTIMIZE_CORRIDOR_COST,
-        Permission.BROWSE_TENDERS,
-        Permission.SUBMIT_PROPOSAL,
-        Permission.VIEW_REGIONAL_HEALTH,
         Permission.SUBMIT_ASSESSMENT,
         Permission.VIEW_ASSESSMENTS,
         Permission.REVIEW_ASSESSMENT,
@@ -173,12 +190,6 @@ ROLE_PERMISSIONS: Dict[ReviewerRole, Set[Permission]] = {
         Permission.VIEW_PUBLIC_MAP,
         Permission.VIEW_CORRIDOR_INTELLIGENCE,
         Permission.VIEW_SEGMENT_ANALYSIS,
-        Permission.CUSTOMIZE_SCENARIOS,
-        Permission.OPTIMIZE_PORTFOLIO,
-        Permission.OPTIMIZE_CORRIDOR_COST,
-        Permission.BROWSE_TENDERS,
-        Permission.SUBMIT_PROPOSAL,
-        Permission.VIEW_REGIONAL_HEALTH,
         Permission.SUBMIT_ASSESSMENT,
         Permission.VIEW_ASSESSMENTS,
         Permission.REVIEW_ASSESSMENT,
@@ -186,13 +197,11 @@ ROLE_PERMISSIONS: Dict[ReviewerRole, Set[Permission]] = {
         Permission.APPROVE_ASSESSMENT,
         Permission.REJECT_ASSESSMENT,
         Permission.PROMOTE_MODEL,
+        Permission.ROLLBACK_MODEL,
         Permission.VERIFY_OUTCOME,
         Permission.SUBMIT_OUTCOME,
         Permission.VERIFY_EVIDENCE,
         Permission.VIEW_EVIDENCE,
-        Permission.VIEW_ALL_ASSIGNMENTS,
-        Permission.APPROVE_PROJECT_COSTS,
-        Permission.VIEW_GOVERNMENT_AUDIT,
     },
     ReviewerRole.NORMAL_USER: {
         Permission.VIEW_PUBLIC_MAP,
@@ -211,10 +220,16 @@ class AuthenticatedUser:
     organization: str
     is_active: bool = True
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    expires_at: Optional[str] = None
+    is_demo: bool = False
 
     def has_permission(self, permission: Permission) -> bool:
         if not self.is_active:
             return False
+        if self.expires_at:
+            now_iso = datetime.now(timezone.utc).isoformat()
+            if self.expires_at < now_iso:
+                return False
         perms = ROLE_PERMISSIONS.get(self.role, set())
         return permission in perms
 
@@ -425,6 +440,7 @@ class CredentialStore:
                         role=role_enum,
                         organization=row["organization"],
                         is_active=bool(row["is_active"]),
+                        expires_at=row["expires_at"],
                     )
 
             # 2. Self-migrating fallback for legacy salt/hash rows where token_hmac is NULL
@@ -461,6 +477,7 @@ class CredentialStore:
                         role=role_enum,
                         organization=r["organization"],
                         is_active=bool(r["is_active"]),
+                        expires_at=r["expires_at"],
                     )
 
         return None
@@ -578,20 +595,30 @@ class AuthManager:
         username: Optional[str] = None,
         full_name: Optional[str] = None,
         organization: Optional[str] = None,
+        expires_in_seconds: Optional[int] = None,
+        is_demo: bool = False,
     ) -> Tuple[str, AuthenticatedUser]:
-        """Utility for test suites to dynamically generate credentials without hardcoding."""
+        """Utility for test suites and demo auth to dynamically generate credentials."""
         uid = user_id or f"USER_{role.value}_{secrets.token_hex(4)}"
         u_name = username or f"user_{secrets.token_hex(4)}"
         f_name = full_name or f"Accredited Officer {role.value}"
         org = organization or "NCT Delhi Climate Infrastructure Cell"
+        expires_at_iso: Optional[str] = None
+        if expires_in_seconds is not None:
+            expires_at_iso = datetime.fromtimestamp(
+                time.time() + expires_in_seconds, timezone.utc
+            ).isoformat()
+
         user = AuthenticatedUser(
             user_id=uid,
             username=u_name,
             full_name=f_name,
             role=role,
             organization=org,
+            expires_at=expires_at_iso,
+            is_demo=is_demo,
         )
-        token = self.store.create_token(user)
+        token = self.store.create_token(user, expires_at=expires_at_iso)
         self._ephemeral_tokens[token] = user
         return token, user
 
@@ -599,14 +626,37 @@ class AuthManager:
         if not token:
             return None
         token_clean = token.strip()
+        now_iso = datetime.now(timezone.utc).isoformat()
         # 1. Check ephemeral test mappings (constant-time check)
-        for reg_token, user in self._ephemeral_tokens.items():
+        for reg_token, user in list(self._ephemeral_tokens.items()):
             if hmac.compare_digest(reg_token, token_clean):
-                if user.is_active:
-                    return user
-                return None
+                if not user.is_active:
+                    return None
+                if user.expires_at and user.expires_at < now_iso:
+                    return None
+                return user
         # 2. Check hashed database store
         return self.store.authenticate(token_clean)
+
+    def revoke_token(self, raw_token: str) -> bool:
+        """Revoke a token from both in-memory ephemeral registry and database store."""
+        if not raw_token:
+            return False
+        token_clean = raw_token.strip()
+        for reg_token, user in list(self._ephemeral_tokens.items()):
+            if hmac.compare_digest(reg_token, token_clean):
+                self._ephemeral_tokens[reg_token] = AuthenticatedUser(
+                    user_id=user.user_id,
+                    username=user.username,
+                    full_name=user.full_name,
+                    role=user.role,
+                    organization=user.organization,
+                    is_active=False,
+                    created_at=user.created_at,
+                    expires_at=user.expires_at,
+                    is_demo=user.is_demo,
+                )
+        return self.store.revoke_token(token_clean)
 
     def check_rate_limit(self, client_key: str) -> bool:
         """Process-local sliding-window rate limiter. Returns True if allowed, False if exceeded."""

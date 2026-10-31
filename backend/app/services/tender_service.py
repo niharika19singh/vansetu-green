@@ -170,7 +170,29 @@ class TenderService:
                 """
             )
 
+            # 6. Corridor budget approvals
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS corridor_budget_approvals (
+                    approval_id TEXT PRIMARY KEY,
+                    corridor_id TEXT NOT NULL,
+                    proposal_id TEXT,
+                    action TEXT NOT NULL,
+                    approved_budget_lakh REAL NOT NULL,
+                    approval_notes TEXT NOT NULL,
+                    performed_by_user_id TEXT NOT NULL,
+                    performed_by_role TEXT NOT NULL,
+                    timestamp TEXT NOT NULL
+                )
+                """
+            )
+
     def _seed_initial_data_if_empty(self) -> None:
+        env = os.getenv("VANSETU_ENV", "").strip().lower()
+        seed_enabled = os.getenv("VANSETU_ENABLE_DEMO_SEED_DATA", "").strip().lower()
+        if env != "development" or seed_enabled != "true":
+            return
+
         with self._get_conn() as conn:
             count = conn.execute("SELECT COUNT(*) AS c FROM professional_profiles").fetchone()["c"]
             if count > 0:
@@ -462,12 +484,183 @@ class TenderService:
             results = []
             for r in rows:
                 item = dict(r)
+                item["id"] = item["allocation_id"]
+                item["firm_name"] = item.get("assigned_professional_org")
+                item["allocated_at"] = item.get("assigned_at")
+                item["deliverables_notes"] = item.get("scope_summary")
                 if item.get("milestones_json"):
                     item["milestones"] = json.loads(item["milestones_json"])
                 if item.get("audit_history_json"):
                     item["audit_history"] = json.loads(item["audit_history_json"])
                 results.append(item)
             return results
+
+    def get_my_corridor_allocations(self, user: AuthenticatedUser) -> List[Dict[str, Any]]:
+        """List corridor allocations assigned specifically to the calling professional firm or user."""
+        with self._get_conn() as conn:
+            query = """
+                SELECT a.*, t.title AS tender_title 
+                FROM corridor_allocations a
+                LEFT JOIN tenders t ON a.tender_id = t.tender_id
+                WHERE (a.assigned_professional_org = ? OR a.assigned_professional_id = ?)
+                ORDER BY a.updated_at DESC
+            """
+            rows = conn.execute(query, (user.organization, user.user_id)).fetchall()
+            results = []
+            for r in rows:
+                item = dict(r)
+                item["id"] = item["allocation_id"]
+                item["firm_name"] = item.get("assigned_professional_org")
+                item["allocated_at"] = item.get("assigned_at")
+                item["deliverables_notes"] = item.get("scope_summary")
+                if item.get("milestones_json"):
+                    try:
+                        item["milestones"] = json.loads(item["milestones_json"])
+                    except Exception:
+                        item["milestones"] = []
+                if item.get("audit_history_json"):
+                    try:
+                        item["audit_history"] = json.loads(item["audit_history_json"])
+                    except Exception:
+                        item["audit_history"] = []
+                results.append(item)
+            return results
+
+    def get_my_proposals(self, user: AuthenticatedUser) -> List[Dict[str, Any]]:
+        """List proposals submitted specifically by the calling professional firm or user."""
+        with self._get_conn() as conn:
+            query = """
+                SELECT p.*, t.title AS tender_title, t.status AS tender_status
+                FROM tender_proposals p
+                LEFT JOIN tenders t ON p.tender_id = t.tender_id
+                WHERE (p.pro_organization = ? OR p.pro_user_id = ?)
+                ORDER BY p.submitted_at DESC
+            """
+            rows = conn.execute(query, (user.organization, user.user_id)).fetchall()
+            results = []
+            for r in rows:
+                item = dict(r)
+                item["id"] = item["proposal_id"]
+                item["tenderCorridor"] = item["corridor_id"]
+                item["tenderTitle"] = item.get("tender_title") or f"Corridor {item['corridor_id']} Tender"
+                item["total_financial_bid_lakh"] = item.get("proposed_cost_lakh")
+                item["proposal_title"] = item.get("technical_proposal_summary", "")[:60]
+                if item.get("intervention_quantities_json"):
+                    try:
+                        item["intervention_quantities"] = json.loads(item["intervention_quantities_json"])
+                    except Exception:
+                        item["intervention_quantities"] = {}
+                results.append(item)
+            return results
+
+    def record_budget_approval(
+        self,
+        corridor_id: str,
+        action: str,
+        approved_budget_lakh: float,
+        approval_notes: str,
+        user: AuthenticatedUser,
+        proposal_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Record an immutable government budget approval/rejection decision."""
+        if not user.has_permission(Permission.APPROVE_PROJECT_COSTS):
+            raise PermissionError(f"User '{user.user_id}' does not have permission to approve project budgets.")
+
+        action_clean = action.strip().upper()
+        if action_clean not in ("APPROVE", "REJECT"):
+            raise ValueError("Action must be 'APPROVE' or 'REJECT'")
+
+        approval_id = f"appr-{uuid.uuid4().hex[:10]}"
+        now = _utc_now_iso()
+
+        with self._get_conn() as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE TRANSACTION")
+                # 1. Insert into corridor_budget_approvals
+                conn.execute(
+                    """
+                    INSERT INTO corridor_budget_approvals (
+                        approval_id, corridor_id, proposal_id, action,
+                        approved_budget_lakh, approval_notes, performed_by_user_id,
+                        performed_by_role, timestamp
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        approval_id,
+                        corridor_id,
+                        proposal_id,
+                        action_clean,
+                        approved_budget_lakh,
+                        approval_notes,
+                        user.user_id,
+                        user.role.value,
+                        now,
+                    ),
+                )
+
+                # 2. If approved, update approved_budget_lakh in corridor_allocations if active
+                if action_clean == "APPROVE":
+                    conn.execute(
+                        """
+                        UPDATE corridor_allocations 
+                        SET approved_budget_lakh = ?, updated_at = ?
+                        WHERE corridor_id = ? AND status IN ('TENDER_OPEN', 'PROPOSAL_REVIEW', 'ALLOCATED', 'IN_PROGRESS', 'UNDER_REVIEW')
+                        """,
+                        (approved_budget_lakh, now, corridor_id),
+                    )
+
+                # 3. Log audit entry
+                log_id = f"log-{uuid.uuid4().hex[:10]}"
+                conn.execute(
+                    """
+                    INSERT INTO tender_audit_logs (
+                        log_id, entity_type, entity_id, action, performed_by_user_id,
+                        performed_by_role, details_json, timestamp
+                    ) VALUES (?, 'BUDGET_APPROVAL', ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        log_id,
+                        corridor_id,
+                        f"BUDGET_{action_clean}",
+                        user.user_id,
+                        user.role.value,
+                        json.dumps({
+                            "approval_id": approval_id,
+                            "action": action_clean,
+                            "approved_budget_lakh": approved_budget_lakh,
+                            "proposal_id": proposal_id,
+                            "notes": approval_notes,
+                        }),
+                        now,
+                    ),
+                )
+                conn.execute("COMMIT")
+            except Exception:
+                conn.execute("ROLLBACK")
+                raise
+
+        return {
+            "approval_id": approval_id,
+            "corridor_id": corridor_id,
+            "action": action_clean,
+            "approved_budget_lakh": approved_budget_lakh,
+            "approved_by": user.user_id,
+            "approved_at": now,
+            "approval_notes": approval_notes,
+            "status": "BUDGET_APPROVED" if action_clean == "APPROVE" else "BUDGET_REJECTED",
+            "message": f"Government project budget decision '{action_clean}' (₹{approved_budget_lakh} Lakhs) persisted for Corridor {corridor_id}.",
+        }
+
+    def list_budget_approvals(self, corridor_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        with self._get_conn() as conn:
+            if corridor_id:
+                rows = conn.execute(
+                    "SELECT * FROM corridor_budget_approvals WHERE corridor_id = ? ORDER BY timestamp DESC",
+                    (corridor_id,),
+                ).fetchall()
+            else:
+                rows = conn.execute("SELECT * FROM corridor_budget_approvals ORDER BY timestamp DESC").fetchall()
+            return [dict(r) for r in rows]
 
     # -------------------------------------------------------------------------
     # Tender Creation & Management (Government Admin)
@@ -685,19 +878,18 @@ class TenderService:
                 ReviewerRole.GOVERNMENT_ADMIN,
                 ReviewerRole.GOVERNMENT_ENGINEER,
                 ReviewerRole.ADMINISTRATOR,
-                ReviewerRole.SENIOR_REVIEWER,
             ):
-                # Government Admin: can see all proposals
+                # Government Admin / Engineer: can see all submitted proposals
                 p_rows = conn.execute(
                     "SELECT * FROM tender_proposals WHERE tender_id = ? ORDER BY proposed_cost_lakh ASC",
                     (tender_id,),
                 ).fetchall()
                 tender["proposals"] = [dict(p) for p in p_rows]
-            elif current_user and current_user.role in (ReviewerRole.PRO_PROFESSIONAL, ReviewerRole.FIELD_ASSESSOR):
-                # Pro Professional: only see proposals from own organization
+            elif current_user and current_user.role == ReviewerRole.PRO_PROFESSIONAL:
+                # Pro Professional: only see proposals from own organization or own user_id
                 p_rows = conn.execute(
-                    "SELECT * FROM tender_proposals WHERE tender_id = ? AND pro_organization = ?",
-                    (tender_id, current_user.organization),
+                    "SELECT * FROM tender_proposals WHERE tender_id = ? AND (pro_organization = ? OR pro_user_id = ?)",
+                    (tender_id, current_user.organization, current_user.user_id),
                 ).fetchall()
                 tender["proposals"] = [dict(p) for p in p_rows]
             else:

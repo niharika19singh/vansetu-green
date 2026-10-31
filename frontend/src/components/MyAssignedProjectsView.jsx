@@ -25,7 +25,7 @@ export default function MyAssignedProjectsView({ token, onNavigate }) {
   const loadAssignments = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await api.listCorridorAssignments({}, token);
+      const res = await api.getMyCorridorAssignments(token);
       setAssignments(res.assignments || []);
     } catch (err) {
       console.error('Failed to load assignments', err);
@@ -39,7 +39,7 @@ export default function MyAssignedProjectsView({ token, onNavigate }) {
   }, [loadAssignments]);
 
   const totalSanctioned = assignments.reduce(
-    (sum, a) => sum + (Number(a.approved_budget_lakh) || 8.5),
+    (sum, a) => sum + (Number(a.approved_budget_lakh) || 0),
     0
   );
 
@@ -58,7 +58,7 @@ export default function MyAssignedProjectsView({ token, onNavigate }) {
               </h1>
             </div>
             <p className="text-xs text-slate-400 mt-1 max-w-2xl leading-relaxed">
-              Exclusive municipal contracts assigned to Studio Vriksh for climate intervention delivery
+              Exclusive municipal contracts assigned to your accredited firm for climate intervention delivery
               with guaranteed single-firm corridor exclusivity.
             </p>
           </div>
@@ -68,7 +68,7 @@ export default function MyAssignedProjectsView({ token, onNavigate }) {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <StatCard
             title="Awarded Work Packages"
-            value={assignments.length || 1}
+            value={assignments.length}
             subtitle="Exclusive Project Sites"
             icon={Award}
             color="emerald"
@@ -82,7 +82,7 @@ export default function MyAssignedProjectsView({ token, onNavigate }) {
           />
           <StatCard
             title="Active Delivery Phase"
-            value="PHASE 2"
+            value={assignments.length > 0 ? "PHASE 2" : "STANDBY"}
             subtitle="Detailed Urban Design"
             icon={Layers}
             color="blue"
@@ -100,13 +100,32 @@ export default function MyAssignedProjectsView({ token, onNavigate }) {
       {/* Main Content */}
       <div className="flex-1 overflow-y-auto p-6 space-y-5">
         {loading && (
-          <div className="p-8 text-center text-xs text-slate-500">Loading awarded projects...</div>
+          <div className="p-8 text-center text-xs text-slate-500 font-mono">Loading awarded projects...</div>
+        )}
+
+        {!loading && assignments.length === 0 && (
+          <div className="p-12 text-center bg-slate-900/50 border border-slate-800 rounded-2xl space-y-3">
+            <Award className="w-10 h-10 text-slate-600 mx-auto" />
+            <h3 className="text-base font-bold text-white">No Awarded Corridor Projects Yet</h3>
+            <p className="text-xs text-slate-400 max-w-md mx-auto">
+              Your accredited firm does not have any active corridor allocations yet. Browse open tenders in the Tender Marketplace and submit a proposal to win an exclusive corridor allocation.
+            </p>
+            {onNavigate && (
+              <button
+                onClick={() => onNavigate('tenders')}
+                className="mt-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition inline-flex items-center gap-1.5"
+              >
+                <span>Browse Open Tenders</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
         )}
 
         <div className="space-y-5">
           {assignments.map((a) => (
             <div
-              key={a.id}
+              key={a.id || a.allocation_id}
               className="bg-slate-900 border border-slate-800 hover:border-emerald-500/40 rounded-2xl p-6 space-y-5 shadow-sm transition"
             >
               <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-800 pb-4">

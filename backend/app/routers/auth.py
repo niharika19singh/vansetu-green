@@ -9,6 +9,8 @@ Provides:
 from __future__ import annotations
 
 import logging
+import os
+import secrets
 from typing import Any, Dict, List
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
@@ -70,45 +72,74 @@ async def get_my_permissions(
 async def demo_switch_role(req: DemoRoleSwitchRequest) -> Dict[str, Any]:
     """
     Development-only persona provisioning tool for demonstration testing.
-    Issues an accredited ephemeral bearer token for the chosen role without granting production privileges.
+    Issues an ephemeral bearer token with 15-minute validity for the chosen role.
+    Strictly rejected in production or when VANSETU_ENABLE_DEMO_AUTH is false.
     """
+    env = os.getenv("VANSETU_ENV", "").strip().lower()
+    demo_auth = os.getenv("VANSETU_ENABLE_DEMO_AUTH", "").strip().lower()
+    if env != "development" or demo_auth != "true":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "Access Denied: Demo persona switching is strictly restricted to development environments "
+                "with VANSETU_ENABLE_DEMO_AUTH=true. Production callers must use accredited bearer credentials."
+            ),
+        )
+
     auth_mgr = get_auth_manager()
     role_key = req.role.strip().lower()
 
-    if role_key in ("government_admin", "govt_admin", "government_engineer", "admin"):
+    if role_key in ("government_admin", "govt_admin", "admin"):
         token, user = auth_mgr.provision_test_user(
             role=ReviewerRole.GOVERNMENT_ADMIN,
-            user_id="PWD_CHIEF_ENG_001",
-            username="rajesh.kumar",
-            full_name="Er. Rajesh Kumar",
+            user_id=f"DEMO_GOVT_{secrets.token_hex(4)}",
+            username=f"demo.govt.{secrets.token_hex(2)}",
+            full_name="Er. Rajesh Kumar (Demo Admin)",
             organization="Delhi Public Works Department (South Zone)",
+            expires_in_seconds=900,
+            is_demo=True,
+        )
+    elif role_key in ("government_engineer", "govt_engineer", "engineer"):
+        token, user = auth_mgr.provision_test_user(
+            role=ReviewerRole.GOVERNMENT_ENGINEER,
+            user_id=f"DEMO_ENG_{secrets.token_hex(4)}",
+            username=f"demo.eng.{secrets.token_hex(2)}",
+            full_name="Er. Neha Gupta (Demo Field Engineer)",
+            organization="Delhi PWD Civil Maintenance Division",
+            expires_in_seconds=900,
+            is_demo=True,
         )
     elif role_key in ("pro_professional", "pro", "architect", "consultant"):
         token, user = auth_mgr.provision_test_user(
             role=ReviewerRole.PRO_PROFESSIONAL,
-            user_id="PRO_USER_VRIKSH_01",
-            username="ananya.roy",
-            full_name="Ar. Ananya Roy",
+            user_id=f"DEMO_PRO_{secrets.token_hex(4)}",
+            username=f"demo.pro.{secrets.token_hex(2)}",
+            full_name="Ar. Ananya Roy (Demo Pro Architect)",
             organization="Studio Vriksh & Urban Resiliency Partners",
+            expires_in_seconds=900,
+            is_demo=True,
         )
-    elif role_key in ("normal_user", "public", "citizen"):
+    elif role_key in ("normal_user", "public", "citizen", "guest"):
         token, user = auth_mgr.provision_test_user(
             role=ReviewerRole.NORMAL_USER,
-            user_id="CITIZEN_DELHI_04",
-            username="vikram.sharma",
-            full_name="Vikram Sharma",
+            user_id=f"DEMO_CITIZEN_{secrets.token_hex(4)}",
+            username=f"demo.citizen.{secrets.token_hex(2)}",
+            full_name="Vikram Sharma (Demo Citizen)",
             organization="Civil Society / Citizen Climate Observer",
+            expires_in_seconds=900,
+            is_demo=True,
         )
     else:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Unknown role '{req.role}'. Choose 'government_admin', 'pro_professional', or 'normal_user'.",
+            detail=f"Unknown role '{req.role}'. Choose 'government_admin', 'government_engineer', 'pro_professional', or 'normal_user'.",
         )
 
     perms = [p.value for p in ROLE_PERMISSIONS.get(user.role, set())]
     return {
         "access_token": token,
         "token_type": "Bearer",
+        "expires_in": 900,
         "user": {
             "user_id": user.user_id,
             "username": user.username,
@@ -116,6 +147,8 @@ async def demo_switch_role(req: DemoRoleSwitchRequest) -> Dict[str, Any]:
             "role": user.role.value,
             "organization": user.organization,
             "permissions": sorted(perms),
+            "is_demo": True,
+            "expires_at": user.expires_at,
         },
         "message": f"Switched to {user.role.value} persona ({user.full_name} / {user.organization}).",
     }

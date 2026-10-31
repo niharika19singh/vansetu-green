@@ -26,25 +26,16 @@ export default function MyProposalsView({ token }) {
   const loadProposals = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await api.listTenders({}, token);
-      const list = res.tenders || [];
-      setTenders(list);
-
-      // Collect all proposals returned for this authenticated firm
-      const collected = [];
-      for (const t of list) {
-        if (t.proposals && t.proposals.length > 0) {
-          for (const p of t.proposals) {
-            collected.push({
-              ...p,
-              tenderTitle: t.title,
-              tenderCorridor: t.corridor_id,
-              tenderStatus: t.status,
-            });
-          }
-        }
+      const [tenRes, propRes] = await Promise.allSettled([
+        api.listTenders({}, token),
+        api.getMyProposals(token),
+      ]);
+      if (tenRes.status === 'fulfilled') {
+        setTenders(tenRes.value.tenders || []);
       }
-      setMyProposals(collected);
+      if (propRes.status === 'fulfilled') {
+        setMyProposals(propRes.value.proposals || []);
+      }
     } catch (err) {
       console.error('Failed to load proposals', err);
     } finally {

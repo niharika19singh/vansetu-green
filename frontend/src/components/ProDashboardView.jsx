@@ -40,7 +40,7 @@ export default function ProDashboardView({ token, onNavigate }) {
       try {
         const [tenRes, assignRes] = await Promise.allSettled([
           api.listTenders({}, token),
-          api.listCorridorAssignments({}, token),
+          api.getMyCorridorAssignments(token),
         ]);
         if (!mounted) return;
         if (tenRes.status === 'fulfilled') {
@@ -89,7 +89,7 @@ export default function ProDashboardView({ token, onNavigate }) {
               ACCREDITED FIRM WORKSPACE
             </span>
             <span className="text-slate-400 text-xs">
-              Studio Vriksh Landscape Architects • COA Reg: CA/2021/DEL-9842
+              Empaneled Planning &amp; Engineering Partner • NCT Delhi Urban Climate Network
             </span>
           </div>
           <h1 className="text-2xl font-black tracking-tight text-white">

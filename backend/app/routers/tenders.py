@@ -215,6 +215,34 @@ def award_tender(
 
 
 # -----------------------------------------------------------------------------
+# Authenticated User / Professional Workspace Endpoints
+# -----------------------------------------------------------------------------
+
+@router.get("/me/corridor-assignments")
+def get_my_corridor_assignments(
+    current_user: AuthenticatedUser = Depends(get_current_user),
+) -> Dict[str, Any]:
+    """
+    Retrieve corridor allocations assigned exclusively to the authenticated caller's firm or user.
+    """
+    svc = get_tender_service()
+    assignments = svc.get_my_corridor_allocations(current_user)
+    return {"count": len(assignments), "assignments": assignments}
+
+
+@router.get("/me/proposals")
+def get_my_proposals(
+    current_user: AuthenticatedUser = Depends(get_current_user),
+) -> Dict[str, Any]:
+    """
+    Retrieve tender proposals submitted by the authenticated caller's firm or user.
+    """
+    svc = get_tender_service()
+    proposals = svc.get_my_proposals(current_user)
+    return {"count": len(proposals), "proposals": proposals}
+
+
+# -----------------------------------------------------------------------------
 # Corridor Assignments & Administration (Government Admin)
 # -----------------------------------------------------------------------------
 

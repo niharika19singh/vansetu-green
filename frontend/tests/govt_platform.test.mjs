@@ -76,6 +76,8 @@ test('REST API client provides all B2G tenders, allocations, cost optimization, 
     'submitTenderProposal',
     'awardTender',
     'getCorridorAvailability',
+    'getMyCorridorAssignments',
+    'getMyProposals',
     'listCorridorAssignments',
     'directAllocateCorridor',
     'listProfessionals',
@@ -130,4 +132,18 @@ test('Hospital and ABDM views enforce truthful reporting and zero PII disclosure
   );
   assert.ok(sourcesSrc.includes('Zero PII Guarantee'));
   assert.ok(sourcesSrc.includes('SANDBOX_CONFIGURED'));
+});
+
+test('Pro Workspace components integrate dedicated /me endpoints', () => {
+  const assignSrc = fs.readFileSync(
+    path.join(frontendRoot, 'src/components/MyAssignedProjectsView.jsx'),
+    'utf-8'
+  );
+  assert.ok(assignSrc.includes('getMyCorridorAssignments'));
+
+  const propSrc = fs.readFileSync(
+    path.join(frontendRoot, 'src/components/MyProposalsView.jsx'),
+    'utf-8'
+  );
+  assert.ok(propSrc.includes('getMyProposals'));
 });

@@ -380,6 +380,10 @@ export const api = {
     }),
   getCorridorAvailability: (corridorId, token) =>
     requestJson(`/api/corridors/${encodeURIComponent(corridorId)}/availability`, { token }),
+  getMyCorridorAssignments: (token) =>
+    requestJson('/api/me/corridor-assignments', { token }),
+  getMyProposals: (token) =>
+    requestJson('/api/me/proposals', { token }),
   listCorridorAssignments: (params = {}, token) => {
     const q = new URLSearchParams();
     if (params.corridor_id) q.set('corridor_id', params.corridor_id);

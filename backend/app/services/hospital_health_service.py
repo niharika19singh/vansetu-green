@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import sqlite3
 import uuid
 from datetime import datetime, timezone
@@ -109,6 +110,11 @@ class HospitalHealthService:
             )
 
     def _seed_initial_data_if_empty(self) -> None:
+        env = os.getenv("VANSETU_ENV", "").strip().lower()
+        seed_enabled = os.getenv("VANSETU_ENABLE_DEMO_SEED_DATA", "").strip().lower()
+        if env != "development" or seed_enabled != "true":
+            return
+
         with self._get_conn() as conn:
             c = conn.execute("SELECT COUNT(*) AS count FROM hospital_providers").fetchone()["count"]
             if c > 0:
@@ -305,20 +311,25 @@ class HospitalHealthService:
                 pop = r["population_denominator"] or 1_000_000
                 heat_illness_rate = round((r["heat_illness_visits"] / pop) * 100_000, 1)
                 heatstroke_rate = round((r["heatstroke_emergency_attendances"] / pop) * 100_000, 1)
+                factor = round(min(1.0 + (heatstroke_rate / 150.0) * 0.15, 1.15), 3)
 
                 district_indicators.append({
                     "aggregate_id": r["aggregate_id"],
                     "district": r["district"],
                     "reporting_period": r["reporting_period"],
                     "hospital_name": r["hospital_name"],
+                    "reporting_facility": r["hospital_name"],
                     "facility_type": r["facility_type"],
                     "heat_illness_visits": r["heat_illness_visits"],
                     "heatstroke_emergency_attendances": r["heatstroke_emergency_attendances"],
+                    "reported_heatstroke_cases_30d": r["heatstroke_emergency_attendances"],
+                    "reported_heat_exhaustion_cases_30d": r["heat_illness_visits"],
                     "respiratory_emergency_visits": r["respiratory_emergency_visits"],
                     "total_emergency_admissions": r["total_emergency_admissions"],
                     "population_denominator": pop,
                     "heat_illness_rate_per_100k": heat_illness_rate,
                     "heatstroke_rate_per_100k": heatstroke_rate,
+                    "vulnerability_multiplier": factor,
                     "data_quality_score": r["data_quality_score"],
                     "completeness_pct": r["completeness_pct"],
                     "provenance_notes": r["provenance_notes"],
@@ -327,13 +338,38 @@ class HospitalHealthService:
 
             # Check missing districts to ensure truthful reporting
             missing_districts = sorted(list(DELHI_DISTRICTS - covered_districts))
+            all_indicators = list(district_indicators)
+            for d in missing_districts:
+                if not district or district == "All Districts" or district == d:
+                    all_indicators.append({
+                        "aggregate_id": None,
+                        "district": d,
+                        "reporting_period": period or "2026-Q2",
+                        "hospital_name": None,
+                        "reporting_facility": None,
+                        "facility_type": None,
+                        "heat_illness_visits": 0,
+                        "heatstroke_emergency_attendances": 0,
+                        "reported_heatstroke_cases_30d": 0,
+                        "reported_heat_exhaustion_cases_30d": 0,
+                        "respiratory_emergency_visits": 0,
+                        "total_emergency_admissions": 0,
+                        "population_denominator": None,
+                        "heat_illness_rate_per_100k": 0.0,
+                        "heatstroke_rate_per_100k": 0.0,
+                        "vulnerability_multiplier": 1.0,
+                        "data_quality_score": 0.0,
+                        "completeness_pct": 0.0,
+                        "provenance_notes": "No reporting facility registered for this district.",
+                        "status": "HEALTH_DATA_NOT_AVAILABLE",
+                    })
 
             return {
                 "reporting_year": "2026",
                 "active_surveillance_period": "2026-Q2 (May-June Heat Season)",
                 "covered_districts_count": len(covered_districts),
                 "total_districts": len(DELHI_DISTRICTS),
-                "indicators": district_indicators,
+                "indicators": all_indicators,
                 "missing_districts": [
                     {
                         "district": d,
@@ -526,10 +562,19 @@ class HospitalHealthService:
         Truthful reporting of India's Ayushman Bharat Digital Mission (ABDM) integration state.
         Never fakes a live connection.
         """
+        sandbox_enabled = os.getenv("VANSETU_ABDM_SANDBOX_ENABLED", "").strip().lower() == "true"
+        integration_state = "SANDBOX_CONFIGURED" if sandbox_enabled else "NOT_CONFIGURED"
+        status_desc = (
+            "ABDM Sandbox Integration Configured — Awaiting Formal Production Gateway Whitelisting."
+            if sandbox_enabled
+            else "ABDM Integration Not Configured — Live/Sandbox Gateway Inactive."
+        )
+
         return {
             "ecosystem": "Ayushman Bharat Digital Mission (ABDM) / National Health Authority (NHA)",
-            "integration_state": "SANDBOX_CONFIGURED",
-            "status_description": "ABDM Sandbox Integration Configured — Awaiting Formal Production Gateway Whitelisting.",
+            "integration_state": integration_state,
+            "status": integration_state,
+            "status_description": status_desc,
             "is_live_production": False,
             "privacy_architecture": {
                 "patient_pii_in_climate_layer": False,
@@ -540,9 +585,9 @@ class HospitalHealthService:
             },
             "milestones": [
                 {"name": "Architecture Review & Zero-PII Guarantee", "status": "COMPLETED", "date": "2026-09-10"},
-                {"name": "NHA Sandbox Client Credential Handshake", "status": "COMPLETED", "date": "2026-10-01"},
-                {"name": "Health Information Provider (HIP) De-Identification Filter", "status": "VERIFIED", "date": "2026-10-20"},
-                {"name": "Formal NHA Production Whitelisting & Audit", "status": "AWAITING_APPROVAL", "date": "Scheduled Q4 2026"},
+                {"name": "NHA Sandbox Client Credential Handshake", "status": "COMPLETED" if sandbox_enabled else "NOT_CONFIGURED", "date": "2026-10-01"},
+                {"name": "Health Information Provider (HIP) De-Identification Filter", "status": "VERIFIED" if sandbox_enabled else "NOT_CONFIGURED", "date": "2026-10-20"},
+                {"name": "Formal NHA Production Whitelisting & Audit", "status": "AWAITING_APPROVAL" if sandbox_enabled else "NOT_CONFIGURED", "date": "Scheduled Q4 2026"},
                 {"name": "Production Live Aggregate Data Exchange", "status": "NOT_CONFIGURED", "date": "Post-Approval"},
             ],
             "approved_facility_registry_codes": [

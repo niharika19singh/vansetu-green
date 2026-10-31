@@ -39,10 +39,14 @@ from ml.security.auth import (
 
 
 @pytest.fixture(autouse=True)
-def isolate_test_services(tmp_path):
-    """Ensure clean isolated SQLite databases for each test run."""
+def isolate_test_services(tmp_path, monkeypatch):
+    """Ensure clean isolated SQLite databases and development environment for each test run."""
     from app.services.tender_service import reset_tender_service
     from app.services.hospital_health_service import reset_hospital_health_service
+
+    monkeypatch.setenv("VANSETU_ENV", "development")
+    monkeypatch.setenv("VANSETU_ENABLE_DEMO_SEED_DATA", "true")
+    monkeypatch.setenv("VANSETU_ABDM_SANDBOX_ENABLED", "true")
 
     reset_tender_service(tmp_path / "test_tenders.sqlite")
     reset_hospital_health_service(tmp_path / "test_health.sqlite")
@@ -56,7 +60,7 @@ def client():
 
 @pytest.fixture
 def auth_tokens():
-    """Provision isolated test tokens for Government Admin, Pro Professional, and Normal User."""
+    """Provision isolated test tokens for Government Admin, Engineer, Pro Professionals, Senior Reviewer, and Normal User."""
     mgr = get_auth_manager()
 
     govt_tok, govt_user = mgr.provision_test_user(
@@ -65,6 +69,14 @@ def auth_tokens():
         username="govt.engineer",
         full_name="Er. Test Engineer",
         organization="Delhi Public Works Department (South Zone)",
+    )
+
+    eng_tok, eng_user = mgr.provision_test_user(
+        role=ReviewerRole.GOVERNMENT_ENGINEER,
+        user_id="TEST_GOVT_ENG_FIELD_02",
+        username="govt.field.engineer",
+        full_name="Er. Field Test Engineer",
+        organization="Delhi PWD Civil Maintenance Division",
     )
 
     pro_tok_1, pro_user_1 = mgr.provision_test_user(
@@ -83,6 +95,14 @@ def auth_tokens():
         organization="Competing Design Studio LLP",
     )
 
+    senior_tok, senior_user = mgr.provision_test_user(
+        role=ReviewerRole.SENIOR_REVIEWER,
+        user_id="TEST_SR_REVIEWER_01",
+        username="sr.reviewer",
+        full_name="Dr. Senior ML Reviewer",
+        organization="Delhi Environmental Data Council",
+    )
+
     normal_tok, normal_user = mgr.provision_test_user(
         role=ReviewerRole.NORMAL_USER,
         user_id="TEST_CITIZEN_01",
@@ -94,10 +114,14 @@ def auth_tokens():
     return {
         "govt_tok": govt_tok,
         "govt_user": govt_user,
+        "eng_tok": eng_tok,
+        "eng_user": eng_user,
         "pro_tok_1": pro_tok_1,
         "pro_user_1": pro_user_1,
         "pro_tok_2": pro_tok_2,
         "pro_user_2": pro_user_2,
+        "senior_tok": senior_tok,
+        "senior_user": senior_user,
         "normal_tok": normal_tok,
         "normal_user": normal_user,
     }
@@ -437,3 +461,273 @@ def test_hospital_dataset_ingestion_and_validation(client, auth_tokens):
     res_bad_counts = client.post("/api/admin/health-data/uploads", json=bad_counts, headers=govt_headers)
     assert res_bad_counts.status_code == 400
     assert "Heatstroke attendances cannot exceed" in res_bad_counts.json()["detail"]
+
+
+# =============================================================================
+# 5. Demo Role Switch, Token Lifecycle & Expiration Tests
+# =============================================================================
+
+def test_demo_switch_role_environment_guard_and_expiry(client, monkeypatch):
+    """Verify demo persona endpoint is strictly disabled in production and returns expiring tokens in dev."""
+    # 1. In production, demo switch MUST fail with HTTP 403 Forbidden
+    monkeypatch.setenv("VANSETU_ENV", "production")
+    monkeypatch.setenv("VANSETU_ENABLE_DEMO_AUTH", "false")
+    prod_res = client.post("/api/auth/demo-switch-role", json={"role": "government_admin"})
+    assert prod_res.status_code == 403
+    assert "Access Denied" in prod_res.json()["detail"]
+
+    # 2. In development with flag enabled, demo switch succeeds
+    monkeypatch.setenv("VANSETU_ENV", "development")
+    monkeypatch.setenv("VANSETU_ENABLE_DEMO_AUTH", "true")
+
+    # Govt Admin persona
+    admin_res = client.post("/api/auth/demo-switch-role", json={"role": "government_admin"})
+    assert admin_res.status_code == 200
+    admin_data = admin_res.json()
+    assert admin_data["expires_in"] == 900
+    assert admin_data["user"]["role"] == "GOVERNMENT_ADMIN"
+    assert admin_data["user"]["is_demo"] is True
+    admin_tok = admin_data["access_token"]
+
+    # Verify token works on /api/auth/me
+    me_res = client.get("/api/auth/me", headers={"Authorization": f"Bearer {admin_tok}"})
+    assert me_res.status_code == 200
+    assert me_res.json()["role"] == "GOVERNMENT_ADMIN"
+
+    # Govt Engineer persona
+    eng_res = client.post("/api/auth/demo-switch-role", json={"role": "government_engineer"})
+    assert eng_res.status_code == 200
+    assert eng_res.json()["user"]["role"] == "GOVERNMENT_ENGINEER"
+
+    # Pro Professional persona
+    pro_res = client.post("/api/auth/demo-switch-role", json={"role": "pro_professional"})
+    assert pro_res.status_code == 200
+    assert pro_res.json()["user"]["role"] == "PRO_PROFESSIONAL"
+
+    # Normal User persona
+    norm_res = client.post("/api/auth/demo-switch-role", json={"role": "normal_user"})
+    assert norm_res.status_code == 200
+    assert norm_res.json()["user"]["role"] == "NORMAL_USER"
+
+    # Invalid role rejected with HTTP 400
+    bad_res = client.post("/api/auth/demo-switch-role", json={"role": "superuser"})
+    assert bad_res.status_code == 400
+
+
+def test_token_lifecycle_revocation_and_expiration(client):
+    """Verify expired, revoked, and malformed credentials fail closed with HTTP 401."""
+    mgr = get_auth_manager()
+
+    # 1. Malformed / non-existent token rejected
+    bad_res = client.get("/api/corridors/C-14/cost-optimisation", headers={"Authorization": "Bearer vs_invalid_random_token_999"})
+    assert bad_res.status_code == 401
+
+    # 2. Expired token rejected
+    exp_tok, _ = mgr.provision_test_user(
+        role=ReviewerRole.GOVERNMENT_ADMIN,
+        expires_in_seconds=-30,  # Expired in past
+    )
+    exp_res = client.get("/api/corridors/C-14/cost-optimisation", headers={"Authorization": f"Bearer {exp_tok}"})
+    assert exp_res.status_code == 401
+
+    # 3. Revoked token rejected
+    valid_tok, _ = mgr.provision_test_user(
+        role=ReviewerRole.GOVERNMENT_ADMIN,
+        expires_in_seconds=600,
+    )
+    # Works before revocation
+    ok_res = client.get("/api/corridors/C-14/cost-optimisation", headers={"Authorization": f"Bearer {valid_tok}"})
+    assert ok_res.status_code == 200
+
+    # Revoke
+    mgr.revoke_token(valid_tok)
+
+    # Rejection after revocation
+    rev_res = client.get("/api/corridors/C-14/cost-optimisation", headers={"Authorization": f"Bearer {valid_tok}"})
+    assert rev_res.status_code == 401
+
+
+# =============================================================================
+# 6. Least-Privilege Role Matrix Verification
+# =============================================================================
+
+def test_least_privilege_matrix_for_all_roles(client, auth_tokens):
+    """Verify exact boundaries for Govt Admin, Govt Engineer, Pro, and Senior Reviewer."""
+    govt_headers = {"Authorization": f"Bearer {auth_tokens['govt_tok']}"}
+    eng_headers = {"Authorization": f"Bearer {auth_tokens['eng_tok']}"}
+    pro_headers = {"Authorization": f"Bearer {auth_tokens['pro_tok_1']}"}
+    sr_headers = {"Authorization": f"Bearer {auth_tokens['senior_tok']}"}
+
+    # 1. Government Admin CANNOT submit competitive tender proposals (conflict of interest)
+    prop_payload = {
+        "proposed_cost_lakh": 18.0,
+        "technical_proposal_summary": "Admin proposal attempt",
+        "timeline_weeks": 10,
+    }
+    govt_prop_res = client.post("/api/tenders/TND-2026-C14-01/proposals", json=prop_payload, headers=govt_headers)
+    assert govt_prop_res.status_code == 403
+
+    # 2. Government Engineer CANNOT approve budgets (budget authority is Admin only)
+    appr_payload = {"action": "APPROVE", "approved_budget_lakh": 15.0, "approval_notes": "Engineer attempt"}
+    eng_appr_res = client.post("/api/corridors/C-14/budget-approval", json=appr_payload, headers=eng_headers)
+    assert eng_appr_res.status_code == 403
+
+    # 3. Government Engineer CANNOT publish tenders
+    tender_payload = {
+        "corridor_id": "C-08",
+        "title": "Engineer Tender Attempt",
+        "scope_of_work": "Test",
+        "estimated_cost_lakh": 12.0,
+        "approved_budget_lakh": 10.0,
+        "required_interventions": ["linear_street_trees"],
+        "opening_date": "2026-11-01",
+        "closing_date": "2026-11-30",
+    }
+    eng_tnd_res = client.post("/api/tenders", json=tender_payload, headers=eng_headers)
+    assert eng_tnd_res.status_code == 403
+
+    # 4. Senior Reviewer (ML lead) CANNOT approve government budgets or view admin audit logs
+    sr_appr_res = client.post("/api/corridors/C-14/budget-approval", json=appr_payload, headers=sr_headers)
+    assert sr_appr_res.status_code == 403
+
+    sr_audit_res = client.get("/api/admin/audit-logs", headers=sr_headers)
+    assert sr_audit_res.status_code == 403
+
+
+# =============================================================================
+# 7. Pro Workspace Endpoints & Corridor Exclusivity Isolation
+# =============================================================================
+
+def test_pro_my_corridor_assignments_and_proposals_isolation(client, auth_tokens):
+    """Verify /api/me/corridor-assignments and /api/me/proposals enforce organizational isolation."""
+    pro1_headers = {"Authorization": f"Bearer {auth_tokens['pro_tok_1']}"}
+    pro2_headers = {"Authorization": f"Bearer {auth_tokens['pro_tok_2']}"}
+    govt_headers = {"Authorization": f"Bearer {auth_tokens['govt_tok']}"}
+
+    # 1. Unauthenticated requests to /api/me/* return 401
+    assert client.get("/api/me/corridor-assignments").status_code == 401
+    assert client.get("/api/me/proposals").status_code == 401
+
+    # 2. Allocate Corridor C-03 to Pro 1's organization via direct allocation
+    alloc_res = client.post(
+        "/api/admin/corridor-assignments",
+        json={
+            "corridor_id": "C-03",
+            "assigned_org": auth_tokens["pro_user_1"].organization,
+            "scope_summary": "Direct allocation for South Zone greening",
+            "approved_budget_lakh": 16.5,
+        },
+        headers=govt_headers,
+    )
+    assert alloc_res.status_code == 201
+
+    # 3. Pro 1 checks /api/me/corridor-assignments -> sees Corridor C-03
+    my_assign_res1 = client.get("/api/me/corridor-assignments", headers=pro1_headers)
+    assert my_assign_res1.status_code == 200
+    assignments_1 = my_assign_res1.json()["assignments"]
+    assert any(a["corridor_id"] == "C-03" for a in assignments_1)
+
+    # 4. Pro 2 (competitor) checks /api/me/corridor-assignments -> DOES NOT see Corridor C-03
+    my_assign_res2 = client.get("/api/me/corridor-assignments", headers=pro2_headers)
+    assert my_assign_res2.status_code == 200
+    assignments_2 = my_assign_res2.json()["assignments"]
+    assert not any(a["corridor_id"] == "C-03" for a in assignments_2)
+
+    # 5. Pro 1 checks /api/me/proposals
+    my_props_res = client.get("/api/me/proposals", headers=pro1_headers)
+    assert my_props_res.status_code == 200
+    assert "proposals" in my_props_res.json()
+
+
+# =============================================================================
+# 8. Budget Approval Persistence & Rate Benchmark Disclosure
+# =============================================================================
+
+def test_corridor_budget_approval_persistence_and_audit(client, auth_tokens):
+    """Verify budget approval persists into table, updates corridor allocation, and writes to audit logs."""
+    govt_headers = {"Authorization": f"Bearer {auth_tokens['govt_tok']}"}
+    pro_headers = {"Authorization": f"Bearer {auth_tokens['pro_tok_1']}"}
+
+    # 1. Record budget approval for C-14
+    appr_payload = {
+        "action": "APPROVE",
+        "approved_budget_lakh": 17.2,
+        "approval_notes": "Sanctioned under Delhi Urban Greening Mission 2026.",
+    }
+    appr_res = client.post("/api/corridors/C-14/budget-approval", json=appr_payload, headers=govt_headers)
+    assert appr_res.status_code == 200
+    data = appr_res.json()
+    assert data["status"] == "BUDGET_APPROVED"
+    assert data["approved_budget_lakh"] == 17.2
+
+    # 2. Check cost baseline reflects approved budget and CPWD DSR 2023 benchmark disclosure
+    base_res = client.get("/api/corridors/C-14/cost-optimisation", headers=pro_headers)
+    assert base_res.status_code == 200
+    base_data = base_res.json()
+    assert base_data["government_approved_budget_lakh"] == 17.2
+    assert "CPWD Delhi Schedule of Rates (DSR 2023)" in base_data["benchmark_source"]
+
+    # 3. Check audit log records budget decision
+    audit_res = client.get("/api/admin/audit-logs?entity_type=BUDGET_APPROVAL", headers=govt_headers)
+    assert audit_res.status_code == 200
+    logs = audit_res.json()["audit_logs"]
+    assert any(log["entity_id"] == "C-14" and "BUDGET_APPROVE" in log["action"] for log in logs)
+
+
+# =============================================================================
+# 9. Seed Data Environment Gating
+# =============================================================================
+
+def test_seed_data_gating(tmp_path, monkeypatch):
+    """Verify demo seed data is strictly suppressed in production and initialized in development."""
+    from app.services.tender_service import TenderService
+    from app.services.hospital_health_service import HospitalHealthService
+
+    # 1. Production environment: zero seeded records
+    monkeypatch.setenv("VANSETU_ENV", "production")
+    monkeypatch.setenv("VANSETU_ENABLE_DEMO_SEED_DATA", "false")
+
+    prod_tender_svc = TenderService(db_path=tmp_path / "prod_tenders.sqlite")
+    assert len(prod_tender_svc.list_professionals()) == 0
+    assert len(prod_tender_svc.list_tenders()) == 0
+    assert len(prod_tender_svc.list_corridor_allocations()) == 0
+
+    prod_health_svc = HospitalHealthService(db_path=tmp_path / "prod_health.sqlite")
+    assert len(prod_health_svc.list_providers()) == 0
+
+    # 2. Development environment with flag: seeds demo records
+    monkeypatch.setenv("VANSETU_ENV", "development")
+    monkeypatch.setenv("VANSETU_ENABLE_DEMO_SEED_DATA", "true")
+
+    dev_tender_svc = TenderService(db_path=tmp_path / "dev_tenders.sqlite")
+    assert len(dev_tender_svc.list_professionals()) >= 3
+    assert len(dev_tender_svc.list_corridor_allocations()) >= 1
+
+    dev_health_svc = HospitalHealthService(db_path=tmp_path / "dev_health.sqlite")
+    assert len(dev_health_svc.list_providers()) >= 4
+
+
+# =============================================================================
+# 10. Real MILP Solver Trade-Off Alternatives
+# =============================================================================
+
+def test_corridor_cost_solver_alternatives(client, auth_tokens):
+    """Verify corridor cost optimizer returns distinct MILP solver trade-off packages."""
+    pro_headers = {"Authorization": f"Bearer {auth_tokens['pro_tok_1']}"}
+
+    opt_payload = {
+        "budget_lakh": 16.0,
+        "climate_priority": "heat_resilience",
+        "lifecycle_years": 10,
+    }
+    res = client.post("/api/corridors/C-14/cost-optimisation", json=opt_payload, headers=pro_headers)
+    assert res.status_code == 200
+    data = res.json()
+
+    alternatives = data["trade_off_alternatives"]
+    assert len(alternatives) >= 2
+    for alt in alternatives:
+        assert alt["is_solver_optimized"] is True
+        assert alt["capex_lakh"] > 0.0
+        assert alt["lifecycle_cost_lakh"] >= alt["capex_lakh"]
+        assert len(alt["selected_interventions"]) > 0
