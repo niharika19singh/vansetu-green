@@ -858,6 +858,7 @@ def test_spaces_storage_adapter_and_checksum_verification(tmp_path):
     dummy_artifact = tmp_path / "test_model.joblib"
     dummy_artifact.write_bytes(b"dummy trained model weights")
     correct_sha = hashlib.sha256(dummy_artifact.read_bytes()).hexdigest()
+    mock_s3.download_file.side_effect = lambda Bucket, Key, Filename: Path(Filename).write_bytes(dummy_artifact.read_bytes())
 
     # Upload with correct checksum
     receipt = configured_store.upload_artifact(
@@ -1372,8 +1373,8 @@ def test_site_assessment_listing_and_detail_security(client):
     payload = {
         "segment_id": "C-14-S005",
         "corridor_id": "C-14",
-        "intervention_archetype": "native_shade_trees_deep_soil",
-        "suitability_state": "RECOMMENDED",
+        "intervention_archetype": "linear_street_trees",
+        "suitability_state": "ELIGIBLE",
         "evidence_reference": "PWD/ORDER/2026/GPR-VERIFY",
         "evidence_document_type": "GPR_UTILITY_SURVEY",
         "engineering_constraints": [],

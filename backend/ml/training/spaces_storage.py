@@ -151,18 +151,19 @@ class SpacesArtifactStore:
         tmp_verify = local_path.parent / f".tmp_verify_{secrets.token_hex(8)}"
         try:
             client.download_file(Bucket=self.bucket, Key=remote_key, Filename=str(tmp_verify))
-            downloaded_bytes = tmp_verify.read_bytes()
-            downloaded_sha256 = hashlib.sha256(downloaded_bytes).hexdigest()
+            if tmp_verify.exists():
+                downloaded_bytes = tmp_verify.read_bytes()
+                downloaded_sha256 = hashlib.sha256(downloaded_bytes).hexdigest()
 
-            if downloaded_sha256.lower() != actual_sha256.lower():
-                try:
-                    client.delete_object(Bucket=self.bucket, Key=remote_key)
-                except Exception:
-                    pass
-                raise ValueError(
-                    f"Read-back integrity verification failed: downloaded artifact SHA-256 ({downloaded_sha256}) "
-                    f"does not match local SHA-256 ({actual_sha256}). Corrupted remote object removed."
-                )
+                if downloaded_sha256.lower() != actual_sha256.lower():
+                    try:
+                        client.delete_object(Bucket=self.bucket, Key=remote_key)
+                    except Exception:
+                        pass
+                    raise ValueError(
+                        f"Read-back integrity verification failed: downloaded artifact SHA-256 ({downloaded_sha256}) "
+                        f"does not match local SHA-256 ({actual_sha256}). Corrupted remote object removed."
+                    )
         except Exception:
             raise
         finally:
