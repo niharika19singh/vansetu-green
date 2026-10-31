@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   BarChart,
   Bar,
@@ -17,8 +17,13 @@ import {
   Sparkles,
   Clock,
 } from 'lucide-react';
+import {
+  FeasibilityStatusBadge,
+  deriveInterventionFeasibilityStatus,
+  FEASIBILITY_STATUS_META,
+} from './ui/ScientificBadges';
 
-export default function InterventionPlannerPanel({ corridor }) {
+function InterventionPlannerPanel({ corridor, mekoEnabled = true }) {
   const plan = corridor?.intervention_plan;
   const allInterventions = plan?.all_interventions || [];
   const [selectedIntId, setSelectedIntId] = useState(
@@ -31,38 +36,47 @@ export default function InterventionPlannerPanel({ corridor }) {
     }
   }, [corridor?.id, plan?.primary_recommendation?.id]);
 
+  const costChartData = useMemo(() => {
+    return allInterventions.map((item) => ({
+      name: item.name
+        .replace('Architectural ', '')
+        .replace('Linear ', '')
+        .replace('Roadside ', '')
+        .replace('Living ', ''),
+      CapEx: item.cost_breakdown.total_capex_inr_lakhs,
+      OpEx5Yr: item.cost_breakdown.total_five_year_opex_inr_lakhs,
+      Total5Yr: item.cost_breakdown.total_five_year_lifecycle_inr_lakhs,
+      suitability: Math.round(item.suitability_score * 100),
+    }));
+  }, [allInterventions]);
+
   if (!corridor || !plan) {
     return (
       <div className="p-6 text-center text-slate-400 text-xs">
-        Select an urban corridor to inspect its 5-category green infrastructure intervention plan and CPWD lifecycle cost breakdown.
+        Select an urban corridor to inspect its 5-category green infrastructure intervention plan, site feasibility status, and CPWD lifecycle cost breakdown.
       </div>
     );
   }
 
   const activeIntervention =
     allInterventions.find((item) => item.id === selectedIntId) || allInterventions[0];
-
-  const costChartData = allInterventions.map((item) => ({
-    name: item.name
-      .replace('Architectural ', '')
-      .replace('Linear ', '')
-      .replace('Roadside ', '')
-      .replace('Living ', ''),
-    CapEx: item.cost_breakdown.total_capex_inr_lakhs,
-    OpEx5Yr: item.cost_breakdown.total_five_year_opex_inr_lakhs,
-    Total5Yr: item.cost_breakdown.total_five_year_lifecycle_inr_lakhs,
-    suitability: Math.round(item.suitability_score * 100),
-  }));
-
   const cb = activeIntervention?.cost_breakdown || {};
+  const activeFeasStatus = deriveInterventionFeasibilityStatus(
+    activeIntervention,
+    corridor,
+    mekoEnabled
+  );
+  const activeFeasMeta =
+    FEASIBILITY_STATUS_META[activeFeasStatus] ||
+    FEASIBILITY_STATUS_META.FIELD_VERIFICATION_REQUIRED;
 
   return (
     <div className="space-y-4 text-xs">
       {/* Corridor Context Banner */}
-      <div className="bg-slate-950/90 border border-emerald-500/30 rounded-lg p-3 flex items-center justify-between">
+      <div className="bg-slate-950/90 border border-emerald-500/30 rounded-lg p-3 flex flex-wrap items-center justify-between gap-2">
         <div>
           <div className="text-[10px] text-emerald-400 uppercase font-semibold">
-            CPWD DSR 2023 Lifecycle Engineering Estimate
+            CPWD DSR 2023 Lifecycle Engineering Estimate (Illustrative Reference Pricing)
           </div>
           <div className="font-bold text-slate-100 text-sm">{corridor.name}</div>
           <div className="text-[11px] text-slate-400">
@@ -71,7 +85,7 @@ export default function InterventionPlannerPanel({ corridor }) {
           </div>
         </div>
         <div className="text-right">
-          <div className="text-[10px] text-slate-400">Primary Fit</div>
+          <div className="text-[10px] text-slate-400">Desktop Primary Fit</div>
           <div className="font-bold text-emerald-400">
             {plan.primary_recommendation?.name}
           </div>
@@ -81,36 +95,39 @@ export default function InterventionPlannerPanel({ corridor }) {
         </div>
       </div>
 
-      {/* 5 Intervention Archetype Selector Tabs */}
+      {/* 5 Intervention Archetype Selector Tabs with Explicit Feasibility Status Badges */}
       <div className="space-y-1.5">
-        <div className="text-[11px] font-semibold text-slate-300">
-          5 GreenTech Intervention Categories (Ranked by Suitability)
+        <div className="flex items-center justify-between">
+          <span className="text-[11px] font-semibold text-slate-300">
+            5 GreenTech Intervention Categories (Ranked by Suitability &amp; Site Feasibility)
+          </span>
         </div>
-        <div className="grid grid-cols-1 gap-1.5">
+        <div className="grid grid-cols-1 gap-1.5" role="tablist" aria-label="Intervention Archetypes">
           {allInterventions.map((item) => {
             const isSelected = item.id === activeIntervention?.id;
+            const itemStatus = deriveInterventionFeasibilityStatus(item, corridor, mekoEnabled);
             return (
               <button
                 key={item.id}
+                role="tab"
+                aria-selected={isSelected}
                 onClick={() => setSelectedIntId(item.id)}
-                className={`w-full text-left p-2.5 rounded-lg border transition flex items-center justify-between ${
+                className={`w-full text-left p-2.5 rounded-lg border transition flex items-center justify-between gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 ${
                   isSelected
                     ? 'bg-emerald-950/50 border-emerald-500 text-slate-100 shadow'
                     : 'bg-slate-950/70 border-slate-800 text-slate-300 hover:bg-slate-900'
                 }`}
               >
-                <div className="min-w-0 pr-2">
-                  <div className="flex items-center gap-1.5">
+                <div className="min-w-0 pr-2 space-y-1">
+                  <div className="flex items-center gap-1.5 flex-wrap">
                     <span className="px-1.5 py-0.5 rounded bg-slate-800 text-emerald-400 font-mono text-[10px] font-bold">
                       #{item.rank}
                     </span>
                     <span className="font-bold text-xs truncate">{item.name}</span>
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800/90 text-slate-300">
-                      {item.suitability_level}
-                    </span>
+                    <FeasibilityStatusBadge status={itemStatus} compact />
                   </div>
-                  <div className="text-[10px] text-slate-400 truncate mt-0.5">
-                    {item.category}
+                  <div className="text-[10px] text-slate-400 truncate">
+                    {item.category} • {item.suitability_level}
                   </div>
                 </div>
 
@@ -130,10 +147,13 @@ export default function InterventionPlannerPanel({ corridor }) {
 
       {/* Recharts Comparative 5-Year Lifecycle Cost Chart */}
       <div className="bg-slate-950/90 border border-slate-800 rounded-lg p-3 space-y-2">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between flex-wrap gap-1">
           <span className="font-bold text-slate-200 flex items-center gap-1.5">
-            <IndianRupee className="w-3.5 h-3.5 text-amber-400" />
+            <IndianRupee className="w-3.5 h-3.5 text-amber-400" aria-hidden="true" />
             Comparative CapEx vs. 5-Year OpEx (₹ Lakhs for {plan.corridor_length_km} km)
+          </span>
+          <span className="text-[10px] font-mono text-slate-400">
+            CPWD DSR 2023 Reference Schedule
           </span>
         </div>
 
@@ -170,21 +190,28 @@ export default function InterventionPlannerPanel({ corridor }) {
       {/* Active Intervention Detailed Specification */}
       {activeIntervention && (
         <div className="bg-slate-950/90 border border-slate-800 rounded-lg p-3.5 space-y-3">
-          <div className="border-b border-slate-800 pb-2">
-            <div className="flex items-center justify-between">
+          <div className="border-b border-slate-800 pb-2 space-y-1.5">
+            <div className="flex items-center justify-between flex-wrap gap-2">
               <h3 className="text-sm font-bold text-emerald-400 flex items-center gap-1.5">
-                <Trees className="w-4 h-4" />
+                <Trees className="w-4 h-4" aria-hidden="true" />
                 {activeIntervention.name}
               </h3>
-              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-900 border border-slate-700 text-slate-300 flex items-center gap-1">
-                <Clock className="w-3 h-3 text-sky-400" /> Service Life:{' '}
-                {cb.expected_service_life_years} yrs
-              </span>
+              <div className="flex items-center gap-1.5">
+                <FeasibilityStatusBadge status={activeFeasStatus} />
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-900 border border-slate-700 text-slate-300 flex items-center gap-1">
+                  <Clock className="w-3 h-3 text-sky-400" aria-hidden="true" /> Service Life:{' '}
+                  {cb.expected_service_life_years} yrs
+                </span>
+              </div>
             </div>
-            <p className="text-[11px] text-slate-300 mt-1">{activeIntervention.summary}</p>
-            <p className="text-[11px] text-emerald-300/90 mt-1 italic">
+            <p className="text-[11px] text-slate-300">{activeIntervention.summary}</p>
+            <p className="text-[11px] text-emerald-300/90 italic">
               Rationale: {activeIntervention.selection_rationale}
             </p>
+            <div className="text-[10px] text-slate-400 bg-slate-900/80 px-2.5 py-1.5 rounded border border-slate-800">
+              <strong className="text-slate-200">Engineering Status ({activeFeasStatus}): </strong>
+              {activeFeasMeta.description}
+            </div>
           </div>
 
           {/* CapEx, OpEx, Lifecycle Numbers */}
@@ -221,7 +248,7 @@ export default function InterventionPlannerPanel({ corridor }) {
           </div>
 
           {/* Line-Item Cost Breakdown */}
-          <div className="grid grid-cols-2 gap-2 text-[11px]">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
             <div className="bg-slate-900/70 p-2 rounded border border-slate-800/80 space-y-1">
               <div className="font-semibold text-slate-300 text-[10px] uppercase">
                 CapEx Line Items (per km)
@@ -254,7 +281,7 @@ export default function InterventionPlannerPanel({ corridor }) {
           {/* Recommended Native Delhi Species / Materials */}
           <div className="space-y-1">
             <div className="font-semibold text-slate-200 flex items-center gap-1 text-[11px]">
-              <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+              <Sparkles className="w-3.5 h-3.5 text-emerald-400" aria-hidden="true" />
               Recommended NCT Delhi Species / Specification
             </div>
             <ul className="list-disc list-inside text-[11px] text-slate-300 space-y-0.5">
@@ -267,7 +294,7 @@ export default function InterventionPlannerPanel({ corridor }) {
           {/* Site Constraints */}
           <div className="space-y-1">
             <div className="font-semibold text-amber-300 flex items-center gap-1 text-[11px]">
-              <AlertTriangle className="w-3.5 h-3.5" />
+              <AlertTriangle className="w-3.5 h-3.5" aria-hidden="true" />
               Site Constraints &amp; Engineering Prerequisites
             </div>
             <ul className="list-disc list-inside text-[11px] text-slate-300 space-y-0.5">
@@ -280,7 +307,7 @@ export default function InterventionPlannerPanel({ corridor }) {
           {/* Required Pre-Installation Verification */}
           <div className="space-y-1">
             <div className="font-semibold text-sky-300 flex items-center gap-1 text-[11px]">
-              <ClipboardCheck className="w-3.5 h-3.5" />
+              <ClipboardCheck className="w-3.5 h-3.5" aria-hidden="true" />
               Required Pre-Installation Field Verification
             </div>
             <ul className="list-disc list-inside text-[11px] text-slate-300 space-y-0.5">
@@ -293,7 +320,7 @@ export default function InterventionPlannerPanel({ corridor }) {
           {/* Evidence & Confidence Limitations */}
           <div className="bg-amber-950/30 border border-amber-500/30 rounded p-2.5 space-y-1">
             <div className="font-semibold text-amber-300 flex items-center gap-1 text-[11px]">
-              <ShieldAlert className="w-3.5 h-3.5" />
+              <ShieldAlert className="w-3.5 h-3.5" aria-hidden="true" />
               Evidence &amp; Confidence Limitations
             </div>
             <ul className="list-disc list-inside text-[10px] text-amber-200/90 space-y-1">
@@ -307,3 +334,5 @@ export default function InterventionPlannerPanel({ corridor }) {
     </div>
   );
 }
+
+export default React.memo(InterventionPlannerPanel);

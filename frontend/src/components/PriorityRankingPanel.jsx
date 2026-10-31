@@ -12,6 +12,10 @@ import {
   Wind,
   ShieldCheck,
 } from 'lucide-react';
+import {
+  FeasibilityStatusBadge,
+  deriveCorridorFeasibilityStatus,
+} from './ui/ScientificBadges';
 
 const SCENARIO_LIST = [
   { id: 'baseline', label: 'Baseline', badge: 'Balanced 6-Factor' },
@@ -32,6 +36,7 @@ export default function PriorityRankingPanel({
   onChangeWhatIfHeatWeight,
   selectedCorridor,
   onSelectCorridor,
+  mekoEnabled = true,
 }) {
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -76,6 +81,7 @@ export default function PriorityRankingPanel({
           <div className="relative">
             <MapPin className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5 pointer-events-none" />
             <select
+              aria-label="Filter corridors by district"
               value={selectedDistrict}
               onChange={(e) => onSelectDistrict(e.target.value)}
               className="w-full bg-slate-950 border border-slate-700/80 rounded-lg pl-7 pr-2 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-emerald-500"
@@ -93,6 +99,7 @@ export default function PriorityRankingPanel({
             <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5 pointer-events-none" />
             <input
               type="text"
+              aria-label="Search corridors"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search corridor..."
@@ -117,11 +124,12 @@ export default function PriorityRankingPanel({
               return (
                 <button
                   key={sc.id}
+                  aria-pressed={isActive}
                   onClick={() => {
                     onChangeWhatIfHeatWeight(null);
                     onSelectScenario(sc.id);
                   }}
-                  className={`px-1.5 py-1.5 rounded text-[10px] font-medium leading-tight text-center transition border ${
+                  className={`px-1.5 py-1.5 rounded text-[10px] font-medium leading-tight text-center transition border focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 ${
                     isActive
                       ? 'bg-emerald-600/25 border-emerald-500 text-emerald-300 font-semibold shadow-sm'
                       : 'bg-slate-950/80 border-slate-800 text-slate-400 hover:bg-slate-800 hover:text-slate-200'
@@ -138,7 +146,7 @@ export default function PriorityRankingPanel({
         <div className="bg-slate-950/90 border border-slate-800 rounded-lg p-2.5 space-y-1.5">
           <div className="flex items-center justify-between text-[11px]">
             <span className="text-slate-300 font-medium">
-              What-If Thermal vs. Canopy Deficit Slider
+              What-If Surface LST vs. Canopy Deficit Slider
             </span>
             <span className="font-mono text-[10px] text-amber-300">
               {whatIfHeatWeight !== null
@@ -150,6 +158,7 @@ export default function PriorityRankingPanel({
           </div>
           <input
             type="range"
+            aria-label="What-If surface LST versus canopy deficit weight"
             min="0"
             max="1"
             step="0.05"
@@ -166,16 +175,30 @@ export default function PriorityRankingPanel({
       </div>
 
       {/* Ranked Corridors Scrollable List */}
-      <div className="flex-1 overflow-y-auto divide-y divide-slate-800/70">
+      <div
+        className="flex-1 overflow-y-auto divide-y divide-slate-800/70"
+        role="listbox"
+        aria-label="Ranked urban corridors"
+      >
         {filteredCorridors.map((corr) => {
           const isSelected = selectedCorridor?.id === corr.id;
           const rankDelta = corr.rank_delta || 0;
+          const feasStatus = deriveCorridorFeasibilityStatus(corr, mekoEnabled);
 
           return (
             <div
               key={corr.id}
+              role="option"
+              aria-selected={isSelected}
+              tabIndex={0}
               onClick={() => onSelectCorridor(corr)}
-              className={`p-3 cursor-pointer transition ${
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  onSelectCorridor(corr);
+                }
+              }}
+              className={`p-3 cursor-pointer transition focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-400 ${
                 isSelected
                   ? 'bg-emerald-950/40 border-l-4 border-l-emerald-400'
                   : 'hover:bg-slate-800/50'
@@ -235,7 +258,7 @@ export default function PriorityRankingPanel({
                 <div className="flex items-center gap-1">
                   <Thermometer className="w-3 h-3 text-orange-400 shrink-0" />
                   <div>
-                    <span className="text-slate-500 block leading-none">LST</span>
+                    <span className="text-slate-500 block leading-none">Surf. LST</span>
                     <span className="font-mono font-semibold text-slate-200">
                       {corr.lst_mean}°C
                     </span>
@@ -268,11 +291,11 @@ export default function PriorityRankingPanel({
                 </div>
               </div>
 
-              {/* Primary Recommended Intervention Tag */}
-              <div className="mt-1.5 flex items-center justify-between text-[10px]">
-                <span className="text-slate-400">Primary Fit:</span>
-                <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-medium">
-                  {corr.recommended_intervention}
+              {/* Feasibility Status + Primary Recommended Intervention Tag */}
+              <div className="mt-1.5 flex items-center justify-between gap-1.5 flex-wrap text-[10px]">
+                <FeasibilityStatusBadge status={feasStatus} compact />
+                <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-medium truncate max-w-[55%]">
+                  Fit: {corr.recommended_intervention}
                 </span>
               </div>
             </div>

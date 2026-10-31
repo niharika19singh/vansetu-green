@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, Suspense, lazy } from 'react';
 import {
   Trees,
   Thermometer,
@@ -23,13 +23,26 @@ import InteractiveMap from './components/InteractiveMap';
 import PriorityRankingPanel from './components/PriorityRankingPanel';
 import CorridorAnalyticalDetail from './components/CorridorAnalyticalDetail';
 import InterventionPlannerPanel from './components/InterventionPlannerPanel';
-import DataProvenanceModal from './components/DataProvenanceModal';
-import InterventionOptimizerView from './components/InterventionOptimizerView';
-import ProcurementStudioView from './components/ProcurementStudioView';
-import AiPlanningAssistantView from './components/AiPlanningAssistantView';
-import MekoMemoryStudioView from './components/MekoMemoryStudioView';
-import TemporalInsightsView from './components/TemporalInsightsView';
-import EquityAndProvenanceView from './components/EquityAndProvenanceView';
+import {
+  DECISION_WORKFLOW_STEPS,
+  FeasibilityStatusBadge,
+  deriveCorridorFeasibilityStatus,
+} from './components/ui/ScientificBadges';
+
+// Secondary modules are code-split so the map-first explorer loads faster (Section 15).
+const DataProvenanceModal = lazy(() => import('./components/DataProvenanceModal'));
+const InterventionOptimizerView = lazy(() => import('./components/InterventionOptimizerView'));
+const ProcurementStudioView = lazy(() => import('./components/ProcurementStudioView'));
+const AiPlanningAssistantView = lazy(() => import('./components/AiPlanningAssistantView'));
+const MekoMemoryStudioView = lazy(() => import('./components/MekoMemoryStudioView'));
+const TemporalInsightsView = lazy(() => import('./components/TemporalInsightsView'));
+const EquityAndProvenanceView = lazy(() => import('./components/EquityAndProvenanceView'));
+
+const ViewFallback = () => (
+  <div className="h-full w-full flex items-center justify-center text-xs font-mono text-slate-400" role="status">
+    Loading decision-support module...
+  </div>
+);
 
 const NAV_VIEWS = [
   { id: 'overview', label: '1. Climate Overview', icon: LayoutDashboard },
@@ -63,6 +76,7 @@ export default function App() {
   const [provenance, setProvenance] = useState(null);
 
   const [rightTab, setRightTab] = useState('analytics');
+  const [mobilePane, setMobilePane] = useState('map'); // 'rankings' | 'map' | 'inspector' (below lg)
   const [provenanceModalOpen, setProvenanceModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -160,14 +174,14 @@ export default function App() {
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-sm font-bold tracking-tight text-white">
-                VanSetu <span className="text-emerald-400">— Urban Climate Action Intelligence</span>
+                VanSetu <span className="text-emerald-400">— Evidence-Aware Climate Investment Intelligence</span>
               </h1>
-              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+              <span className="hidden sm:inline text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
                 NCT Delhi v2.0
               </span>
             </div>
             <p className="text-[11px] text-slate-400 hidden sm:block">
-              Geospatial Climate Intelligence • Meko Persistent Memory • MILP Budget Optimizer • Gemini 3.8 Flash • Tiger Data • IOMETE Studio
+              Prioritise climate need • Check evidence quality • Verify site feasibility • Allocate limited budgets • Preserve institutional knowledge
             </p>
           </div>
         </div>
@@ -178,7 +192,7 @@ export default function App() {
             <Thermometer className="w-4 h-4 text-orange-400" />
             <div>
               <span className="text-[10px] text-slate-400 block leading-none">
-                MODIS LST (1km Native)
+                MODIS Surface LST (1km Native)
               </span>
               <span className="font-mono font-bold text-slate-100">
                 {lstStats.mean ? `${lstStats.mean.toFixed(1)}°C` : '25.8°C'}{' '}
@@ -219,48 +233,88 @@ export default function App() {
         <div className="flex items-center gap-2">
           <button
             onClick={() => setMekoEnabled(!mekoEnabled)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 border transition ${
+            aria-pressed={mekoEnabled}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 border transition focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 ${
               mekoEnabled
                 ? 'bg-emerald-600/25 border-emerald-500 text-emerald-300'
                 : 'bg-rose-900/40 border-rose-500/50 text-rose-300'
             }`}
-            title="Toggle YugabyteDB / Meko Persistent Institutional Memory"
+            title="Toggle Meko institutional memory. Connection mode (local engine vs. live Meko MCP) is shown in the Institutional Memory view."
           >
-            <Brain className="w-3.5 h-3.5" />
+            <Brain className="w-3.5 h-3.5" aria-hidden="true" />
             <span>{mekoEnabled ? 'MEKO: ON' : 'MEKO: OFF'}</span>
           </button>
 
           <button
             onClick={() => setProvenanceModalOpen(true)}
-            className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-medium text-emerald-300 flex items-center gap-1.5 transition shadow"
+            aria-label="Open data provenance registry"
+            className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-medium text-emerald-300 flex items-center gap-1.5 transition shadow focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
           >
-            <Database className="w-3.5 h-3.5 text-emerald-400" />
+            <Database className="w-3.5 h-3.5 text-emerald-400" aria-hidden="true" />
             <span className="hidden md:inline">Provenance</span>
           </button>
         </div>
       </header>
 
       {/* 10-View Cohesive Navigation Bar */}
-      <nav className="bg-slate-900 border-b border-slate-800 px-3 py-1.5 flex items-center gap-1 overflow-x-auto shrink-0 z-10">
+      <nav
+        aria-label="Platform modules"
+        className="bg-slate-900 border-b border-slate-800 px-3 py-1.5 flex items-center gap-1 overflow-x-auto shrink-0 z-10"
+      >
         {NAV_VIEWS.map((view) => {
           const IconComponent = view.icon;
           const isActive = activeView === view.id;
           return (
             <button
               key={view.id}
+              aria-current={isActive ? 'page' : undefined}
               onClick={() => setActiveView(view.id)}
-              className={`px-2.5 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap flex items-center gap-1.5 transition ${
+              className={`px-2.5 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap flex items-center gap-1.5 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 ${
                 isActive
                   ? 'bg-emerald-600 text-white shadow'
                   : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/70'
               }`}
             >
-              <IconComponent className="w-3.5 h-3.5" />
+              <IconComponent className="w-3.5 h-3.5" aria-hidden="true" />
               <span>{view.label}</span>
             </button>
           );
         })}
       </nav>
+
+      {/* 7-Step Municipal Decision Workflow (Section 3) */}
+      <div
+        aria-label="Seven-step municipal climate investment workflow"
+        className="hidden md:flex bg-slate-950 border-b border-slate-800 px-3 py-1 items-center gap-1 overflow-x-auto shrink-0 text-[10px]"
+      >
+        <span className="font-mono uppercase text-slate-500 font-semibold shrink-0 mr-1">
+          Decision workflow:
+        </span>
+        {DECISION_WORKFLOW_STEPS.map((st, idx) => (
+          <React.Fragment key={st.step}>
+            <button
+              type="button"
+              title={`${st.title}: ${st.detail}`}
+              onClick={() => {
+                const viewMap = { explorer: 'overview' };
+                setActiveView(viewMap[st.targetView] || st.targetView);
+                if (st.targetTab === 'analytics' || st.targetTab === 'interventions') {
+                  setRightTab(st.targetTab);
+                  setMobilePane('inspector');
+                } else if (st.targetTab === 'rankings') {
+                  setMobilePane('rankings');
+                }
+              }}
+              className="px-2 py-0.5 rounded border border-slate-800 bg-slate-900 text-slate-300 hover:text-emerald-300 hover:border-emerald-500/40 whitespace-nowrap transition focus:outline-none focus-visible:ring-1 focus-visible:ring-emerald-400"
+            >
+              {st.shortLabel}
+            </button>
+            {idx < DECISION_WORKFLOW_STEPS.length - 1 && (
+              <span className="text-slate-600" aria-hidden="true">→</span>
+            )}
+          </React.Fragment>
+        ))}
+      </div>
 
       {/* Error Banner if API unreachable */}
       {error && (
@@ -285,10 +339,43 @@ export default function App() {
           activeView === 'map' ||
           activeView === 'corridors' ||
           activeView === 'scenarios') && (
-          <div className="h-full grid grid-cols-1 lg:grid-cols-12 min-h-0 overflow-hidden">
+          <div className="h-full flex flex-col min-h-0 overflow-hidden">
+            {/* Mobile / tablet pane switcher (map-first) — hidden on lg+ (Section 14) */}
+            {activeView !== 'map' && (
+              <div
+                role="tablist"
+                aria-label="Workspace pane"
+                className="lg:hidden grid grid-cols-3 gap-1 p-1.5 bg-slate-900 border-b border-slate-800 text-xs shrink-0"
+              >
+                {[
+                  { id: 'map', label: 'Map' },
+                  { id: 'rankings', label: `Rankings (${corridors.length})` },
+                  { id: 'inspector', label: `Inspect ${selectedCorridor?.code || ''}` },
+                ].map((p) => (
+                  <button
+                    key={p.id}
+                    role="tab"
+                    aria-selected={mobilePane === p.id}
+                    onClick={() => setMobilePane(p.id)}
+                    className={`py-1.5 rounded-md font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 ${
+                      mobilePane === p.id
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-slate-950 text-slate-300 border border-slate-800'
+                    }`}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 min-h-0 overflow-hidden">
             {/* Left Column: Corridor Priority Ranking & Scenario Controls */}
             {activeView !== 'map' && (
-              <div className="lg:col-span-3 h-full min-h-0 overflow-hidden">
+              <div
+                className={`${
+                  mobilePane === 'rankings' ? 'block' : 'hidden'
+                } lg:block lg:col-span-3 h-full min-h-0 overflow-hidden`}
+              >
                 <PriorityRankingPanel
                   corridors={corridors}
                   districts={districts}
@@ -299,7 +386,11 @@ export default function App() {
                   whatIfHeatWeight={whatIfHeatWeight}
                   onChangeWhatIfHeatWeight={setWhatIfHeatWeight}
                   selectedCorridor={selectedCorridor}
-                  onSelectCorridor={setSelectedCorridor}
+                  onSelectCorridor={(c) => {
+                    setSelectedCorridor(c);
+                    setMobilePane('inspector');
+                  }}
+                  mekoEnabled={mekoEnabled}
                 />
               </div>
             )}
@@ -307,7 +398,9 @@ export default function App() {
             {/* Center Column: Map-First Geospatial Canvas */}
             <div
               className={`${
-                activeView === 'map' ? 'lg:col-span-12' : 'lg:col-span-5'
+                activeView === 'map'
+                  ? 'block lg:col-span-12'
+                  : `${mobilePane === 'map' ? 'block' : 'hidden'} lg:block lg:col-span-5`
               } h-full min-h-[360px] relative`}
             >
               <InteractiveMap
@@ -323,7 +416,11 @@ export default function App() {
 
             {/* Right Column: Explainable Analytics, Scenarios & Intervention Planner */}
             {activeView !== 'map' && (
-              <div className="lg:col-span-4 h-full min-h-0 bg-slate-900/95 border-l border-slate-800 flex flex-col overflow-hidden">
+              <div
+                className={`${
+                  mobilePane === 'inspector' ? 'flex' : 'hidden'
+                } lg:flex lg:col-span-4 h-full min-h-0 bg-slate-900/95 border-l border-slate-800 flex-col overflow-hidden`}
+              >
                 <div className="p-3.5 border-b border-slate-800 bg-slate-950/50 space-y-2.5">
                   {selectedCorridor ? (
                     <div className="flex items-start justify-between gap-2">
@@ -344,6 +441,7 @@ export default function App() {
                           • Length: {selectedCorridor.length_km} km
                         </div>
                       </div>
+                      <div className="flex flex-col items-end gap-1 shrink-0">
                       <span
                         className="px-2 py-0.5 rounded text-[10px] font-bold shrink-0"
                         style={{
@@ -354,6 +452,11 @@ export default function App() {
                       >
                         {selectedCorridor.severity}
                       </span>
+                      <FeasibilityStatusBadge
+                        status={deriveCorridorFeasibilityStatus(selectedCorridor, mekoEnabled)}
+                        compact
+                      />
+                      </div>
                     </div>
                   ) : (
                     <div className="text-xs text-slate-400">
@@ -371,7 +474,7 @@ export default function App() {
                       }`}
                     >
                       <Calculator className="w-3.5 h-3.5" />
-                      <span>Score &amp; Scenarios</span>
+                      <span>Evidence &amp; Score</span>
                     </button>
 
                     <button
@@ -406,11 +509,12 @@ export default function App() {
                       corridor={selectedCorridor}
                       sensitivityRow={activeSensitivityRow}
                       activeScenario={activeScenario}
+                      mekoEnabled={mekoEnabled}
                     />
                   )}
 
                   {rightTab === 'interventions' && (
-                    <InterventionPlannerPanel corridor={selectedCorridor} />
+                    <InterventionPlannerPanel corridor={selectedCorridor} mekoEnabled={mekoEnabled} />
                   )}
 
                   {rightTab === 'districts' && (
@@ -462,8 +566,10 @@ export default function App() {
               </div>
             )}
           </div>
+          </div>
         )}
 
+        <Suspense fallback={<ViewFallback />}>
         {/* View 5: Intervention Optimizer (MILP) */}
         {activeView === 'optimizer' && (
           <InterventionOptimizerView
@@ -511,15 +617,20 @@ export default function App() {
             statsSummary={statsSummary}
           />
         )}
+        </Suspense>
       </div>
 
-      {/* Scientific Data Provenance & Integrity Modal */}
-      <DataProvenanceModal
-        open={provenanceModalOpen}
-        onClose={() => setProvenanceModalOpen(false)}
-        provenance={provenance}
-        statsSummary={statsSummary}
-      />
+      {/* Scientific Data Provenance & Integrity Modal (lazy-loaded on first open) */}
+      {provenanceModalOpen && (
+        <Suspense fallback={null}>
+          <DataProvenanceModal
+            open={provenanceModalOpen}
+            onClose={() => setProvenanceModalOpen(false)}
+            provenance={provenance}
+            statsSummary={statsSummary}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }

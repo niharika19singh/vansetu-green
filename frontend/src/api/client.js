@@ -102,9 +102,19 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
+  updateMekoMemory: (memoryId, payload) =>
+    requestJson(`/api/meko/memories/${encodeURIComponent(memoryId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }),
   deleteMekoMemory: (memoryId, agentId = 'climate_planner_agent') =>
     requestJson(`/api/meko/memories/${encodeURIComponent(memoryId)}?agent_id=${encodeURIComponent(agentId)}`, {
       method: 'DELETE',
+    }),
+  runMekoWorkflow: (payload) =>
+    requestJson('/api/meko/workflow', {
+      method: 'POST',
+      body: JSON.stringify(payload),
     }),
   compareMekoOnOff: ({ corridorId = 'C-14', wardId = 'ward-12', budgetLakh = 8.0 } = {}) =>
     requestJson(
@@ -176,4 +186,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
+
+  // Phase 9: Official Prize & Track Acceptance Matrix (7-Gate Verification)
+  getAcceptanceMatrix: () => requestJson('/api/acceptance-matrix'),
 };
