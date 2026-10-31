@@ -169,12 +169,17 @@ class InterventionMlService:
         segment_id: Optional[str] = None,
         corridor_id: Optional[str] = None,
         only_approved: bool = False,
+        assessor_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         return self.label_store.list_assessments(
             segment_id=segment_id,
             corridor_id=corridor_id,
             only_approved=only_approved,
+            assessor_id=assessor_id,
         )
+
+    def get_assessment(self, assessment_id: str) -> Optional[Dict[str, Any]]:
+        return self.label_store.get_assessment(assessment_id)
 
     def record_outcome_observation(
         self,

@@ -805,6 +805,7 @@ class AssessmentLabelStore:
         segment_id: Optional[str] = None,
         corridor_id: Optional[str] = None,
         only_approved: bool = False,
+        assessor_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         query = "SELECT assessment_id FROM site_assessments WHERE 1=1"
         params: List[Any] = []
@@ -817,6 +818,9 @@ class AssessmentLabelStore:
             params.append(corridor_id)
         if only_approved:
             query += " AND review_status = 'APPROVED'"
+        if assessor_id:
+            query += " AND reviewer_id = ?"
+            params.append(assessor_id)
 
         query += " ORDER BY updated_at DESC"
 

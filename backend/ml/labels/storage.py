@@ -127,6 +127,7 @@ class EvidenceStorageManager:
 
         # 3. Offload to DigitalOcean Spaces if configured
         if self.spaces_store.is_configured():
+            tmp_verify = None
             try:
                 client = self.spaces_store._get_s3_client()
                 client.upload_file(
@@ -142,21 +143,46 @@ class EvidenceStorageManager:
                         },
                     },
                 )
+                # Verify read-back integrity
+                client.head_object(Bucket=self.spaces_store.bucket, Key=remote_object_key)
+                tmp_verify = self.base_dir / f".tmp_verify_{secrets.token_hex(8)}"
+                client.download_file(
+                    Bucket=self.spaces_store.bucket,
+                    Key=remote_object_key,
+                    Filename=str(tmp_verify),
+                )
+                downloaded_bytes = tmp_verify.read_bytes()
+                downloaded_sha = hashlib.sha256(downloaded_bytes).hexdigest()
+                if downloaded_sha.lower() != sha256_checksum.lower():
+                    try:
+                        client.delete_object(Bucket=self.spaces_store.bucket, Key=remote_object_key)
+                    except Exception:
+                        pass
+                    raise ValueError(
+                        f"Read-back checksum mismatch: expected {sha256_checksum}, got {downloaded_sha}"
+                    )
+
                 storage_backend = "SPACES"
                 is_durable = True
                 logger.info(
-                    "Evidence '%s' successfully mirrored to DigitalOcean Spaces: %s",
+                    "Evidence '%s' successfully mirrored to DigitalOcean Spaces with verified read-back: %s",
                     evidence_id,
                     remote_object_key,
                 )
             except Exception as exc:
                 logger.warning(
-                    "Failed to upload evidence '%s' to Spaces; retaining local copy. Error: %s",
+                    "Failed to upload/verify evidence '%s' on Spaces; retaining local copy. Error: %s",
                     evidence_id,
                     exc,
                 )
                 storage_backend = "LOCAL"
                 is_durable = False
+            finally:
+                if tmp_verify and tmp_verify.exists():
+                    try:
+                        tmp_verify.unlink()
+                    except Exception:
+                        pass
 
         return {
             "storage_backend": storage_backend,
@@ -165,6 +191,7 @@ class EvidenceStorageManager:
             "file_size_bytes": len(file_bytes),
             "sha256_checksum": sha256_checksum,
             "is_durable": is_durable,
+            "integrity_verified": is_durable,
         }
 
     def retrieve_evidence_bytes(

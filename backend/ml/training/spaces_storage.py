@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import os
 from pathlib import Path
+import secrets
 from typing import Any, Dict, Optional
 
 try:
@@ -109,7 +110,8 @@ class SpacesArtifactStore:
         expected_sha256: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
-        Upload a model artifact to DigitalOcean Spaces with SHA-256 pre-verification.
+        Upload a model artifact to DigitalOcean Spaces with SHA-256 pre-verification
+        and end-to-end read-back integrity verification.
         """
         if not self.is_configured():
             raise RuntimeError(
@@ -143,6 +145,33 @@ class SpacesArtifactStore:
             ExtraArgs=extra_args,
         )
 
+        # End-to-end read-back integrity verification
+        client.head_object(Bucket=self.bucket, Key=remote_key)
+
+        tmp_verify = local_path.parent / f".tmp_verify_{secrets.token_hex(8)}"
+        try:
+            client.download_file(Bucket=self.bucket, Key=remote_key, Filename=str(tmp_verify))
+            downloaded_bytes = tmp_verify.read_bytes()
+            downloaded_sha256 = hashlib.sha256(downloaded_bytes).hexdigest()
+
+            if downloaded_sha256.lower() != actual_sha256.lower():
+                try:
+                    client.delete_object(Bucket=self.bucket, Key=remote_key)
+                except Exception:
+                    pass
+                raise ValueError(
+                    f"Read-back integrity verification failed: downloaded artifact SHA-256 ({downloaded_sha256}) "
+                    f"does not match local SHA-256 ({actual_sha256}). Corrupted remote object removed."
+                )
+        except Exception:
+            raise
+        finally:
+            if tmp_verify.exists():
+                try:
+                    tmp_verify.unlink()
+                except Exception:
+                    pass
+
         remote_uri = f"s3://{self.bucket}/{remote_key}"
         return {
             "remote_uri": remote_uri,
@@ -151,6 +180,7 @@ class SpacesArtifactStore:
             "sha256_checksum": actual_sha256,
             "file_size_bytes": len(file_bytes),
             "status": "UPLOADED_TO_SPACES",
+            "integrity_verified": True,
         }
 
     def download_artifact(

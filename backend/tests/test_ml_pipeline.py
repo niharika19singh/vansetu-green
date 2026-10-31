@@ -629,8 +629,12 @@ def test_api_site_assessments_security_and_roundtrip(client):
     assert reviewed_data["last_reviewed_by"] == "MCD_REV_TEST_02"
     assert reviewed_data["audit_history"][-1]["performed_by"] == "MCD_REV_TEST_02"
 
-    # 5. List endpoint returns recorded assessments
-    get_res = client.get("/api/ml/site-assessments?segment_id=C-14-S002")
+    # 5. List endpoint security and recorded assessments
+    # Unauthenticated request MUST be rejected with HTTP 401
+    assert client.get("/api/ml/site-assessments?segment_id=C-14-S002").status_code == 401
+
+    # Authenticated reviewer request returns recorded assessments
+    get_res = client.get("/api/ml/site-assessments?segment_id=C-14-S002", headers=reviewer_headers)
     assert get_res.status_code == 200
     data = get_res.json()
     assert data["count"] >= 1
@@ -1278,4 +1282,249 @@ def test_token_keyed_hmac_and_transactional_rotation(tmp_path):
     auth_user2 = store.authenticate(token2)
     assert auth_user2 is not None
     assert auth_user2.user_id == "ROT_USER_01"
+
+
+def test_hmac_secret_fail_closed_and_validation(monkeypatch):
+    """
+    Test that HMAC secret fails closed when missing and validates minimum length (>= 32 chars).
+    Also verify token authenticated with secret A fails when secret B is used.
+    """
+    from ml.security.auth import get_token_hmac_secret, MIN_HMAC_SECRET_LENGTH
+
+    # 1. Missing secret raises RuntimeError
+    monkeypatch.delenv("VANSETU_TOKEN_HMAC_SECRET", raising=False)
+    monkeypatch.delenv("VANSETU_API_AUTH_SECRET", raising=False)
+    with pytest.raises(RuntimeError) as exc_missing:
+        get_token_hmac_secret()
+    assert "CRITICAL SECURITY CONFIGURATION ERROR" in str(exc_missing.value)
+    assert "missing or empty" in str(exc_missing.value)
+
+    # 2. Secret shorter than 32 characters raises ValueError
+    monkeypatch.setenv("VANSETU_TOKEN_HMAC_SECRET", "short_weak_secret_123")
+    with pytest.raises(ValueError) as exc_short:
+        get_token_hmac_secret()
+    assert f"at least {MIN_HMAC_SECRET_LENGTH}" in str(exc_short.value)
+
+    # 3. Secret with >= 32 characters succeeds
+    valid_secret_a = "vansetu_super_secret_test_key_32_characters_a"
+    monkeypatch.setenv("VANSETU_TOKEN_HMAC_SECRET", valid_secret_a)
+    assert get_token_hmac_secret() == valid_secret_a
+
+    # 4. Token authenticated with secret A fails with secret B
+    store_a = CredentialStore(hmac_secret=valid_secret_a)
+    valid_secret_b = "vansetu_super_secret_test_key_32_characters_b"
+    store_b = CredentialStore(hmac_secret=valid_secret_b)
+
+    test_user = AuthenticatedUser(
+        user_id="OFFICER_A",
+        username="officer.a",
+        full_name="Officer A",
+        role=ReviewerRole.FIELD_ASSESSOR,
+        organization="MCD",
+    )
+    token_from_a = store_a.create_token(test_user)
+    assert store_a.authenticate(token_from_a) is not None
+    # Authentication using store_b must fail closed (None)
+    assert store_b.authenticate(token_from_a) is None
+
+
+def test_site_assessment_listing_and_detail_security(client):
+    """
+    Test RBAC security and role scoping on site assessment listing and detail retrieval:
+    1. Unauthenticated requests return HTTP 401.
+    2. Field Assessor 1 submits assessment 1.
+    3. Field Assessor 1 can view assessment 1 via GET /api/ml/site-assessments/{assessment_id}.
+    4. Field Assessor 2 listing /api/ml/site-assessments sees only their own (0 for assessor 2).
+    5. Field Assessor 2 attempting GET /api/ml/site-assessments/{assessment_1_id} returns HTTP 403 Forbidden.
+    6. Municipal Reviewer listing /api/ml/site-assessments sees all assessments.
+    7. Municipal Reviewer accessing GET /api/ml/site-assessments/{assessment_1_id} returns HTTP 200 OK.
+    8. Non-existent assessment ID returns HTTP 404.
+    """
+    auth_mgr = get_auth_manager()
+
+    assessor1 = AuthenticatedUser(
+        user_id="SEC_ASSESSOR_01",
+        username="sec.assessor1",
+        full_name="Security Test Assessor 1",
+        role=ReviewerRole.FIELD_ASSESSOR,
+        organization="Public Works Department",
+    )
+    assessor2 = AuthenticatedUser(
+        user_id="SEC_ASSESSOR_02",
+        username="sec.assessor2",
+        full_name="Security Test Assessor 2",
+        role=ReviewerRole.FIELD_ASSESSOR,
+        organization="Municipal Corporation of Delhi",
+    )
+    reviewer = AuthenticatedUser(
+        user_id="SEC_REVIEWER_01",
+        username="sec.reviewer1",
+        full_name="Security Test Reviewer",
+        role=ReviewerRole.AUTHORIZED_REVIEWER,
+        organization="Delhi Urban Shelter Improvement Board",
+    )
+
+    tok1 = auth_mgr.create_token(assessor1)
+    tok2 = auth_mgr.create_token(assessor2)
+    tok_rev = auth_mgr.create_token(reviewer)
+
+    # 1. Unauthenticated requests return 401
+    assert client.get("/api/ml/site-assessments").status_code == 401
+    assert client.get("/api/ml/site-assessments/non_existent_id").status_code == 401
+
+    # 2. Assessor 1 submits assessment
+    payload = {
+        "segment_id": "C-14-S005",
+        "corridor_id": "C-14",
+        "suitability_state": "RECOMMENDED",
+        "field_observation_notes": "Adequate right of way confirmed by PWD engineer",
+        "underground_utilities_detected": False,
+        "observed_canopy_percentage": 14.5,
+        "is_simulated": False,
+    }
+    submit_res = client.post(
+        "/api/ml/site-assessments",
+        json=payload,
+        headers={"Authorization": f"Bearer {tok1}"},
+    )
+    assert submit_res.status_code in (200, 201)
+    ass_id = submit_res.json()["assessment_id"]
+
+    # 3. Assessor 1 can access their own assessment
+    get_res1 = client.get(
+        f"/api/ml/site-assessments/{ass_id}",
+        headers={"Authorization": f"Bearer {tok1}"},
+    )
+    assert get_res1.status_code == 200
+    assert get_res1.json()["assessment_id"] == ass_id
+    assert get_res1.json()["reviewer_id"] == "SEC_ASSESSOR_01"
+
+    # 4. Assessor 2 listing sees 0 of Assessor 1's records
+    list_res2 = client.get(
+        "/api/ml/site-assessments",
+        headers={"Authorization": f"Bearer {tok2}"},
+    )
+    assert list_res2.status_code == 200
+    assert not any(a["assessment_id"] == ass_id for a in list_res2.json()["assessments"])
+
+    # 5. Assessor 2 attempting detail access returns 403 Forbidden
+    get_res2 = client.get(
+        f"/api/ml/site-assessments/{ass_id}",
+        headers={"Authorization": f"Bearer {tok2}"},
+    )
+    assert get_res2.status_code == 403
+    assert "Field Assessors may only access site assessments they submitted" in get_res2.json()["detail"]
+
+    # 6. Municipal Reviewer listing sees all assessments including ass_id
+    list_rev = client.get(
+        "/api/ml/site-assessments",
+        headers={"Authorization": f"Bearer {tok_rev}"},
+    )
+    assert list_rev.status_code == 200
+    assert any(a["assessment_id"] == ass_id for a in list_rev.json()["assessments"])
+
+    # 7. Municipal Reviewer accessing detail returns 200 OK
+    get_rev = client.get(
+        f"/api/ml/site-assessments/{ass_id}",
+        headers={"Authorization": f"Bearer {tok_rev}"},
+    )
+    assert get_rev.status_code == 200
+    assert get_rev.json()["assessment_id"] == ass_id
+
+    # 8. Non-existent ID returns 404
+    get_404 = client.get(
+        "/api/ml/site-assessments/non-existent-assessment-id-9999",
+        headers={"Authorization": f"Bearer {tok_rev}"},
+    )
+    assert get_404.status_code == 404
+
+
+def test_spaces_upload_and_read_back_integrity(tmp_path):
+    """
+    Test DigitalOcean Spaces artifact storage with end-to-end read-back integrity verification:
+    1. Successful upload verifies hash through download read-back and returns integrity_verified: True.
+    2. Read-back corruption scenario removes remote object and raises ValueError.
+    3. EvidenceStorageManager durable offload with verified read-back and corruption fallback.
+    """
+    from ml.training.spaces_storage import SpacesArtifactStore
+    from ml.labels.storage import EvidenceStorageManager
+
+    store = SpacesArtifactStore(
+        key="test_key_blr1",
+        secret="test_secret_blr1",
+        bucket="vansetu-test-bucket",
+        region="blr1",
+    )
+    assert store.is_configured() is True
+
+    # 1. Successful upload & read-back
+    test_artifact = tmp_path / "model_weights.joblib"
+    content = b"GENUINE_MODEL_WEIGHTS_DELHI_INTERVENTION_2026"
+    test_artifact.write_bytes(content)
+    expected_hash = hashlib.sha256(content).hexdigest()
+
+    mock_s3 = MagicMock()
+    def mock_download_success(Bucket, Key, Filename):
+        Path(Filename).write_bytes(content)
+
+    mock_s3.download_file.side_effect = mock_download_success
+    mock_s3.head_object.return_value = {"ContentLength": len(content), "Metadata": {"sha256": expected_hash}}
+
+    with patch.object(store, "_get_s3_client", return_value=mock_s3):
+        receipt = store.upload_artifact(
+            local_path=test_artifact,
+            remote_key="models/model_weights.joblib",
+            expected_sha256=expected_hash,
+        )
+        assert receipt["status"] == "UPLOADED_TO_SPACES"
+        assert receipt["integrity_verified"] is True
+        assert receipt["sha256_checksum"] == expected_hash
+
+        mock_s3.upload_file.assert_called_once()
+        mock_s3.head_object.assert_called_once_with(Bucket="vansetu-test-bucket", Key="models/model_weights.joblib")
+        mock_s3.download_file.assert_called_once()
+
+    # 2. Corruption on read-back triggers cleanup and ValueError
+    mock_s3_corrupt = MagicMock()
+    def mock_download_corrupt(Bucket, Key, Filename):
+        Path(Filename).write_bytes(b"CORRUPTED_BYTES_IN_TRANSIT")
+
+    mock_s3_corrupt.download_file.side_effect = mock_download_corrupt
+    mock_s3_corrupt.head_object.return_value = {"ContentLength": len(content)}
+
+    with patch.object(store, "_get_s3_client", return_value=mock_s3_corrupt):
+        with pytest.raises(ValueError) as exc_corrupt:
+            store.upload_artifact(
+                local_path=test_artifact,
+                remote_key="models/corrupted_weights.joblib",
+            )
+        assert "Read-back integrity verification failed" in str(exc_corrupt.value)
+        mock_s3_corrupt.delete_object.assert_called_once_with(
+            Bucket="vansetu-test-bucket",
+            Key="models/corrupted_weights.joblib",
+        )
+
+    # 3. EvidenceStorageManager with Spaces durable offload
+    ev_storage = EvidenceStorageManager(base_dir=tmp_path / "ev_docs", spaces_store=store)
+    with patch.object(store, "_get_s3_client", return_value=mock_s3):
+        ev_receipt = ev_storage.store_evidence_file(
+            evidence_id="evid-spaces-001",
+            original_filename="survey.pdf",
+            file_bytes=content,
+            mime_type="application/pdf",
+        )
+        assert ev_receipt["storage_backend"] == "SPACES"
+        assert ev_receipt["is_durable"] is True
+        assert ev_receipt["integrity_verified"] is True
+
+    # 4. EvidenceStorageManager with corrupted Spaces upload falls back to LOCAL
+    with patch.object(store, "_get_s3_client", return_value=mock_s3_corrupt):
+        ev_corrupt = ev_storage.store_evidence_file(
+            evidence_id="evid-spaces-002",
+            original_filename="survey_corrupt.pdf",
+            file_bytes=content,
+            mime_type="application/pdf",
+        )
+        assert ev_corrupt["storage_backend"] == "LOCAL"
+        assert ev_corrupt["is_durable"] is False
 

@@ -311,9 +311,11 @@ export const api = {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
       body: JSON.stringify(payload),
     }),
-  listSiteAssessments: (params = {}) => {
+  listSiteAssessments: (params = {}, token) => {
     const q = new URLSearchParams(params).toString();
-    return requestJson(`/api/ml/site-assessments${q ? `?${q}` : ''}`);
+    return requestJson(`/api/ml/site-assessments${q ? `?${q}` : ''}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
   },
   submitOutcomeObservation: (payload, token) =>
     requestJson('/api/ml/outcome-observations', {

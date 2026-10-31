@@ -34,24 +34,30 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 logger = logging.getLogger("vansetu.auth")
 
-# Keyed HMAC Secret for deterministic, indexed O(1) token lookups
-_DEFAULT_DEV_SECRET = "vansetu_dev_hmac_secret_delhi_2026_unconfigured_fallback"
+MIN_HMAC_SECRET_LENGTH = 32
 
 
 def get_token_hmac_secret() -> str:
-    """Retrieve server HMAC secret from environment or fallback with warning in dev."""
+    """
+    Retrieve server HMAC secret from environment.
+    Strictly fails closed if VANSETU_TOKEN_HMAC_SECRET (or approved alias) is missing, empty, or too weak.
+    Never uses hardcoded fallback secrets.
+    """
     secret = (
         os.getenv("VANSETU_TOKEN_HMAC_SECRET")
         or os.getenv("VANSETU_API_AUTH_SECRET")
         or ""
     ).strip()
     if not secret:
-        # In production environments, missing HMAC secret must fail closed
-        if os.getenv("VANSETU_ENV", "development").lower() in ("production", "prod"):
-            raise RuntimeError(
-                "CRITICAL SECURITY CONFIGURATION ERROR: VANSETU_TOKEN_HMAC_SECRET must be set in production."
-            )
-        return _DEFAULT_DEV_SECRET
+        raise RuntimeError(
+            "CRITICAL SECURITY CONFIGURATION ERROR: VANSETU_TOKEN_HMAC_SECRET environment variable is missing or empty. "
+            "Server fails closed to prevent unauthenticated or weak token indexing."
+        )
+    if len(secret) < MIN_HMAC_SECRET_LENGTH:
+        raise ValueError(
+            f"CRITICAL SECURITY CONFIGURATION ERROR: VANSETU_TOKEN_HMAC_SECRET must be at least {MIN_HMAC_SECRET_LENGTH} "
+            "characters long to guarantee cryptographic strength against brute-force attacks."
+        )
     return secret
 
 
@@ -68,6 +74,7 @@ UserRole = ReviewerRole
 
 class Permission(str, Enum):
     SUBMIT_ASSESSMENT = "SUBMIT_ASSESSMENT"
+    VIEW_ASSESSMENTS = "VIEW_ASSESSMENTS"
     REVIEW_ASSESSMENT = "REVIEW_ASSESSMENT"
     CORRECT_ASSESSMENT = "CORRECT_ASSESSMENT"
     APPROVE_ASSESSMENT = "APPROVE_ASSESSMENT"
@@ -86,11 +93,13 @@ class Permission(str, Enum):
 ROLE_PERMISSIONS: Dict[ReviewerRole, Set[Permission]] = {
     ReviewerRole.FIELD_ASSESSOR: {
         Permission.SUBMIT_ASSESSMENT,
+        Permission.VIEW_ASSESSMENTS,
         Permission.SUBMIT_OUTCOME,
         Permission.VIEW_EVIDENCE,
     },
     ReviewerRole.AUTHORIZED_REVIEWER: {
         Permission.SUBMIT_ASSESSMENT,
+        Permission.VIEW_ASSESSMENTS,
         Permission.REVIEW_ASSESSMENT,
         Permission.CORRECT_ASSESSMENT,
         Permission.SUBMIT_OUTCOME,
@@ -99,6 +108,7 @@ ROLE_PERMISSIONS: Dict[ReviewerRole, Set[Permission]] = {
     },
     ReviewerRole.SENIOR_REVIEWER: {
         Permission.SUBMIT_ASSESSMENT,
+        Permission.VIEW_ASSESSMENTS,
         Permission.REVIEW_ASSESSMENT,
         Permission.CORRECT_ASSESSMENT,
         Permission.APPROVE_ASSESSMENT,

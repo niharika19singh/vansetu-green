@@ -303,15 +303,46 @@ async def list_site_assessments(
     segment_id: Optional[str] = Query(None),
     corridor_id: Optional[str] = Query(None),
     only_approved: bool = Query(False),
+    current_user: AuthenticatedUser = Depends(require_permission(Permission.VIEW_ASSESSMENTS)),
 ) -> Dict[str, Any]:
-    """List recorded field assessments and review audit trails."""
+    """
+    List recorded field assessments and review audit trails with strict RBAC.
+    Field Assessors are scoped strictly to their own submitted assessments.
+    Authorized Reviewers and Administrators can access all assessments across the network.
+    Caller-supplied query parameters cannot override server-enforced role scoping.
+    """
     svc = get_intervention_ml_service()
+    assessor_scope = current_user.user_id if current_user.role == ReviewerRole.FIELD_ASSESSOR else None
     items = svc.list_assessments(
         segment_id=segment_id,
         corridor_id=corridor_id,
         only_approved=only_approved,
+        assessor_id=assessor_scope,
     )
     return {"count": len(items), "assessments": items}
+
+
+@router.get("/site-assessments/{assessment_id}")
+async def get_site_assessment(
+    assessment_id: str,
+    current_user: AuthenticatedUser = Depends(require_permission(Permission.VIEW_ASSESSMENTS)),
+) -> Dict[str, Any]:
+    """
+    Retrieve single field assessment record and audit history with strict RBAC.
+    Field Assessors can only view their own submissions.
+    """
+    svc = get_intervention_ml_service()
+    assessment = svc.get_assessment(assessment_id)
+    if not assessment:
+        raise HTTPException(status_code=404, detail=f"Site assessment '{assessment_id}' not found.")
+
+    if current_user.role == ReviewerRole.FIELD_ASSESSOR and assessment["reviewer_id"] != current_user.user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Field Assessors may only access site assessments they submitted.",
+        )
+
+    return assessment
 
 
 @router.post("/outcome-observations", status_code=status.HTTP_201_CREATED)
