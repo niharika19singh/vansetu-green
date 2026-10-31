@@ -111,3 +111,20 @@ All 8 features will be integrated into the existing VanSetu architecture without
   - Implement Feature 8: Climate Project Implementation & Readiness Planner (`project_readiness_service.py`, 8 work packages, readiness tracker, router, tests).
 - **Phase 6: Full Integration, Frontend Experience & QA**
   - Connect all 8 features into a cohesive, navigable frontend with comprehensive automated backend and frontend test suites and complete documentation.
+
+---
+
+## 6. Scientific Integrity Audit & Performance Remediation Results
+
+Following initial feature rollout, a code-level scientific integrity audit and performance remediation was executed across the full stack:
+
+1. **Evidence Passport Remediation:** Eliminated fabricated numeric defaults (0.25 NDVI, 32°C LST, 140 AQI); missing measurements return `null` and explicit `"UNAVAILABLE"` / `"MISSING_SOURCE_DATA"` states.
+2. **Segment Suitability Remediation:** Replaced deterministic hash modulo pseudo-dimensions with explicit `UNMEASURED_REQUIRES_TOTAL_STATION_SURVEY` and `UNKNOWN_REQUIRES_GPR_TRIAL_PITS`. Subterranean archetypes demand field verification. Native tree species catalog enriched with CPCB and FRI silvicultural citations and advisory labels.
+3. **Pareto Optimizer Remediation:** Enforced uniform budget mode (`capex`) across all scalarization scenarios; exposed `is_pareto_dominated` unit test; labeled output as `sampled_non_dominated_portfolio_set`.
+4. **Shade Continuity Remediation:** Implemented direct 10m Sentinel-2 raster surface reflectance sampling at segment midpoints via `raster_service.get_values_at_point()`; labeled transit link as Euclidean Haversine distance; cited CPWD 2023 unit planting costs (~₹12,000/tree).
+5. **Seasonal Heat Intelligence Remediation:** Tagged Pre-Monsoon as empirical MODIS MOD11A2 satellite measurement; classified Monsoon and Winter as synthetic illustrative models; qualified multi-seasonal persistence as `LOW_UNVERIFIED`.
+6. **Impact Monitoring Remediation:** Badged seeded C-14 record as `SYNTHETIC_SIMULATION_ESTIMATE`; disclosed control corridor baseline limitations; added SQLite 3 edge storage durability disclosure.
+7. **Spatial Meko Memory Remediation:** Removed fake central coordinates for unlocated memories; synchronized lifecycle operations directly with `MekoService` MCP tools (`update_or_verify_memory`, `promote_memory`, `delete_memory`); enforced datapack role-scoping.
+8. **Project Readiness Planner Remediation:** Enforced strict rejection of empty corridor portfolios; dynamic initial readiness score calculated from work package gate weights.
+9. **Frontend Code Splitting & Performance:** Configured Vite `rollupOptions.output.manualChunks` and converted views 5–17 and modals to `React.lazy` + `Suspense`. Reduced production entry bundle from **907.24 kB** to **70.15 kB** (92.3% reduction, zero chunk warnings).
+10. **Automated Verification:** Added `tests/test_scientific_integrity_audit.py` (8 passing tests); total backend suite expanded to **59 passing tests (100% pass rate)**. Frontend test suite: **4 passing tests (100% pass rate)**.

@@ -2,25 +2,28 @@
 Feature 4: Pedestrian Shade Continuity Analyser Service.
 
 Models pedestrian walkability corridors as a connected network graph, identifies
-continuous unshaded exposure gaps, calculates documented Shade Gap Scores, and
-locates disconnected green infrastructure requiring 'Shade Bridge' interventions.
+continuous unshaded exposure gaps using empirical 10m Sentinel-2 raster sampling,
+calculates documented Shade Gap Scores, and locates disconnected green
+infrastructure requiring 'Shade Bridge' interventions.
 
-Scientific Guardrail:
-Does not invent pedestrian footfall numbers. Focuses on physical canopy continuity,
-transit station proximity, and uninterrupted solar exposure length.
+Scientific Guardrail & Methodology:
+- Evaluates canopy presence using empirical 10m Sentinel-2 NDVI sampled along segment midpoints.
+- Does NOT fabricate pedestrian footfall numbers.
+- Does NOT claim to measure 3D structural building shade or Mean Radiant Temperature (MRT).
+- Transit proximity is calculated as straight-line Euclidean distance (Haversine);
+  it does not incorporate street-network routing or pedestrian barriers.
 """
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
-from shapely.geometry import LineString
+from typing import Any, Dict, List, Optional, Tuple
 
 from app.services.corridor_service import get_all_corridors, get_corridor_by_id
 from app.services.segment_suitability_service import (
     _segmentize_corridor_coordinates,
-    evaluate_segment_suitability,
 )
 from app.services.aqi_service import haversine_km
+from app.services.raster_service import raster_service
 
 logger = logging.getLogger(__name__)
 
@@ -37,16 +40,8 @@ DELHI_TRANSIT_HUBS = [
 ]
 
 
-def _safe_int_id(val: Any) -> int:
-    if isinstance(val, int):
-        return val
-    s = str(val)
-    digits = "".join(ch for ch in s if ch.isdigit())
-    return int(digits) if digits else 1
-
-
 def _find_nearest_transit_hub(lat: float, lng: float) -> Tuple[Dict[str, Any], float]:
-    """Find closest major transit hub and distance in kilometers."""
+    """Find closest major transit hub and straight-line Euclidean distance in kilometers."""
     closest = None
     min_dist = 9999.0
     for hub in DELHI_TRANSIT_HUBS:
@@ -60,6 +55,7 @@ def _find_nearest_transit_hub(lat: float, lng: float) -> Tuple[Dict[str, Any], f
 def analyze_corridor_shade_continuity(corridor_id: str) -> Dict[str, Any]:
     """
     Perform deep shade continuity and unshaded gap analysis for a single corridor.
+    Samples real 10m Sentinel-2 NDVI along segment midpoints.
     """
     corr = get_corridor_by_id(corridor_id)
     if not corr:
@@ -69,21 +65,17 @@ def analyze_corridor_shade_continuity(corridor_id: str) -> Dict[str, Any]:
     code = corr.get("code", f"C-{cid}")
     name = corr.get("name")
     district = corr.get("district")
-    ndvi_mean = corr.get("ndvi_mean", 0.22)
-    green_deficit = corr.get("green_deficit", 0.78)
 
     coords = corr.get("coordinates", [])
     if not coords and "geometry" in corr:
         coords = corr["geometry"].get("coordinates", [])
-    if not coords:
-        coords = [[77.22, 28.63], [77.23, 28.64]]
+    if not coords or len(coords) < 2:
+        raise ValueError(f"Corridor '{corridor_id}' geometry is missing or invalid.")
 
     # Divide corridor into ~150-200m sub-segments
     sub_segments = _segmentize_corridor_coordinates(coords, target_seg_len_m=180.0)
     total_segments_count = len(sub_segments)
 
-    # Classify each sub-segment's shade condition based on local NDVI proxy
-    # Create realistic variance across sub-segments around the corridor mean
     segments_shade: List[Dict[str, Any]] = []
     total_length_m = 0.0
     unshaded_gap_length_m = 0.0
@@ -97,33 +89,44 @@ def analyze_corridor_shade_continuity(corridor_id: str) -> Dict[str, Any]:
         seg_len_m = round(max(seg_km * 1000.0, 60.0), 1)
         total_length_m += seg_len_m
 
-        # Segment-specific NDVI variation
-        cid_int = _safe_int_id(cid)
-        hash_factor = ((cid_int * 23 + idx * 17) % 40 - 20) / 100.0
-        seg_ndvi = max(0.05, min(0.65, round(ndvi_mean + hash_factor, 2)))
-        canopy_coverage_pct = round(max(5.0, min(85.0, (seg_ndvi / 0.70) * 100.0)), 1)
-
-        # Categorize shade
-        if canopy_coverage_pct >= 50.0:
-            shade_class = "WELL_SHADED"
-            is_gap = False
-        elif canopy_coverage_pct >= 28.0:
-            shade_class = "PARTIALLY_SHADED"
-            is_gap = False
-        else:
-            shade_class = "EXPOSED_GAP"
-            is_gap = True
-            unshaded_gap_length_m += seg_len_m
-
         mid_pt = seg_coords[len(seg_coords) // 2]
+        mid_lng = mid_pt[0]
+        mid_lat = mid_pt[1]
+
+        # Sample empirical 10m Sentinel-2 NDVI raster
+        raster_sample = raster_service.get_values_at_point(mid_lat, mid_lng)
+        sampled_ndvi = raster_sample.get("ndvi")
+
+        if sampled_ndvi is not None:
+            # Canopy coverage proxy scaled relative to dense urban forest baseline (NDVI = 0.70)
+            canopy_coverage_pct = round(max(0.0, min(100.0, (sampled_ndvi / 0.70) * 100.0)), 1)
+            if canopy_coverage_pct >= 50.0:
+                shade_class = "WELL_SHADED"
+                is_gap = False
+            elif canopy_coverage_pct >= 28.0:
+                shade_class = "PARTIALLY_SHADED"
+                is_gap = False
+            else:
+                shade_class = "EXPOSED_GAP"
+                is_gap = True
+                unshaded_gap_length_m += seg_len_m
+        else:
+            # Fallback when coordinate is outside raster bounding box or nodata
+            sampled_ndvi = None
+            canopy_coverage_pct = None
+            shade_class = "UNMEASURED_DATA_ABSENT"
+            is_gap = False
+
         seg_data = {
             "segment_id": f"{code}-S{idx}",
             "segment_index": idx,
             "length_m": seg_len_m,
+            "measured_ndvi": sampled_ndvi,
             "canopy_coverage_percent": canopy_coverage_pct,
             "shade_classification": shade_class,
             "is_thermal_gap": is_gap,
-            "midpoint": {"lat": mid_pt[1], "lng": mid_pt[0]},
+            "midpoint": {"lat": mid_lat, "lng": mid_lng},
+            "data_source": "Sentinel-2 L2A (10m) BOA Surface Reflectance via raster_service" if sampled_ndvi is not None else "UNAVAILABLE",
         }
         segments_shade.append(seg_data)
 
@@ -142,7 +145,7 @@ def analyze_corridor_shade_continuity(corridor_id: str) -> Dict[str, Any]:
                     "segments_count": len(gap_sequence),
                     "total_unbroken_exposure_length_m": round(gap_len, 1),
                     "severity": "CRITICAL" if gap_len >= 300.0 else "MODERATE",
-                    "shade_bridge_recommended": "Linear Street Trees with quick-canopy Neem/Amaltas" if gap_len >= 200 else "Cantilevered Shade Canopies",
+                    "shade_bridge_recommended": "Linear Street Trees with fast-growing indigenous canopy" if gap_len >= 200 else "Cantilevered Tensioned Shade Canopies",
                 })
                 current_gap_start = None
                 gap_sequence = []
@@ -157,12 +160,11 @@ def analyze_corridor_shade_continuity(corridor_id: str) -> Dict[str, Any]:
             "segments_count": len(gap_sequence),
             "total_unbroken_exposure_length_m": round(gap_len, 1),
             "severity": "CRITICAL" if gap_len >= 300.0 else "MODERATE",
-            "shade_bridge_recommended": "Linear Street Trees with quick-canopy Neem/Amaltas",
+            "shade_bridge_recommended": "Linear Street Trees with fast-growing indigenous canopy",
         })
 
     # Calculate documented Shade Gap Score (0 to 100)
     gap_ratio = (unshaded_gap_length_m / max(total_length_m, 1.0))
-    # Severity multiplier accounts for max continuous stretch
     max_stretch = max([g["total_unbroken_exposure_length_m"] for g in identified_gaps], default=0.0)
     severity_multiplier = 1.0 + min(0.3, max_stretch / 1000.0)
     shade_gap_score = round(min(100.0, gap_ratio * 100.0 * severity_multiplier), 1)
@@ -173,6 +175,7 @@ def analyze_corridor_shade_continuity(corridor_id: str) -> Dict[str, Any]:
     nearest_hub, hub_dist_km = _find_nearest_transit_hub(mid_lat, mid_lng)
 
     # Shade Bridge Proposal: Interventions required to close all unshaded gaps
+    # Cost reference: CPWD Schedule of Rates 2023 / Non-DSR forestry norms (~₹12,000 per tree)
     shade_bridges = []
     for gap in identified_gaps:
         g_len = gap["total_unbroken_exposure_length_m"]
@@ -184,6 +187,7 @@ def analyze_corridor_shade_continuity(corridor_id: str) -> Dict[str, Any]:
             "recommended_shade_bridge": gap["shade_bridge_recommended"],
             "trees_or_modules_required": trees_needed,
             "estimated_investment_lakhs": round((trees_needed * 0.12), 2),
+            "unit_cost_source": "CPWD Schedule of Rates 2023 / Horticulture Norms (~₹12,000 per sapling including tree guard and 3-year survival maintenance)",
             "expected_connectivity_impact": "Creates continuous shaded pedestrian corridor linking toward transit.",
         })
 
@@ -201,6 +205,7 @@ def analyze_corridor_shade_continuity(corridor_id: str) -> Dict[str, Any]:
             "well_shaded_segments_count": sum(1 for s in segments_shade if s["shade_classification"] == "WELL_SHADED"),
             "partially_shaded_count": sum(1 for s in segments_shade if s["shade_classification"] == "PARTIALLY_SHADED"),
             "exposed_gaps_count": sum(1 for s in segments_shade if s["shade_classification"] == "EXPOSED_GAP"),
+            "unmeasured_segments_count": sum(1 for s in segments_shade if s["shade_classification"] == "UNMEASURED_DATA_ABSENT"),
             "critical_continuous_gaps_count": len(identified_gaps),
         },
         "continuous_thermal_gaps": identified_gaps,
@@ -208,20 +213,23 @@ def analyze_corridor_shade_continuity(corridor_id: str) -> Dict[str, Any]:
         "transit_connectivity": {
             "nearest_hub_name": nearest_hub["name"],
             "distance_km": hub_dist_km,
+            "straight_line_euclidean_distance_km": hub_dist_km,
             "connected_lines": nearest_hub["lines"],
             "transit_shed_status": "FIRST_LAST_MILE_ACCESS_FEEDER" if hub_dist_km <= 1.5 else "SECONDARY_TRANSIT_LINK",
+            "distance_calculation_method": "Straight-line Euclidean distance (Haversine); pedestrian street network routing is unmeasured.",
         },
         "segments": segments_shade,
         "scientific_guardrail": (
             "No pedestrian footfall volume is fabricated. Pedestrian vulnerability is established strictly "
-            "from OpenStreetMap transit connectivity and physical canopy continuity."
+            "from OpenStreetMap transit connectivity and physical canopy continuity sampled from 10m Sentinel-2 surface reflectance."
         ),
+        "methodology": "EMPIRICAL_RASTER_CANOPY_PROXY",
     }
 
 
 def get_city_network_shade_gaps() -> Dict[str, Any]:
     """
-    Rank all 44 corridors by their Shade Gap Score across NCT Delhi.
+    Rank all corridors by their Shade Gap Score across NCT Delhi.
     """
     corridors = get_all_corridors()
     rankings = []

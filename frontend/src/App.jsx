@@ -28,21 +28,34 @@ import InteractiveMap from './components/InteractiveMap';
 import PriorityRankingPanel from './components/PriorityRankingPanel';
 import CorridorAnalyticalDetail from './components/CorridorAnalyticalDetail';
 import InterventionPlannerPanel from './components/InterventionPlannerPanel';
-import DataProvenanceModal from './components/DataProvenanceModal';
-import InterventionOptimizerView from './components/InterventionOptimizerView';
-import ProcurementStudioView from './components/ProcurementStudioView';
-import AiPlanningAssistantView from './components/AiPlanningAssistantView';
-import MekoMemoryStudioView from './components/MekoMemoryStudioView';
-import TemporalInsightsView from './components/TemporalInsightsView';
-import EquityAndProvenanceView from './components/EquityAndProvenanceView';
-import CorridorEvidencePassportModal from './components/CorridorEvidencePassportModal';
-import SegmentSuitabilityView from './components/SegmentSuitabilityView';
-import ParetoPortfolioLabView from './components/ParetoPortfolioLabView';
-import ShadeContinuityView from './components/ShadeContinuityView';
-import SeasonalHeatIntelligenceView from './components/SeasonalHeatIntelligenceView';
-import ImpactMonitoringView from './components/ImpactMonitoringView';
-import SpatialMemoryMapView from './components/SpatialMemoryMapView';
-import ProjectReadinessView from './components/ProjectReadinessView';
+
+// Lazy-loaded views and modals for optimal bundle splitting and performance
+const DataProvenanceModal = React.lazy(() => import('./components/DataProvenanceModal'));
+const InterventionOptimizerView = React.lazy(() => import('./components/InterventionOptimizerView'));
+const ProcurementStudioView = React.lazy(() => import('./components/ProcurementStudioView'));
+const AiPlanningAssistantView = React.lazy(() => import('./components/AiPlanningAssistantView'));
+const MekoMemoryStudioView = React.lazy(() => import('./components/MekoMemoryStudioView'));
+const TemporalInsightsView = React.lazy(() => import('./components/TemporalInsightsView'));
+const EquityAndProvenanceView = React.lazy(() => import('./components/EquityAndProvenanceView'));
+const CorridorEvidencePassportModal = React.lazy(() => import('./components/CorridorEvidencePassportModal'));
+const SegmentSuitabilityView = React.lazy(() => import('./components/SegmentSuitabilityView'));
+const ParetoPortfolioLabView = React.lazy(() => import('./components/ParetoPortfolioLabView'));
+const ShadeContinuityView = React.lazy(() => import('./components/ShadeContinuityView'));
+const SeasonalHeatIntelligenceView = React.lazy(() => import('./components/SeasonalHeatIntelligenceView'));
+const ImpactMonitoringView = React.lazy(() => import('./components/ImpactMonitoringView'));
+const SpatialMemoryMapView = React.lazy(() => import('./components/SpatialMemoryMapView'));
+const ProjectReadinessView = React.lazy(() => import('./components/ProjectReadinessView'));
+
+function ViewLoadingFallback() {
+  return (
+    <div className="h-full flex items-center justify-center p-8 bg-slate-950 text-slate-400">
+      <div className="flex flex-col items-center gap-3">
+        <div className="w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+        <span className="text-xs font-mono">Loading module...</span>
+      </div>
+    </div>
+  );
+}
 
 const NAV_VIEWS = [
   { id: 'overview', label: '1. Climate Overview', icon: LayoutDashboard },
@@ -502,108 +515,112 @@ export default function App() {
           </div>
         )}
 
-        {/* Feature 2: Right Tree, Right Place (Segment Suitability & Species) */}
-        {activeView === 'suitability' && (
-          <SegmentSuitabilityView selectedCorridor={selectedCorridor} />
-        )}
+        <React.Suspense fallback={<ViewLoadingFallback />}>
+          {/* Feature 2: Right Tree, Right Place (Segment Suitability & Species) */}
+          {activeView === 'suitability' && (
+            <SegmentSuitabilityView selectedCorridor={selectedCorridor} />
+          )}
 
-        {/* Feature 4: Pedestrian Shade Continuity Analyser */}
-        {activeView === 'shade' && (
-          <ShadeContinuityView selectedCorridor={selectedCorridor} />
-        )}
+          {/* Feature 4: Pedestrian Shade Continuity Analyser */}
+          {activeView === 'shade' && (
+            <ShadeContinuityView selectedCorridor={selectedCorridor} />
+          )}
 
-        {/* Feature 5: Seasonal Urban Heat Intelligence */}
-        {activeView === 'seasonal' && (
-          <SeasonalHeatIntelligenceView selectedCorridor={selectedCorridor} />
-        )}
+          {/* Feature 5: Seasonal Urban Heat Intelligence */}
+          {activeView === 'seasonal' && (
+            <SeasonalHeatIntelligenceView selectedCorridor={selectedCorridor} />
+          )}
 
-        {/* Feature 3: Pareto Portfolio Lab */}
-        {activeView === 'pareto' && (
-          <ParetoPortfolioLabView
-            onSelectPortfolioForImplementation={(portfolio) => {
-              setActiveView('readiness');
-            }}
-          />
-        )}
+          {/* Feature 3: Pareto Portfolio Lab */}
+          {activeView === 'pareto' && (
+            <ParetoPortfolioLabView
+              onSelectPortfolioForImplementation={(portfolio) => {
+                setActiveView('readiness');
+              }}
+            />
+          )}
 
-        {/* Feature 8: Climate Project Implementation & Readiness Planner */}
-        {activeView === 'readiness' && (
-          <ProjectReadinessView
-            onNavigateToProcurement={() => setActiveView('procurement')}
-          />
-        )}
+          {/* Feature 8: Climate Project Implementation & Readiness Planner */}
+          {activeView === 'readiness' && (
+            <ProjectReadinessView
+              onNavigateToProcurement={() => setActiveView('procurement')}
+            />
+          )}
 
-        {/* Feature 6: Climate Intervention Impact Monitoring */}
-        {activeView === 'impact' && <ImpactMonitoringView />}
+          {/* Feature 6: Climate Intervention Impact Monitoring */}
+          {activeView === 'impact' && <ImpactMonitoringView />}
 
-        {/* Feature 7: Spatial Institutional Memory Map (Meko) */}
-        {activeView === 'spatial_memory' && (
-          <SpatialMemoryMapView selectedCorridor={selectedCorridor} />
-        )}
+          {/* Feature 7: Spatial Institutional Memory Map (Meko) */}
+          {activeView === 'spatial_memory' && (
+            <SpatialMemoryMapView selectedCorridor={selectedCorridor} />
+          )}
 
-        {/* Single-Objective MILP Optimizer */}
-        {activeView === 'optimizer' && (
-          <InterventionOptimizerView
-            selectedCorridor={selectedCorridor}
-            mekoEnabled={mekoEnabled}
-            onToggleMeko={setMekoEnabled}
-          />
-        )}
+          {/* Single-Objective MILP Optimizer */}
+          {activeView === 'optimizer' && (
+            <InterventionOptimizerView
+              selectedCorridor={selectedCorridor}
+              mekoEnabled={mekoEnabled}
+              onToggleMeko={setMekoEnabled}
+            />
+          )}
 
-        {/* View 6: Climate Procurement Studio (IOMETE) */}
-        {activeView === 'procurement' && (
-          <ProcurementStudioView
-            selectedCorridor={selectedCorridor}
-            mekoEnabled={mekoEnabled}
-            onToggleMeko={setMekoEnabled}
-          />
-        )}
+          {/* View 6: Climate Procurement Studio (IOMETE) */}
+          {activeView === 'procurement' && (
+            <ProcurementStudioView
+              selectedCorridor={selectedCorridor}
+              mekoEnabled={mekoEnabled}
+              onToggleMeko={setMekoEnabled}
+            />
+          )}
 
-        {/* View 7: AI Planning Assistant (Google Gemini 3.8 Flash) */}
-        {activeView === 'agent' && (
-          <AiPlanningAssistantView
-            selectedCorridor={selectedCorridor}
-            mekoEnabled={mekoEnabled}
-            onToggleMeko={setMekoEnabled}
-          />
-        )}
+          {/* View 7: AI Planning Assistant (Google Gemini 3.8 Flash) */}
+          {activeView === 'agent' && (
+            <AiPlanningAssistantView
+              selectedCorridor={selectedCorridor}
+              mekoEnabled={mekoEnabled}
+              onToggleMeko={setMekoEnabled}
+            />
+          )}
 
-        {/* View 8: Institutional Memory (Meko) */}
-        {activeView === 'meko' && (
-          <MekoMemoryStudioView
-            mekoEnabled={mekoEnabled}
-            onToggleMeko={setMekoEnabled}
-          />
-        )}
+          {/* View 8: Institutional Memory (Meko) */}
+          {activeView === 'meko' && (
+            <MekoMemoryStudioView
+              mekoEnabled={mekoEnabled}
+              onToggleMeko={setMekoEnabled}
+            />
+          )}
 
-        {/* View 9: Temporal Insights (Tiger Data / TimescaleDB) */}
-        {activeView === 'temporal' && (
-          <TemporalInsightsView selectedCorridor={selectedCorridor} />
-        )}
+          {/* View 9: Temporal Insights (Tiger Data / TimescaleDB) */}
+          {activeView === 'temporal' && (
+            <TemporalInsightsView selectedCorridor={selectedCorridor} />
+          )}
 
-        {/* View 10: Evidence, Social Equity & Data Provenance */}
-        {activeView === 'provenance' && (
-          <EquityAndProvenanceView
-            provenance={provenance}
-            statsSummary={statsSummary}
-          />
-        )}
+          {/* View 10: Evidence, Social Equity & Data Provenance */}
+          {activeView === 'provenance' && (
+            <EquityAndProvenanceView
+              provenance={provenance}
+              statsSummary={statsSummary}
+            />
+          )}
+        </React.Suspense>
       </div>
 
-      {/* Scientific Data Provenance & Integrity Modal */}
-      <DataProvenanceModal
-        open={provenanceModalOpen}
-        onClose={() => setProvenanceModalOpen(false)}
-        provenance={provenance}
-        statsSummary={statsSummary}
-      />
+      <React.Suspense fallback={null}>
+        {/* Scientific Data Provenance & Integrity Modal */}
+        <DataProvenanceModal
+          open={provenanceModalOpen}
+          onClose={() => setProvenanceModalOpen(false)}
+          provenance={provenance}
+          statsSummary={statsSummary}
+        />
 
-      {/* Corridor Evidence Passport Modal (Feature 1) */}
-      <CorridorEvidencePassportModal
-        open={passportOpen}
-        onClose={() => setPassportOpen(false)}
-        corridorId={passportCorridorId || selectedCorridor?.code || selectedCorridor?.id || 'C-14'}
-      />
+        {/* Corridor Evidence Passport Modal (Feature 1) */}
+        <CorridorEvidencePassportModal
+          open={passportOpen}
+          onClose={() => setPassportOpen(false)}
+          corridorId={passportCorridorId || selectedCorridor?.code || selectedCorridor?.id || 'C-14'}
+        />
+      </React.Suspense>
     </div>
   );
 }

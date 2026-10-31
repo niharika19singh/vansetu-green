@@ -8,8 +8,8 @@ Manages persistent lifecycle registry for climate interventions:
 - MAINTENANCE_REQUIRED
 
 Computes empirical before-and-after deltas (NDVI, LST, AQI) with paired control corridors.
-Enforces non-causal attribution honesty disclaimers.
-Stores deployments in local SQLite database.
+Enforces non-causal attribution honesty disclaimers and explicit verification status disclosures.
+Stores deployments in local SQLite database with full audit provenance.
 """
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ import logging
 import sqlite3
 import os
 import json
+import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -52,13 +53,22 @@ def _init_db():
                 post_metrics TEXT,
                 notes TEXT,
                 is_synthetic_demo INTEGER DEFAULT 0,
+                verification_status TEXT DEFAULT 'UNVERIFIED_DEMONSTRATION',
+                data_type TEXT DEFAULT 'SYNTHETIC_SIMULATION_ESTIMATE',
                 updated_at TEXT NOT NULL
             )
         """)
+        # Ensure schema migrations if table existed previously
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(intervention_registry)")
+        existing_cols = {row[1] for row in cursor.fetchall()}
+        if "verification_status" not in existing_cols:
+            conn.execute("ALTER TABLE intervention_registry ADD COLUMN verification_status TEXT DEFAULT 'UNVERIFIED_DEMONSTRATION'")
+        if "data_type" not in existing_cols:
+            conn.execute("ALTER TABLE intervention_registry ADD COLUMN data_type TEXT DEFAULT 'SYNTHETIC_SIMULATION_ESTIMATE'")
         conn.commit()
 
 
-# Initialize DB and seed demo record if empty
 def _seed_demo_if_empty():
     _init_db()
     with sqlite3.connect(DB_PATH) as conn:
@@ -86,15 +96,22 @@ def _seed_demo_if_empty():
                     "lst_celsius": 36.4,
                     "aqi_pm25": 165.0,
                     "observation_period": "Pre-Monsoon 2023",
+                    "source": "Sentinel-2 & MODIS Terra Baseline",
                 }),
                 "post_metrics": json.dumps({
                     "ndvi_mean": 0.28,
                     "lst_celsius": 34.6,
                     "aqi_pm25": 152.0,
                     "observation_period": "Pre-Monsoon 2024",
+                    "source": "Synthetic Post-Intervention Simulation Model",
                 }),
-                "notes": "SYNTHETIC DEMONSTRATION SCENARIO: 120 mature Neem/Karanj saplings with drip irrigation along Delhi Gate segment.",
+                "notes": (
+                    "SYNTHETIC DEMONSTRATION SCENARIO: 120 mature Neem/Karanj saplings with drip irrigation along Delhi Gate segment. "
+                    "Post-intervention NDVI delta (+0.10) and LST reduction (-1.8°C) are modeled illustrative simulations, not field-verified sensor telemetry."
+                ),
                 "is_synthetic_demo": 1,
+                "verification_status": "UNVERIFIED_DEMONSTRATION",
+                "data_type": "SYNTHETIC_SIMULATION_ESTIMATE",
                 "updated_at": datetime.now().isoformat(),
             }
             conn.execute("""
@@ -102,12 +119,14 @@ def _seed_demo_if_empty():
                     id, corridor_id, corridor_code, corridor_name, district, archetype,
                     lifecycle_status, planned_date, completion_date, capex_inr_lakhs,
                     opex_annual_lakhs, units_deployed, control_corridor_id, control_corridor_code,
-                    baseline_metrics, post_metrics, notes, is_synthetic_demo, updated_at
+                    baseline_metrics, post_metrics, notes, is_synthetic_demo, verification_status,
+                    data_type, updated_at
                 ) VALUES (
                     :id, :corridor_id, :corridor_code, :corridor_name, :district, :archetype,
                     :lifecycle_status, :planned_date, :completion_date, :capex_inr_lakhs,
                     :opex_annual_lakhs, :units_deployed, :control_corridor_id, :control_corridor_code,
-                    :baseline_metrics, :post_metrics, :notes, :is_synthetic_demo, :updated_at
+                    :baseline_metrics, :post_metrics, :notes, :is_synthetic_demo, :verification_status,
+                    :data_type, :updated_at
                 )
             """, demo_record)
             conn.commit()
@@ -152,7 +171,7 @@ def get_deployment_detail(deployment_id: str) -> Dict[str, Any]:
         base = json.loads(d["baseline_metrics"]) if d["baseline_metrics"] else {}
         post = json.loads(d["post_metrics"]) if d["post_metrics"] else {}
 
-        # Empirical deltas
+        # Deltas
         ndvi_delta = None
         lst_delta = None
         aqi_delta = None
@@ -178,7 +197,9 @@ def get_deployment_detail(deployment_id: str) -> Dict[str, Any]:
                         "district": c_corr.get("district"),
                         "current_ndvi": c_corr.get("ndvi_mean"),
                         "current_lst": c_corr.get("lst_mean"),
+                        "control_relationship": "HYPOTHETICAL_UNVERIFIED_CONTROL_PROXY",
                         "untreated_baseline_comparison": "Control corridor experienced no municipal intervention over the same period.",
+                        "control_disclaimer": "No comprehensive on-ground survey has verified that zero private or civic greening occurred along the control corridor during the monitoring interval.",
                     }
             except Exception as e:
                 logger.warning(f"Could not load control corridor {control_id}: {e}")
@@ -190,17 +211,26 @@ def get_deployment_detail(deployment_id: str) -> Dict[str, Any]:
                 "lst_celsius_change": lst_delta,
                 "pm25_change": aqi_delta,
                 "interpretation": (
-                    f"Observed NDVI increased by +{ndvi_delta:.3f} and LST changed by {lst_delta:.1f}°C."
+                    f"Observed NDVI changed by {ndvi_delta:+.3f} and LST changed by {lst_delta:+.1f}°C."
                     if ndvi_delta is not None and lst_delta is not None
                     else "Monitoring period ongoing; post-intervention observations pending."
                 ),
+                "is_synthetic_simulation": bool(d.get("is_synthetic_demo", 0)),
+                "verification_status": d.get("verification_status", "UNVERIFIED_DEMONSTRATION"),
             },
             "control_corridor_comparison": control_info,
             "attribution_honesty_disclaimer": (
-                "Observed changes in satellite radiometric LST and CPCB ambient AQI represent empirical differences "
+                "Observed changes in satellite radiometric LST and CPCB ambient AQI represent differences "
                 "between satellite acquisition windows. VanSetu explicitly DOES NOT claim sole causality, as regional "
                 "weather patterns, atmospheric boundary layer fluctuations, and traffic intensity also influence observations."
             ),
+            "storage_provenance": {
+                "engine": "SQLite 3 Local Embedded Database",
+                "file_path": DB_PATH,
+                "table": "intervention_registry",
+                "production_role": "Local Edge Prototype / Municipal Offline Buffer",
+                "enterprise_target": "Tiger Data TimescaleDB Hypertable for distributed multi-tenant telemetry",
+            },
         }
 
 
@@ -212,7 +242,8 @@ def create_deployment(data: Dict[str, Any]) -> Dict[str, Any]:
     if not corr:
         raise ValueError(f"Corridor '{cid}' not found.")
 
-    dep_id = f"DEP-DEL-C{corr.get('id')}-{datetime.now().strftime('%Y%m%d%H%M')}"
+    unique_suffix = f"{datetime.now().strftime('%Y%m%d%H%M%S%f')}-{uuid.uuid4().hex[:6]}"
+    dep_id = f"DEP-DEL-C{corr.get('id')}-{unique_suffix}"
     code = corr.get("code", f"C-{corr.get('id')}")
     name = corr.get("name")
     district = corr.get("district")
@@ -221,6 +252,7 @@ def create_deployment(data: Dict[str, Any]) -> Dict[str, Any]:
         "ndvi_mean": corr.get("ndvi_mean", 0.22),
         "lst_celsius": corr.get("lst_mean", 34.0),
         "observation_period": "Pre-Monsoon 2024",
+        "source": "Pre-intervention raster baseline",
     })
 
     record = {
@@ -242,6 +274,8 @@ def create_deployment(data: Dict[str, Any]) -> Dict[str, Any]:
         "post_metrics": json.dumps(data.get("post_metrics", {})),
         "notes": data.get("notes", "Registered via VanSetu Climate Action Implementation"),
         "is_synthetic_demo": 0,
+        "verification_status": data.get("verification_status", "PENDING_FIELD_VERIFICATION"),
+        "data_type": data.get("data_type", "FIELD_REPORTED_ESTIMATE"),
         "updated_at": datetime.now().isoformat(),
     }
 
@@ -251,12 +285,14 @@ def create_deployment(data: Dict[str, Any]) -> Dict[str, Any]:
                 id, corridor_id, corridor_code, corridor_name, district, archetype,
                 lifecycle_status, planned_date, completion_date, capex_inr_lakhs,
                 opex_annual_lakhs, units_deployed, control_corridor_id, control_corridor_code,
-                baseline_metrics, post_metrics, notes, is_synthetic_demo, updated_at
+                baseline_metrics, post_metrics, notes, is_synthetic_demo, verification_status,
+                data_type, updated_at
             ) VALUES (
                 :id, :corridor_id, :corridor_code, :corridor_name, :district, :archetype,
                 :lifecycle_status, :planned_date, :completion_date, :capex_inr_lakhs,
                 :opex_annual_lakhs, :units_deployed, :control_corridor_id, :control_corridor_code,
-                :baseline_metrics, :post_metrics, :notes, :is_synthetic_demo, :updated_at
+                :baseline_metrics, :post_metrics, :notes, :is_synthetic_demo, :verification_status,
+                :data_type, :updated_at
             )
         """, record)
         conn.commit()

@@ -24,6 +24,7 @@ import logging
 import sqlite3
 import os
 import json
+import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -46,6 +47,17 @@ READINESS_GATES = [
     "8_OPERATIONAL_MONITORING",
 ]
 
+GATE_WEIGHTS = {
+    "1_CONCEPT_IDENTIFIED": 12.5,
+    "2_FEASIBILITY_ESTIMATED": 25.0,
+    "3_SITE_SURVEY_COMPLETED": 37.5,
+    "4_STAKEHOLDER_APPROVED": 50.0,
+    "5_PROCUREMENT_READY": 65.0,
+    "6_CONTRACT_AWARDED": 80.0,
+    "7_UNDER_EXECUTION": 90.0,
+    "8_OPERATIONAL_MONITORING": 100.0,
+}
+
 WORK_PACKAGE_TEMPLATES = [
     {
         "code": "WP-1",
@@ -53,7 +65,7 @@ WORK_PACKAGE_TEMPLATES = [
         "lead_agency": "PWD / MCD Engineering Division",
         "duration_weeks": 3,
         "cost_percentage": 4.5,
-        "iomete_category": "utility_mapping_radar",
+        "iomete_category": "environmental_monitoring_equipment",
         "deliverables": "Comprehensive 1.5m depth underground clearance report and utility markout.",
     },
     {
@@ -89,7 +101,7 @@ WORK_PACKAGE_TEMPLATES = [
         "lead_agency": "Delhi Jal Board (DJB)",
         "duration_weeks": 3,
         "cost_percentage": 12.0,
-        "iomete_category": "smart_drip_irrigation",
+        "iomete_category": "smart_irrigation_systems",
         "deliverables": "Solar-powered pressure-compensating drip line tied to treated effluent (STP) supply.",
     },
     {
@@ -98,7 +110,7 @@ WORK_PACKAGE_TEMPLATES = [
         "lead_agency": "Fabrication Contractor",
         "duration_weeks": 5,
         "cost_percentage": 16.0,
-        "iomete_category": "architectural_tensile_canopies",
+        "iomete_category": "shade_and_cooling_technologies",
         "deliverables": "IS 875 wind-load certified tensile fabric canopy over unsheltered transit nodes.",
     },
     {
@@ -107,7 +119,7 @@ WORK_PACKAGE_TEMPLATES = [
         "lead_agency": "Specialized Pavement Contractor",
         "duration_weeks": 2,
         "cost_percentage": 10.0,
-        "iomete_category": "cool_pavement_coatings",
+        "iomete_category": "shade_and_cooling_technologies",
         "deliverables": "SRI >= 78 elastomeric high-albedo topcoat applied across unshaded pavement stretches.",
     },
     {
@@ -116,7 +128,7 @@ WORK_PACKAGE_TEMPLATES = [
         "lead_agency": "Urban Local Body / VanSetu Operations",
         "duration_weeks": 2,
         "cost_percentage": 8.0,
-        "iomete_category": "microclimate_sensors",
+        "iomete_category": "weather_stations",
         "deliverables": "IoT temperature/humidity sensor node installation and 36-month survival service SLA.",
     },
 ]
@@ -164,14 +176,44 @@ def create_project_from_portfolio(
 ) -> Dict[str, Any]:
     """
     Generate an 8-package municipal implementation plan from an optimized portfolio.
+    Zero-fabrication rule: rejects empty corridor portfolios.
     """
-    import uuid
+    if not corridors:
+        raise ValueError("Cannot create readiness project with an empty corridor portfolio.")
+
+    c_codes = [c.get("code", f"C-{c.get('id')}") for c in corridors if c.get("code") or c.get("id") is not None]
+    if not c_codes:
+        raise ValueError("Cannot create readiness project with an empty corridor portfolio.")
+
     _init_readiness_db()
     proj_id = f"PROJ-DEL-{datetime.now().strftime('%Y%m%d%H%M%S%f')}-{uuid.uuid4().hex[:4]}"
-    c_codes = [c.get("code", f"C-{c.get('id')}") for c in corridors] or ["C-14", "C-01", "C-08"]
-
     now_iso = datetime.now().isoformat()
     packages = []
+
+    # Build initial work package set
+    for tmpl in WORK_PACKAGE_TEMPLATES:
+        pkg_id = f"{proj_id}-{tmpl['code']}"
+        alloc = round(budget_lakhs * (tmpl["cost_percentage"] / 100.0), 2)
+        gate = "2_FEASIBILITY_ESTIMATED" if tmpl["code"] in ["WP-1", "WP-2"] else "1_CONCEPT_IDENTIFIED"
+        packages.append({
+            "package_id": pkg_id,
+            "project_id": proj_id,
+            "code": tmpl["code"],
+            "name": tmpl["name"],
+            "lead_agency": tmpl["lead_agency"],
+            "allocated_budget_lakhs": alloc,
+            "duration_weeks": tmpl["duration_weeks"],
+            "current_gate": gate,
+            "iomete_category": tmpl["iomete_category"],
+            "deliverables": tmpl["deliverables"],
+            "updated_at": now_iso,
+        })
+
+    # Calculate initial readiness score dynamically from package gate weights
+    initial_score = round(
+        sum(GATE_WEIGHTS.get(pkg["current_gate"], 12.5) for pkg in packages) / max(len(packages), 1),
+        1,
+    )
 
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute("""
@@ -181,36 +223,20 @@ def create_project_from_portfolio(
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             proj_id, portfolio_name, budget_lakhs, len(c_codes), json.dumps(c_codes),
-            "2_FEASIBILITY_ESTIMATED", 35.0, now_iso, now_iso
+            "1_CONCEPT_IDENTIFIED", initial_score, now_iso, now_iso
         ))
 
-        for tmpl in WORK_PACKAGE_TEMPLATES:
-            pkg_id = f"{proj_id}-{tmpl['code']}"
-            alloc = round(budget_lakhs * (tmpl["cost_percentage"] / 100.0), 2)
-            # Default initial gate
-            gate = "2_FEASIBILITY_ESTIMATED" if tmpl["code"] in ["WP-1", "WP-2"] else "1_CONCEPT_IDENTIFIED"
-
+        for pkg in packages:
             conn.execute("""
                 INSERT INTO readiness_packages (
                     package_id, project_id, code, name, lead_agency, allocated_budget_lakhs,
                     duration_weeks, current_gate, iomete_category, deliverables, updated_at
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
-                pkg_id, proj_id, tmpl["code"], tmpl["name"], tmpl["lead_agency"],
-                alloc, tmpl["duration_weeks"], gate, tmpl["iomete_category"],
-                tmpl["deliverables"], now_iso
+                pkg["package_id"], pkg["project_id"], pkg["code"], pkg["name"], pkg["lead_agency"],
+                pkg["allocated_budget_lakhs"], pkg["duration_weeks"], pkg["current_gate"], pkg["iomete_category"],
+                pkg["deliverables"], pkg["updated_at"]
             ))
-            packages.append({
-                "package_id": pkg_id,
-                "code": tmpl["code"],
-                "name": tmpl["name"],
-                "lead_agency": tmpl["lead_agency"],
-                "allocated_budget_lakhs": alloc,
-                "duration_weeks": tmpl["duration_weeks"],
-                "current_gate": gate,
-                "iomete_category": tmpl["iomete_category"],
-                "deliverables": tmpl["deliverables"],
-            })
         conn.commit()
 
     return get_project_readiness_plan(proj_id)
@@ -243,7 +269,7 @@ def get_project_readiness_plan(project_id: str) -> Dict[str, Any]:
         cursor.execute("SELECT * FROM readiness_projects WHERE project_id = ?", (project_id,))
         proj_row = cursor.fetchone()
         if not proj_row:
-            # If default sample requested, seed on the fly
+            # If default sample requested, seed on the fly with verified real corridor IDs
             if project_id == "PROJ-SAMPLE" or project_id.startswith("default"):
                 return create_project_from_portfolio(
                     portfolio_name="NCT Delhi Priority Climate Corridor Package",
@@ -259,18 +285,8 @@ def get_project_readiness_plan(project_id: str) -> Dict[str, Any]:
         pkg_rows = cursor.fetchall()
         packages = [dict(p) for p in pkg_rows]
 
-    # Calculate overall readiness score based on package gates
-    gate_weights = {
-        "1_CONCEPT_IDENTIFIED": 12.5,
-        "2_FEASIBILITY_ESTIMATED": 25.0,
-        "3_SITE_SURVEY_COMPLETED": 37.5,
-        "4_STAKEHOLDER_APPROVED": 50.0,
-        "5_PROCUREMENT_READY": 65.0,
-        "6_CONTRACT_AWARDED": 80.0,
-        "7_UNDER_EXECUTION": 90.0,
-        "8_OPERATIONAL_MONITORING": 100.0,
-    }
-    total_score = sum(gate_weights.get(pkg["current_gate"], 10.0) for pkg in packages)
+    # Calculate overall readiness score based on package gates dynamically
+    total_score = sum(GATE_WEIGHTS.get(pkg["current_gate"], 12.5) for pkg in packages)
     overall_readiness_pct = round(total_score / max(len(packages), 1), 1)
 
     return {
@@ -282,8 +298,14 @@ def get_project_readiness_plan(project_id: str) -> Dict[str, Any]:
         "iomete_procurement_integration": {
             "catalog_endpoint": "/api/procurement/catalog",
             "rfp_generator_endpoint": "/api/procurement/generate-rfp",
-            "linked_equipment_categories": [pkg["iomete_category"] for pkg in packages],
+            "linked_equipment_categories": list({pkg["iomete_category"] for pkg in packages}),
             "ready_for_procurement": overall_readiness_pct >= 50.0,
+        },
+        "storage_provenance": {
+            "engine": "SQLite 3 Local Embedded Database",
+            "file_path": DB_PATH,
+            "tables": ["readiness_projects", "readiness_packages"],
+            "durability": "Persistent across server restarts with ACID transactions",
         },
     }
 
@@ -307,9 +329,18 @@ def advance_package_gate(package_id: str, new_gate: str) -> Dict[str, Any]:
             "UPDATE readiness_packages SET current_gate = ?, updated_at = ? WHERE package_id = ?",
             (new_gate, now_iso, package_id),
         )
+
+        # Recalculate and update overall readiness score on parent project
+        cursor.execute("SELECT current_gate FROM readiness_packages WHERE project_id = ?", (proj_id,))
+        current_gates = [r[0] for r in cursor.fetchall()]
+        new_overall_score = round(
+            sum(GATE_WEIGHTS.get(g, 12.5) for g in current_gates) / max(len(current_gates), 1),
+            1,
+        )
+
         conn.execute(
-            "UPDATE readiness_projects SET updated_at = ? WHERE project_id = ?",
-            (now_iso, proj_id),
+            "UPDATE readiness_projects SET readiness_score = ?, updated_at = ? WHERE project_id = ?",
+            (new_overall_score, now_iso, proj_id),
         )
         conn.commit()
 

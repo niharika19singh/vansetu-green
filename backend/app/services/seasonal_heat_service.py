@@ -2,13 +2,15 @@
 Feature 5: Seasonal Urban Heat Intelligence Service.
 
 Provides multi-temporal seasonal thermal profiles across Delhi's 3 distinct climate windows:
-1. Pre-Monsoon (March–June): Extreme summer heat, maximum LST
-2. Monsoon (July–September): Cloud cover, high humidity, thermal buffering
-3. Post-Monsoon / Winter (October–February): Air pollution inversion, low LST
+1. Pre-Monsoon (March–June): Peak dry summer heat, maximum LST (Empirical MODIS MOD11A2)
+2. Monsoon (July–September): Cloud cover, moisture buffering (Synthetic Demonstration Estimate)
+3. Post-Monsoon / Winter (October–February): Atmospheric inversion & smog (Synthetic Demonstration Estimate)
 
-Identifies persistent thermal hotspots requiring >=3 consistent seasonal observations.
-Maintains rigorous scientific distinction between 1,000m MODIS native skin temperature
-and human physiological comfort (UTCI/WBGT).
+Scientific Guardrail & Transparency:
+- The local repository currently contains only Pre-Monsoon 2024 MODIS LST GeoTIFF data.
+- Monsoon and Winter observations are explicitly classified as SYNTHETIC ESTIMATES for illustration.
+- Multi-seasonal hotspot persistence is marked UNVERIFIED_INSUFFICIENT_MULTI_TEMPORAL_OBSERVATIONS.
+- Radiometric surface skin temperature (LST) is strictly distinguished from human physiological comfort (UTCI/WBGT).
 """
 from __future__ import annotations
 
@@ -25,21 +27,29 @@ DELHI_SEASONAL_BASELINES = {
         "description": "Peak dry summer with intense solar insolation and heatwave conditions.",
         "city_mean_lst_celsius": 34.8,
         "city_max_lst_celsius": 46.2,
-        "satellite_platform": "NASA MODIS Terra (MOD11A2) + Sentinel-2 L2A",
+        "satellite_platform": "NASA MODIS Terra (MOD11A2) Pre-Monsoon 2024 composite",
+        "is_measured": True,
+        "data_classification": "EMPIRICAL_SATELLITE_MEASUREMENT",
     },
     "monsoon": {
         "period": "July – September 2024",
         "description": "Monsoon rainy season with extensive cloud cover and high relative humidity.",
         "city_mean_lst_celsius": 30.5,
         "city_max_lst_celsius": 36.8,
-        "satellite_platform": "NASA MODIS Terra (MOD11A2) composite (cloud-cleared)",
+        "satellite_platform": "SYNTHETIC ESTIMATE (Cloud-cleared monsoon MOD11A2 not ingested)",
+        "is_measured": False,
+        "data_classification": "SYNTHETIC_SEASONAL_ESTIMATE_FOR_ILLUSTRATION",
+        "derivation_rationale": "Empirical monsoon GeoTIFF unavailable; estimated via regional thermal buffering factor.",
     },
     "post_monsoon_winter": {
         "period": "October 2024 – February 2025",
         "description": "Winter season characterized by atmospheric inversion, dense fog, and severe AQI.",
         "city_mean_lst_celsius": 21.2,
         "city_max_lst_celsius": 27.5,
-        "satellite_platform": "NASA MODIS Terra (MOD11A2) winter composite",
+        "satellite_platform": "SYNTHETIC ESTIMATE (Winter MOD11A2 not ingested)",
+        "is_measured": False,
+        "data_classification": "SYNTHETIC_SEASONAL_ESTIMATE_FOR_ILLUSTRATION",
+        "derivation_rationale": "Empirical winter GeoTIFF unavailable; estimated via seasonal solar zenith reduction.",
     },
 }
 
@@ -47,6 +57,7 @@ DELHI_SEASONAL_BASELINES = {
 def get_corridor_seasonal_profile(corridor_id: str) -> Dict[str, Any]:
     """
     Retrieve multi-temporal seasonal observations and thermal anomaly classifications for a corridor.
+    Explicitly discloses empirical vs synthetic observation status.
     """
     corr = get_corridor_by_id(corridor_id)
     if not corr:
@@ -58,20 +69,19 @@ def get_corridor_seasonal_profile(corridor_id: str) -> Dict[str, Any]:
     district = corr.get("district")
     base_lst = corr.get("lst_mean", 34.0)
 
-    # Deterministic seasonal variations based on corridor baseline
-    # Pre-monsoon: base_lst (e.g. 33°C to 41°C)
+    # 1. Pre-monsoon: Empirical from ingested NASA MODIS Terra LST GeoTIFF
     pre_lst = round(base_lst, 1)
     pre_anomaly = round(pre_lst - DELHI_SEASONAL_BASELINES["pre_monsoon"]["city_mean_lst_celsius"], 1)
 
-    # Monsoon: ~3.5°C to 5.0°C cooler due to cloud cover and moisture
+    # 2. Monsoon: Synthetic demonstration estimate (Monsoon raster not ingested)
     monsoon_lst = round(base_lst * 0.88 + 0.5, 1)
     monsoon_anomaly = round(monsoon_lst - DELHI_SEASONAL_BASELINES["monsoon"]["city_mean_lst_celsius"], 1)
 
-    # Winter: ~12°C to 14°C cooler
+    # 3. Winter: Synthetic demonstration estimate (Winter raster not ingested)
     winter_lst = round(base_lst * 0.62 + 0.2, 1)
     winter_anomaly = round(winter_lst - DELHI_SEASONAL_BASELINES["post_monsoon_winter"]["city_mean_lst_celsius"], 1)
 
-    # Seasonal observations array
+    # Seasonal observations array with strict provenance disclosure
     observations = [
         {
             "season": "Pre-Monsoon (Peak Summer)",
@@ -80,6 +90,9 @@ def get_corridor_seasonal_profile(corridor_id: str) -> Dict[str, Any]:
             "regional_baseline_celsius": DELHI_SEASONAL_BASELINES["pre_monsoon"]["city_mean_lst_celsius"],
             "thermal_anomaly_celsius": pre_anomaly,
             "anomaly_status": "SIGNIFICANT_HOTSPOT" if pre_anomaly >= 2.5 else ("ELEVATED" if pre_anomaly >= 1.0 else "NOMINAL"),
+            "is_measured": True,
+            "data_classification": "EMPIRICAL_SATELLITE_MEASUREMENT",
+            "source_sensor": "NASA MODIS Terra (MOD11A2) L3 8-day composite (1,000m)",
         },
         {
             "season": "Monsoon (Cloud & Moisture)",
@@ -88,6 +101,10 @@ def get_corridor_seasonal_profile(corridor_id: str) -> Dict[str, Any]:
             "regional_baseline_celsius": DELHI_SEASONAL_BASELINES["monsoon"]["city_mean_lst_celsius"],
             "thermal_anomaly_celsius": monsoon_anomaly,
             "anomaly_status": "SIGNIFICANT_HOTSPOT" if monsoon_anomaly >= 2.5 else ("ELEVATED" if monsoon_anomaly >= 1.0 else "NOMINAL"),
+            "is_measured": False,
+            "data_classification": "SYNTHETIC_SEASONAL_ESTIMATE_FOR_ILLUSTRATION",
+            "source_sensor": "SYNTHETIC_MODEL_ESTIMATE",
+            "disclosure": "Empirical monsoon satellite acquisition not ingested in local dataset.",
         },
         {
             "season": "Post-Monsoon / Winter (Inversion & Smog)",
@@ -96,16 +113,27 @@ def get_corridor_seasonal_profile(corridor_id: str) -> Dict[str, Any]:
             "regional_baseline_celsius": DELHI_SEASONAL_BASELINES["post_monsoon_winter"]["city_mean_lst_celsius"],
             "thermal_anomaly_celsius": winter_anomaly,
             "anomaly_status": "SIGNIFICANT_HOTSPOT" if winter_anomaly >= 2.5 else ("ELEVATED" if winter_anomaly >= 1.0 else "NOMINAL"),
+            "is_measured": False,
+            "data_classification": "SYNTHETIC_SEASONAL_ESTIMATE_FOR_ILLUSTRATION",
+            "source_sensor": "SYNTHETIC_MODEL_ESTIMATE",
+            "disclosure": "Empirical winter satellite acquisition not ingested in local dataset.",
         },
     ]
 
-    # Persistent thermal hotspot test: requires >= 2 seasons with anomaly >= 1.5°C or pre-monsoon >= 2.5°C
-    hotspot_seasons_count = sum(1 for obs in observations if obs["thermal_anomaly_celsius"] >= 1.5)
-    is_persistent_hotspot = (hotspot_seasons_count >= 2) or (pre_anomaly >= 3.0)
+    # Persistent thermal hotspot check
+    # Because only Pre-Monsoon is empirical, multi-temporal persistence CANNOT be certified with high confidence
+    is_summer_hotspot = pre_anomaly >= 2.5
+    is_persistent_candidate = is_summer_hotspot and (monsoon_anomaly >= 1.5 or winter_anomaly >= 1.5)
 
-    hotspot_classification = "PERSISTENT_THERMAL_HOTSPOT" if is_persistent_hotspot else "TRANSIENT_THERMAL_ANOMALY"
     if pre_anomaly < 0:
         hotspot_classification = "COOL_CORRIDOR_REFUGE"
+        hotspot_confidence = "MODERATE"
+    elif is_persistent_candidate or pre_anomaly >= 3.0:
+        hotspot_classification = "PERSISTENT_THERMAL_HOTSPOT"
+        hotspot_confidence = "LOW_UNVERIFIED"
+    else:
+        hotspot_classification = "TRANSIENT_THERMAL_ANOMALY"
+        hotspot_confidence = "LOW_UNVERIFIED"
 
     return {
         "corridor_id": cid,
@@ -113,8 +141,11 @@ def get_corridor_seasonal_profile(corridor_id: str) -> Dict[str, Any]:
         "corridor_name": name,
         "district": district,
         "hotspot_classification": hotspot_classification,
-        "hotspot_confidence": "HIGH" if is_persistent_hotspot else "MODERATE",
+        "hotspot_confidence": hotspot_confidence,
+        "verification_status": "UNVERIFIED_INSUFFICIENT_MULTI_TEMPORAL_OBSERVATIONS" if hotspot_confidence == "LOW_UNVERIFIED" else "EMPIRICAL_SINGLE_SEASON",
         "observations_count": len(observations),
+        "empirical_observations_count": 1,
+        "synthetic_observations_count": 2,
         "seasonal_observations": observations,
         "multi_sensor_provenance": {
             "primary_sensor": "NASA MODIS Terra MOD11A2 L3 Land Surface Temperature",
@@ -124,6 +155,7 @@ def get_corridor_seasonal_profile(corridor_id: str) -> Dict[str, Any]:
                 "sensor": "USGS Landsat 8/9 TIRS Collection 2 Level-2",
                 "native_thermal_resolution": "100m native sensor pixel",
                 "delivered_grid": "30m USGS resampled grid",
+                "ingestion_status": "PROPOSED_FUTURE_SENSOR_UPGRADE (Not currently ingested)",
                 "recommended_for": "Segment-level micro-hotspot confirmation prior to major civil capital works",
             },
         },
@@ -133,8 +165,8 @@ def get_corridor_seasonal_profile(corridor_id: str) -> Dict[str, Any]:
             "mandatory_notice": (
                 "Radiometric Land Surface Temperature (LST) measures surface skin emission and does NOT represent "
                 "pedestrian 2m air temperature or human physiological thermal comfort (UTCI/WBGT). "
-                "Accurate human comfort assessment requires on-ground micro-weather stations capturing air temperature, "
-                "relative humidity, wind velocity, and mean radiant temperature."
+                "Notice on Seasonal Observations: Ingested GeoTIFFs contain Pre-Monsoon 2024 data only. "
+                "Monsoon and Winter values are synthetic illustrative models and must not be used as certified multi-temporal empirical proof."
             ),
         },
     }
@@ -142,7 +174,7 @@ def get_corridor_seasonal_profile(corridor_id: str) -> Dict[str, Any]:
 
 def get_all_persistent_hotspots() -> Dict[str, Any]:
     """
-    Filter all 44 NCT Delhi corridors to identify persistent thermal hotspots across seasonal observations.
+    Filter all corridors to identify persistent thermal hotspots across seasonal observations.
     """
     corridors = get_all_corridors()
     hotspots = []
@@ -160,6 +192,7 @@ def get_all_persistent_hotspots() -> Dict[str, Any]:
                     "pre_monsoon_lst": profile["seasonal_observations"][0]["lst_celsius"],
                     "thermal_anomaly": profile["seasonal_observations"][0]["thermal_anomaly_celsius"],
                     "confidence": profile["hotspot_confidence"],
+                    "verification_status": profile["verification_status"],
                 })
         except Exception as e:
             logger.warning(f"Error computing seasonal profile for {cid}: {e}")
@@ -168,6 +201,6 @@ def get_all_persistent_hotspots() -> Dict[str, Any]:
 
     return {
         "count": len(hotspots),
-        "classification_rule": "Requires consistent positive thermal anomaly >= 1.5°C across multi-seasonal observations or >= 3.0°C peak pre-monsoon anomaly.",
+        "classification_rule": "Requires pre-monsoon thermal anomaly >= 2.5°C with potential cross-seasonal persistence (labeled LOW_UNVERIFIED due to synthetic seasonal proxy).",
         "persistent_hotspots": hotspots,
     }
