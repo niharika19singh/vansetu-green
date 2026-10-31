@@ -158,7 +158,7 @@ export const ROLE_PERMISSIONS_VIEW = {
   records: ['government_admin', 'government_engineer', 'pro_professional'],
   optimizer: ['pro_professional', 'government_admin', 'government_engineer'],
   procurement: ['government_admin', 'government_engineer', 'pro_professional'],
-  agent: ['government_admin', 'government_engineer'],
+  agent: ['government_admin', 'government_engineer', 'pro_professional'],
   meko: ['government_admin', 'government_engineer', 'pro_professional'],
   temporal: ['government_admin', 'government_engineer', 'pro_professional'],
   suitability: ['pro_professional', 'government_admin', 'government_engineer'],

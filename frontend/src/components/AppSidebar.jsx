@@ -38,6 +38,13 @@ import {
   Lock,
 } from 'lucide-react';
 
+export const ROLE_DISPLAY_NAMES = {
+  normal_user: 'Public Citizen',
+  pro_professional: 'Pro Professional',
+  government_admin: 'Government Admin',
+  government_engineer: 'Government Engineer',
+};
+
 export const CLIMATE_SUITE_ITEMS = [
   { id: 'map', label: '2. Interactive Map', shortLabel: 'Map Explorer', icon: Map },
   { id: 'corridors', label: '3. Corridor Intelligence', shortLabel: 'Corridors (44)', icon: Trees },
@@ -78,10 +85,13 @@ export default function AppSidebar({
   const isPro = currentRole === 'pro_professional';
   const isPublic = currentRole === 'normal_user';
 
-  // Role-Specific Primary Workflow Items
+  // Role-Specific Tailored Navigation Items (Strictly Enforces Role Workspaces)
   const govtItems = [
     { id: 'govt_overview', shortLabel: 'Govt Overview', icon: Building2 },
     { id: 'corridor_inventory', shortLabel: 'Corridor Board', icon: Layers },
+    { id: 'map', shortLabel: 'Map Explorer', icon: Map },
+    { id: 'scenarios', shortLabel: 'Scenario Lab', icon: Sliders },
+    { id: 'studio', shortLabel: 'Decision Studio', icon: Calculator },
     ...(isGovtAdmin
       ? [
           { id: 'tender_management', shortLabel: 'Tenders & Bids', icon: FileText },
@@ -89,6 +99,8 @@ export default function AppSidebar({
         ]
       : []),
     { id: 'corridor_cost_approval', shortLabel: 'Budget Sanction', icon: Calculator },
+    { id: 'readiness', shortLabel: 'Project Readiness', icon: FolderKanban },
+    { id: 'impact', shortLabel: 'Impact Monitoring', icon: Activity },
     { id: 'hospital_health', shortLabel: 'Hospital Health', icon: HeartPulse },
     ...(isGovtAdmin
       ? [
@@ -96,20 +108,39 @@ export default function AppSidebar({
           { id: 'govt_audit', shortLabel: 'Audit Trail', icon: ShieldCheck },
         ]
       : []),
+    { id: 'provenance', shortLabel: 'Community Review', icon: Users },
+    { id: 'records', shortLabel: 'Institutional Memory', icon: Brain },
+    { id: 'agent', shortLabel: 'VanSetu AI Planning', icon: Sparkles },
   ];
 
   const proItems = [
     { id: 'pro_dashboard', shortLabel: 'Pro Console', icon: Briefcase },
+    { id: 'map', shortLabel: 'Map Explorer', icon: Map },
+    { id: 'corridors', shortLabel: 'Corridors (44)', icon: Trees },
+    { id: 'canopy', shortLabel: 'Canopy & Hydrology', icon: Droplets },
+    { id: 'seasonal', shortLabel: 'Seasonal Heat', icon: Thermometer },
+    { id: 'shade', shortLabel: 'Pedestrian Shade', icon: Sun },
+    { id: 'impact', shortLabel: 'Impact Monitoring', icon: Activity },
+    { id: 'intervention_intelligence', shortLabel: 'ML Intelligence', icon: Cpu },
+    { id: 'suitability', shortLabel: 'Right Tree, Right Place', icon: Compass },
+    { id: 'scenarios', shortLabel: 'Scenario Lab', icon: Sliders },
+    { id: 'studio', shortLabel: 'Decision Studio', icon: Calculator },
+    { id: 'pareto', shortLabel: 'Pareto Portfolio', icon: Calculator },
     { id: 'tender_marketplace', shortLabel: 'Tender Marketplace', icon: ShoppingBag },
     { id: 'my_proposals', shortLabel: 'My Submitted Bids', icon: FileText },
     { id: 'my_assigned_projects', shortLabel: 'Awarded Projects', icon: Award },
     { id: 'corridor_cost_approval', shortLabel: 'CapEx & LifeCycle', icon: Calculator },
+    { id: 'agent', shortLabel: 'VanSetu AI Planning', icon: Sparkles },
   ];
 
   const publicItems = [
     { id: 'public_overview', shortLabel: 'Public Overview', icon: Globe2 },
-    { id: 'public_projects', shortLabel: 'Greening Works', icon: Trees },
-    { id: 'provenance', shortLabel: 'Evidence Provenance', icon: Users },
+    { id: 'map', shortLabel: 'Map Explorer', icon: Map },
+    { id: 'canopy', shortLabel: 'Climate Information', icon: Droplets },
+    { id: 'public_projects', shortLabel: 'Green Projects', icon: Trees },
+    { id: 'shade', shortLabel: 'Pedestrian Shade', icon: Sun },
+    { id: 'seasonal', shortLabel: 'Seasonal Heat', icon: Thermometer },
+    { id: 'provenance', shortLabel: 'Evidence & Provenance', icon: Users },
   ];
 
   return (
@@ -238,72 +269,76 @@ export default function AppSidebar({
               );
             })}
 
-          <div className="my-1.5 border-t border-white/5" />
+          {!isPublic && (
+            <>
+              <div className="my-1.5 border-t border-white/5" />
 
-          {/* Section 2: Climate & Decision Suites */}
-          {!collapsed && (
-            <div className="px-2 pt-1 pb-0.5 text-[10px] font-mono uppercase tracking-wider text-slate-400 font-bold">
-              Climate Intelligence
-            </div>
-          )}
+              {/* Section 2: Climate & Decision Suites */}
+              {!collapsed && (
+                <div className="px-2 pt-1 pb-0.5 text-[10px] font-mono uppercase tracking-wider text-slate-400 font-bold">
+                  Climate Intelligence
+                </div>
+              )}
 
-          {CLIMATE_SUITE_ITEMS.map((item) => {
-            const Icon = item.icon;
-            const isActive = activePage === item.id;
-            return (
-              <button
-                key={item.id}
-                onClick={() => onNavigate(item.id)}
-                className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition text-left ${
-                  isActive
-                    ? 'bg-emerald-600 text-white shadow-md font-semibold'
-                    : 'text-slate-300 hover:text-white hover:bg-white/5'
-                }`}
-                title={item.shortLabel}
-              >
-                <Icon className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-white' : 'text-emerald-400'}`} />
-                {!collapsed && <span className="truncate">{item.shortLabel}</span>}
-              </button>
-            );
-          })}
+              {CLIMATE_SUITE_ITEMS.map((item) => {
+                const Icon = item.icon;
+                const isActive = activePage === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => onNavigate(item.id)}
+                    className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition text-left ${
+                      isActive
+                        ? 'bg-emerald-600 text-white shadow-md font-semibold'
+                        : 'text-slate-300 hover:text-white hover:bg-white/5'
+                    }`}
+                    title={item.shortLabel}
+                  >
+                    <Icon className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-white' : 'text-emerald-400'}`} />
+                    {!collapsed && <span className="truncate">{item.shortLabel}</span>}
+                  </button>
+                );
+              })}
 
-          <div className="my-1.5 border-t border-white/5" />
+              <div className="my-1.5 border-t border-white/5" />
 
-          {/* Section 3: Specialized Analytics (Collapsible Submenu) */}
-          {!collapsed && (
-            <button
-              onClick={() => setShowAdvanced(!showAdvanced)}
-              className="w-full flex items-center justify-between px-2 py-1 text-[10px] font-mono uppercase tracking-wider text-slate-400 hover:text-slate-200 transition"
-            >
-              <span>Advanced Analytics ({ADVANCED_ANALYTICS_ITEMS.length})</span>
-              <ChevronDown
-                className={`w-3 h-3 text-slate-400 transition-transform ${
-                  showAdvanced ? 'rotate-180' : ''
-                }`}
-              />
-            </button>
-          )}
-
-          {(showAdvanced || collapsed) &&
-            ADVANCED_ANALYTICS_ITEMS.map((item) => {
-              const Icon = item.icon;
-              const isActive = activePage === item.id;
-              return (
+              {/* Section 3: Specialized Analytics (Collapsible Submenu) */}
+              {!collapsed && (
                 <button
-                  key={item.id}
-                  onClick={() => onNavigate(item.id)}
-                  className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition text-left ${
-                    isActive
-                      ? 'bg-emerald-600 text-white shadow-md font-semibold'
-                      : 'text-slate-400 hover:text-white hover:bg-white/5'
-                  }`}
-                  title={item.shortLabel}
+                  onClick={() => setShowAdvanced(!showAdvanced)}
+                  className="w-full flex items-center justify-between px-2 py-1 text-[10px] font-mono uppercase tracking-wider text-slate-400 hover:text-slate-200 transition"
                 >
-                  <Icon className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-white' : 'text-emerald-500'}`} />
-                  {!collapsed && <span className="truncate">{item.shortLabel}</span>}
+                  <span>Advanced Analytics ({ADVANCED_ANALYTICS_ITEMS.length})</span>
+                  <ChevronDown
+                    className={`w-3 h-3 text-slate-400 transition-transform ${
+                      showAdvanced ? 'rotate-180' : ''
+                    }`}
+                  />
                 </button>
-              );
-            })}
+              )}
+
+              {(showAdvanced || collapsed) &&
+                ADVANCED_ANALYTICS_ITEMS.map((item) => {
+                  const Icon = item.icon;
+                  const isActive = activePage === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => onNavigate(item.id)}
+                      className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition text-left ${
+                        isActive
+                          ? 'bg-emerald-600 text-white shadow-md font-semibold'
+                          : 'text-slate-400 hover:text-white hover:bg-white/5'
+                      }`}
+                      title={item.shortLabel}
+                    >
+                      <Icon className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-white' : 'text-emerald-500'}`} />
+                      {!collapsed && <span className="truncate">{item.shortLabel}</span>}
+                    </button>
+                  );
+                })}
+            </>
+          )}
         </nav>
       </div>
 
@@ -312,9 +347,9 @@ export default function AppSidebar({
         {/* Active Role Indicator */}
         {!collapsed && (
           <div className="px-2 py-1 rounded bg-[#0b261d] border border-emerald-500/20 text-[10px] font-mono flex items-center justify-between">
-            <span className="text-slate-400">Role:</span>
-            <span className="font-bold text-emerald-300 truncate max-w-[120px]">
-              {currentRole.replace('_', ' ').toUpperCase()}
+            <span className="text-slate-400">Persona:</span>
+            <span className="font-bold text-emerald-300 truncate max-w-[140px]">
+              {ROLE_DISPLAY_NAMES[currentRole] || currentRole.replace('_', ' ').toUpperCase()}
             </span>
           </div>
         )}

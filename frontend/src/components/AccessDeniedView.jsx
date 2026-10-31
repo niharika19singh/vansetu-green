@@ -1,7 +1,17 @@
 import React from 'react';
 import { ShieldAlert, ArrowRight, Lock, UserCheck } from 'lucide-react';
 
+export const ROLE_DISPLAY_NAMES = {
+  normal_user: 'Public Citizen',
+  pro_professional: 'Pro Professional',
+  government_admin: 'Government Admin',
+  government_engineer: 'Government Engineer',
+};
+
 export default function AccessDeniedView({ requiredRole, userRole, onSwitchRole, message }) {
+  const reqName = ROLE_DISPLAY_NAMES[requiredRole] || (requiredRole ? requiredRole.replace('_', ' ').toUpperCase() : 'Authorized');
+  const userRoleName = ROLE_DISPLAY_NAMES[userRole] || (userRole ? userRole.replace('_', ' ').toUpperCase() : 'Public Citizen');
+
   return (
     <div className="h-full flex items-center justify-center p-6 bg-slate-950 text-slate-100">
       <div className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-2xl text-center space-y-5">
@@ -17,18 +27,18 @@ export default function AccessDeniedView({ requiredRole, userRole, onSwitchRole,
             Role Permission Required
           </h2>
           <p className="text-xs text-slate-400 mt-1.5 leading-relaxed">
-            {message || `This workspace area is restricted to ${requiredRole ? requiredRole.replace('_', ' ').toUpperCase() : 'authorized'} personnel.`}
+            {message || `This workspace area is restricted to ${reqName} personnel.`}
           </p>
         </div>
 
         <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-3 text-left space-y-1.5 text-xs font-mono">
           <div className="flex justify-between text-slate-400">
-            <span>Your Active Role:</span>
-            <span className="text-rose-400 font-bold">{userRole || 'normal_user'}</span>
+            <span>Your Active Persona:</span>
+            <span className="text-rose-400 font-bold">{userRoleName}</span>
           </div>
           <div className="flex justify-between text-slate-400">
-            <span>Required Role:</span>
-            <span className="text-emerald-400 font-bold">{requiredRole || 'government_admin'}</span>
+            <span>Required Persona:</span>
+            <span className="text-emerald-400 font-bold">{reqName}</span>
           </div>
         </div>
 

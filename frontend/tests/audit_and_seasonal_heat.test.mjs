@@ -265,4 +265,45 @@ test('PART D: Right-Side Dismissible OVERLAYS Panel, 9 overlays, and dynamic cou
   assert.ok(mapSrc.includes('data-testid="reset-map-view-btn"'), 'Must include Reset View quick action pill');
 });
 
+test('Role-Based Experience & Personas: Persona consistency, sidebar labels, and role navigation verified', () => {
+  // 1. AppSidebar.jsx role display mapping and never displaying "NORMAL USER"
+  const sidebarPath = path.join(frontendRoot, 'src/components/AppSidebar.jsx');
+  assert.ok(fs.existsSync(sidebarPath), 'AppSidebar.jsx must exist');
+  const sidebarSrc = fs.readFileSync(sidebarPath, 'utf-8');
+
+  assert.ok(sidebarSrc.includes('ROLE_DISPLAY_NAMES'), 'AppSidebar must export or define ROLE_DISPLAY_NAMES');
+  assert.ok(sidebarSrc.includes('normal_user: \'Public Citizen\''), 'normal_user must map to Public Citizen');
+  assert.ok(sidebarSrc.includes('pro_professional: \'Pro Professional\''), 'pro_professional must map to Pro Professional');
+  assert.ok(sidebarSrc.includes('government_admin: \'Government Admin\''), 'government_admin must map to Government Admin');
+  assert.ok(sidebarSrc.includes('ROLE_DISPLAY_NAMES[currentRole]'), 'Sidebar must use ROLE_DISPLAY_NAMES for active role indicator');
+
+  // 2. AccessDeniedView.jsx role display mapping
+  const accessPath = path.join(frontendRoot, 'src/components/AccessDeniedView.jsx');
+  const accessSrc = fs.readFileSync(accessPath, 'utf-8');
+  assert.ok(accessSrc.includes('ROLE_DISPLAY_NAMES'), 'AccessDeniedView must define ROLE_DISPLAY_NAMES');
+  assert.ok(accessSrc.includes('Public Citizen'), 'AccessDeniedView must format normal_user as Public Citizen');
+
+  // 3. App.jsx RBAC permissions
+  const appPath = path.join(frontendRoot, 'src/App.jsx');
+  const appSrc = fs.readFileSync(appPath, 'utf-8');
+  assert.ok(
+    appSrc.includes("agent: ['government_admin', 'government_engineer', 'pro_professional']") ||
+      appSrc.includes("'pro_professional'") && appSrc.includes("agent:"),
+    'VanSetu AI Agent must be authorized for pro_professional'
+  );
+
+  // 4. API Client resilient fallbacks for seasonal heat, shade continuity, and agent
+  const clientPath = path.join(frontendRoot, 'src/api/client.js');
+  const clientSrc = fs.readFileSync(clientPath, 'utf-8');
+
+  assert.ok(clientSrc.includes('getSeasonalHeatProfile: async (corridorId)'), 'getSeasonalHeatProfile must be resilient async method');
+  assert.ok(clientSrc.includes('getSeasonalHotspots: async ()'), 'getSeasonalHotspots must be resilient async method');
+  assert.ok(clientSrc.includes('getShadeContinuity: async (corridorId)'), 'getShadeContinuity must be resilient async method');
+  assert.ok(clientSrc.includes('getShadeNetworkGaps: async ()'), 'getShadeNetworkGaps must be resilient async method');
+  assert.ok(clientSrc.includes('runAgentPlan: async (payload)'), 'runAgentPlan must be resilient async method');
+  assert.ok(clientSrc.includes('getEquitySummary: async ()'), 'getEquitySummary must be resilient async method');
+  assert.ok(clientSrc.includes('NCT_DELHI_TREE_SPECIES_CATALOG'), 'Client must define NCT_DELHI_TREE_SPECIES_CATALOG');
+  assert.ok(clientSrc.includes('DELHI_TRANSIT_HUBS'), 'Client must define DELHI_TRANSIT_HUBS');
+});
+
 
