@@ -211,4 +211,58 @@ test('Root cause diagnosis fixes: Failures A, B, and C verified', () => {
   assert.ok(dirSrc.includes('alpha: true'), 'Three.js renderer must enable alpha transparency');
 });
 
+test('PART D: Right-Side Dismissible OVERLAYS Panel, 9 overlays, and dynamic count verified', () => {
+  const mapPath = path.join(frontendRoot, 'src/components/InteractiveMap.jsx');
+  assert.ok(fs.existsSync(mapPath), 'InteractiveMap.jsx must exist');
+  const mapSrc = fs.readFileSync(mapPath, 'utf-8');
+
+  // 1. Right-side default placement & dismissibility state
+  assert.ok(mapSrc.includes('isOverlaysPanelOpen, setIsOverlaysPanelOpen] = useState(true)'), 'Panel must be open by default on mount');
+  assert.ok(mapSrc.includes('right-4'), 'Panel must align to the right side of the map viewport');
+  assert.ok(mapSrc.includes('data-testid="floating-overlays-card"'), 'Must have floating-overlays-card container');
+  assert.ok(mapSrc.includes('data-testid="close-overlays-panel-btn"'), 'Must provide obvious close button in header');
+  assert.ok(mapSrc.includes('data-testid="open-overlays-panel-btn"'), 'Must provide floating reopen control when dismissed');
+
+  // 2. Dynamic active count calculation
+  assert.ok(mapSrc.includes('OVERLAYS ({activeLayerCount} Active)'), 'Header and button must show dynamic active count');
+  assert.ok(mapSrc.includes('Object.values(activeLayers).filter(Boolean).length'), 'Active count must be calculated from real active layers');
+
+  // 3. All 9 canonical overlay options
+  const requiredOverlays = [
+    'lst',            // Temperature (LST)
+    'ndvi',           // Vegetation (NDVI)
+    'gdi',            // Priority Index (GDI)
+    'corridors',      // Van Setu Corridors
+    'roads',          // Road Network
+    'aqi',            // AQI Stations
+    'osmRoads',       // Roads Overlay
+    'osmParks',       // Parks & Green
+    'osmResidential', // Residential
+  ];
+
+  assert.ok(
+    mapSrc.includes('layer-toggle-${layer.id}') || mapSrc.includes('layer-toggle-lst'),
+    'InteractiveMap must render dynamic or explicit layer-toggle testids'
+  );
+
+  for (const id of requiredOverlays) {
+    assert.ok(mapSrc.includes(`'${id}'`) || mapSrc.includes(`"${id}"`), `InteractiveMap must define overlay: ${id}`);
+  }
+
+  // 4. Checkbox interaction and layer pipeline
+  assert.ok(mapSrc.includes('toggleLayer'), 'InteractiveMap must implement toggleLayer function');
+  assert.ok(mapSrc.includes('getTileUrl(\'lst\')'), 'LST must render raster tiles from getTileUrl');
+  assert.ok(mapSrc.includes('getTileUrl(\'ndvi\')'), 'NDVI must render raster tiles from getTileUrl');
+  assert.ok(mapSrc.includes('getTileUrl(\'gdi\')'), 'GDI must render raster tiles from getTileUrl');
+  assert.ok(mapSrc.includes('ESRI_TRANSPORTATION_URL'), 'Roads Overlay must render Esri transportation tiles');
+  assert.ok(mapSrc.includes('DELHI_PARKS_BASELINE'), 'Parks & Green must render curated parks GeoJSON');
+  assert.ok(mapSrc.includes('DELHI_RESIDENTIAL_BASELINE'), 'Residential must render curated residential zones GeoJSON');
+
+  // 5. Basemap switcher, dynamic legend, and actions
+  assert.ok(mapSrc.includes('data-testid="basemap-toggle-btn"'), 'Must have basemap toggle control');
+  assert.ok(mapSrc.includes('data-testid="map-active-legend"'), 'Must have dynamic active legend');
+  assert.ok(mapSrc.includes('data-testid="fit-corridor-btn"'), 'Must include Fit Corridor quick action pill');
+  assert.ok(mapSrc.includes('data-testid="reset-map-view-btn"'), 'Must include Reset View quick action pill');
+});
+
 

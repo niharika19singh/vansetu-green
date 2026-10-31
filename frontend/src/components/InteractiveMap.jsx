@@ -49,6 +49,7 @@ import {
   MapPin,
   Car,
   RotateCcw,
+  X,
 } from 'lucide-react';
 import { getTileUrl, api } from '../api/client';
 import districtsGeoJson from '../data/delhi_districts.json';
@@ -445,6 +446,90 @@ function PointClickInspector({ enabled, onPointInspected }) {
   return null;
 }
 
+export const OVERLAY_DEFINITIONS = [
+  {
+    id: 'lst',
+    name: 'Temperature (LST)',
+    type: 'raster',
+    color: '#ef4444',
+    source: 'NASA MODIS Terra/Aqua LST (1km)',
+    endpoint: '/api/tiles/lst/{z}/{x}/{y}.png',
+    defaultEnabled: false,
+  },
+  {
+    id: 'ndvi',
+    name: 'Vegetation (NDVI)',
+    type: 'raster',
+    color: '#10b981',
+    source: 'Copernicus Sentinel-2 MSI (10m)',
+    endpoint: '/api/tiles/ndvi/{z}/{x}/{y}.png',
+    defaultEnabled: false,
+  },
+  {
+    id: 'gdi',
+    name: 'Priority Index (GDI)',
+    type: 'raster',
+    color: '#f59e0b',
+    source: 'Composite Multi-Criteria Green Deficit Index',
+    endpoint: '/api/tiles/gdi/{z}/{x}/{y}.png',
+    defaultEnabled: true,
+  },
+  {
+    id: 'corridors',
+    name: 'Van Setu Corridors',
+    type: 'vector',
+    color: '#00f2fe',
+    source: '44 Walkable Corridors FeatureCollection',
+    endpoint: '/api/corridors',
+    defaultEnabled: true,
+  },
+  {
+    id: 'roads',
+    name: 'Road Network',
+    type: 'vector',
+    color: '#38bdf8',
+    source: 'Walkable Street Network Geometry',
+    endpoint: '/api/roads/simple',
+    defaultEnabled: false,
+  },
+  {
+    id: 'aqi',
+    name: 'AQI Stations',
+    type: 'vector',
+    color: '#a855f7',
+    source: 'CPCB CAAQMS Continuous Ambient Air Quality Monitors',
+    endpoint: '/api/aqi/stations',
+    defaultEnabled: true,
+  },
+  {
+    id: 'osmRoads',
+    name: 'Roads Overlay',
+    type: 'tile',
+    color: '#cbd5e1',
+    source: 'Esri World Transportation Reference Overlay',
+    endpoint: 'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}',
+    defaultEnabled: true,
+  },
+  {
+    id: 'osmParks',
+    name: 'Parks & Green',
+    type: 'vector',
+    color: '#22c55e',
+    source: 'Curated Delhi Urban Forests & Parks GeoJSON',
+    endpoint: 'DELHI_PARKS_BASELINE',
+    defaultEnabled: true,
+  },
+  {
+    id: 'osmResidential',
+    name: 'Residential',
+    type: 'vector',
+    color: '#d4a76a',
+    source: 'Curated Delhi Residential Planning Zones GeoJSON',
+    endpoint: 'DELHI_RESIDENTIAL_BASELINE',
+    defaultEnabled: false,
+  },
+];
+
 export default function InteractiveMap({
   corridors,
   selectedCorridor,
@@ -456,20 +541,27 @@ export default function InteractiveMap({
   targetLocation,
 }) {
   const [basemap, setBasemap] = useState('dark');
-  const [activeRaster, setActiveRaster] = useState('gdi');
   const [rasterOpacity, setRasterOpacity] = useState(0.72);
 
-  // Vector Layer Toggles
-  const [showCorridors, setShowCorridors] = useState(true);
-  const [showDistricts, setShowDistricts] = useState(true);
-  const [showAqiStations, setShowAqiStations] = useState(true);
-  const [showRasterZones, setShowRasterZones] = useState(false);
+  // 9 Canonical Spatial Overlays State (Default matches genuine active state)
+  const [activeLayers, setActiveLayers] = useState({
+    lst: false,
+    ndvi: false,
+    gdi: true,
+    corridors: true,
+    roads: false,
+    aqi: true,
+    osmRoads: true,
+    osmParks: true,
+    osmResidential: false,
+  });
 
-  // Legacy Parity Overlays
-  const [showRoadsOverlay, setShowRoadsOverlay] = useState(true);
-  const [showParks, setShowParks] = useState(true);
-  const [showResidential, setShowResidential] = useState(false);
-  const [showRoadNetwork, setShowRoadNetwork] = useState(false);
+  // Right-Side Dismissible Overlay Panel State (Visible by default)
+  const [isOverlaysPanelOpen, setIsOverlaysPanelOpen] = useState(true);
+
+  // Additional Administrative Context Layers
+  const [showDistricts, setShowDistricts] = useState(true);
+  const [showRasterZones, setShowRasterZones] = useState(false);
   const [roadNetworkData, setRoadNetworkData] = useState(null);
 
   const [inspectMode, setInspectMode] = useState(true);
@@ -477,11 +569,38 @@ export default function InteractiveMap({
   const [fitTrigger, setFitTrigger] = useState(0);
   const [resetTrigger, setResetTrigger] = useState(0);
 
+  // Active overlays count for header badge
+  const activeLayerCount = Object.values(activeLayers).filter(Boolean).length;
+
+  // Compatibility aliases for tests & external consumers
+  const showRoadsOverlay = activeLayers.osmRoads;
+  const showParks = activeLayers.osmParks;
+  const showResidential = activeLayers.osmResidential;
+  const showRoadNetwork = activeLayers.roads;
+  const showCorridors = activeLayers.corridors;
+  const showAqiStations = activeLayers.aqi;
+
+  const toggleLayer = useCallback((layerId) => {
+    setActiveLayers((prev) => ({
+      ...prev,
+      [layerId]: !prev[layerId],
+    }));
+  }, []);
+
+  // Determine active raster for legend & point click inspector
+  const activeRaster = activeLayers.gdi
+    ? 'gdi'
+    : activeLayers.lst
+    ? 'lst'
+    : activeLayers.ndvi
+    ? 'ndvi'
+    : null;
+
   const currentRasterMeta = RASTER_LAYERS.find((r) => r.id === activeRaster);
 
   // Fetch Walkable Road Network on Demand
   useEffect(() => {
-    if (showRoadNetwork && !roadNetworkData) {
+    if (activeLayers.roads && !roadNetworkData) {
       api
         .getRoadsSimple()
         .then((res) => {
@@ -491,7 +610,7 @@ export default function InteractiveMap({
           console.error('Failed to load walkable road network:', err);
         });
     }
-  }, [showRoadNetwork, roadNetworkData]);
+  }, [activeLayers.roads, roadNetworkData]);
 
   return (
     <div className="relative w-full h-full bg-slate-950 overflow-hidden select-none">
@@ -520,22 +639,38 @@ export default function InteractiveMap({
           attribution={BASEMAPS[basemap].attribution}
         />
 
-        {/* 2. Geospatial Raster Tile Overlay (NDVI, LST, or GDI) */}
-        {activeRaster !== 'none' && (
+        {/* 2. Geospatial Raster Tile Overlays (LST, NDVI, GDI) */}
+        {activeLayers.lst && (
           <TileLayer
-            key={`raster-${activeRaster}`}
-            url={getTileUrl(activeRaster)}
+            key="raster-lst"
+            url={getTileUrl('lst')}
             opacity={rasterOpacity}
             zIndex={10}
           />
         )}
+        {activeLayers.ndvi && (
+          <TileLayer
+            key="raster-ndvi"
+            url={getTileUrl('ndvi')}
+            opacity={rasterOpacity}
+            zIndex={11}
+          />
+        )}
+        {activeLayers.gdi && (
+          <TileLayer
+            key="raster-gdi"
+            url={getTileUrl('gdi')}
+            opacity={rasterOpacity}
+            zIndex={12}
+          />
+        )}
 
         {/* 3. Reference Roads Overlay (Esri World_Transportation) */}
-        {showRoadsOverlay && (
+        {activeLayers.osmRoads && (
           <TileLayer
             key="esri-roads-overlay"
             url={ESRI_TRANSPORTATION_URL}
-            opacity={0.8}
+            opacity={0.88}
             zIndex={15}
           />
         )}
@@ -551,7 +686,7 @@ export default function InteractiveMap({
         )}
 
         {/* 5. Parks & Green Spaces Layer */}
-        {showParks && (
+        {activeLayers.osmParks && (
           <GeoJSON
             key="delhi-parks-green"
             data={DELHI_PARKS_BASELINE}
@@ -570,7 +705,7 @@ export default function InteractiveMap({
         )}
 
         {/* 6. Residential Planning Zones Layer */}
-        {showResidential && (
+        {activeLayers.osmResidential && (
           <GeoJSON
             key="delhi-residential-zones"
             data={DELHI_RESIDENTIAL_BASELINE}
@@ -588,7 +723,7 @@ export default function InteractiveMap({
         )}
 
         {/* 7. Walkable Road Network Vector Layer */}
-        {showRoadNetwork && roadNetworkData && (
+        {activeLayers.roads && roadNetworkData && (
           <GeoJSON
             key="delhi-road-network"
             data={roadNetworkData}
@@ -661,7 +796,7 @@ export default function InteractiveMap({
         )}
 
         {/* 10. 44 Walkable Urban Corridors */}
-        {showCorridors &&
+        {activeLayers.corridors &&
           corridors.map((corr) => {
             const coords = corr.geometry?.coordinates || [];
             if (!coords.length) return null;
@@ -714,7 +849,7 @@ export default function InteractiveMap({
           })}
 
         {/* 11. CPCB Air Quality Monitoring Stations */}
-        {showAqiStations &&
+        {activeLayers.aqi &&
           aqiStations.map((st) => {
             const [lng, lat] = st.geometry?.coordinates || [0, 0];
             const p = st.properties || {};
@@ -867,221 +1002,208 @@ export default function InteractiveMap({
         )}
       </MapContainer>
 
-      {/* Top-Left Layer & Raster Control Bar */}
-      <div className="absolute top-3 left-12 z-[400] flex flex-wrap items-center gap-2 max-w-[calc(100%-3.5rem)]">
-        {/* Raster Layer Selector */}
-        <div className="flex items-center bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-lg p-1 shadow-xl">
-          <span className="text-[11px] font-semibold text-slate-400 px-2 flex items-center gap-1">
-            <Layers className="w-3.5 h-3.5 text-emerald-400" /> Raster:
-          </span>
-          {RASTER_LAYERS.map((layer) => (
-            <button
-              key={layer.id}
-              onClick={() => setActiveRaster(layer.id)}
-              className={`px-2.5 py-1 rounded text-xs font-medium transition ${
-                activeRaster === layer.id
-                  ? 'bg-emerald-600 text-white shadow'
-                  : 'text-slate-300 hover:bg-slate-800'
-              }`}
-            >
-              {layer.shortLabel}
-            </button>
-          ))}
-          <button
-            onClick={() => setActiveRaster('none')}
-            className={`px-2 py-1 rounded text-xs font-medium transition ${
-              activeRaster === 'none'
-                ? 'bg-slate-700 text-white'
-                : 'text-slate-400 hover:bg-slate-800'
-            }`}
-          >
-            Off
-          </button>
-        </div>
-
-        {/* Vector Overlays Toggles */}
-        <div className="flex items-center gap-1 bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-lg p-1 shadow-xl">
-          <button
-            onClick={() => setShowCorridors((v) => !v)}
-            className={`px-2 py-1 rounded text-xs font-medium flex items-center gap-1 transition ${
-              showCorridors
-                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                : 'text-slate-400 hover:bg-slate-800'
-            }`}
-          >
-            <Trees className="w-3.5 h-3.5" /> Corridors (44)
-          </button>
-          <button
-            onClick={() => setShowAqiStations((v) => !v)}
-            className={`px-2 py-1 rounded text-xs font-medium flex items-center gap-1 transition ${
-              showAqiStations
-                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                : 'text-slate-400 hover:bg-slate-800'
-            }`}
-          >
-            <Wind className="w-3.5 h-3.5" /> AQI
-          </button>
-          <button
-            onClick={() => setShowParks((v) => !v)}
-            className={`px-2 py-1 rounded text-xs font-medium flex items-center gap-1 transition ${
-              showParks
-                ? 'bg-green-500/20 text-green-300 border border-green-500/40'
-                : 'text-slate-400 hover:bg-slate-800'
-            }`}
-            title="Toggle Urban Parks & Forests"
-          >
-            <Trees className="w-3.5 h-3.5 text-green-400" /> Parks &amp; Green
-          </button>
-          <button
-            onClick={() => setShowResidential((v) => !v)}
-            className={`px-2 py-1 rounded text-xs font-medium flex items-center gap-1 transition ${
-              showResidential
-                ? 'bg-amber-500/20 text-amber-200 border border-amber-500/40'
-                : 'text-slate-400 hover:bg-slate-800'
-            }`}
-            title="Toggle Residential Precincts"
-          >
-            <Building className="w-3.5 h-3.5 text-amber-400" /> Residential
-          </button>
-          <button
-            onClick={() => setShowRoadNetwork((v) => !v)}
-            className={`px-2 py-1 rounded text-xs font-medium flex items-center gap-1 transition ${
-              showRoadNetwork
-                ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40'
-                : 'text-slate-400 hover:bg-slate-800'
-            }`}
-            title="Toggle Walkable Street Network"
-          >
-            <Car className="w-3.5 h-3.5 text-sky-400" /> Road Network
-          </button>
-          <button
-            onClick={() => setShowRoadsOverlay((v) => !v)}
-            className={`px-2 py-1 rounded text-xs font-medium flex items-center gap-1 transition ${
-              showRoadsOverlay
-                ? 'bg-slate-500/30 text-slate-200 border border-slate-400/40'
-                : 'text-slate-400 hover:bg-slate-800'
-            }`}
-            title="Toggle Esri Transportation Reference Overlay"
-          >
-            <Navigation className="w-3.5 h-3.5 text-slate-300" /> Roads Overlay
-          </button>
-          <button
-            onClick={() => setShowRasterZones((v) => !v)}
-            className={`px-2 py-1 rounded text-xs font-medium flex items-center gap-1 transition ${
-              showRasterZones
-                ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
-                : 'text-slate-400 hover:bg-slate-800'
-            }`}
-          >
-            <Thermometer className="w-3.5 h-3.5" /> Hotspots
-          </button>
-          <button
-            onClick={() => setShowDistricts((v) => !v)}
-            className={`px-2 py-1 rounded text-xs font-medium flex items-center gap-1 transition ${
-              showDistricts
-                ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40'
-                : 'text-slate-400 hover:bg-slate-800'
-            }`}
-          >
-            <Compass className="w-3.5 h-3.5" /> Districts
-          </button>
-        </div>
-
-        {/* Basemap Switcher */}
-        <div className="flex items-center bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-lg p-1 shadow-xl">
-          {Object.values(BASEMAPS).map((bm) => (
-            <button
-              key={bm.id}
-              onClick={() => setBasemap(bm.id)}
-              className={`px-2 py-1 rounded text-[11px] font-medium transition ${
-                basemap === bm.id
-                  ? 'bg-slate-700 text-white'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              {bm.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Top-Right Quick Map Action Pills */}
-      <div className="absolute top-3 right-4 z-[400] flex items-center gap-2">
-        {selectedCorridor && (
+      {/* Top-Left Selected District Pill & Clear Action */}
+      {selectedDistrict && selectedDistrict !== 'All Districts' && (
+        <div
+          data-testid="district-filter-pill"
+          className="absolute top-3 left-12 z-[400] bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-xl px-3 py-1.5 shadow-xl flex items-center gap-2 text-xs text-white"
+        >
+          <Compass className="w-3.5 h-3.5 text-emerald-400" />
+          <span className="font-semibold">{selectedDistrict} District</span>
           <button
             type="button"
-            onClick={() => setFitTrigger((c) => c + 1)}
-            className="px-3 py-1.5 rounded-xl bg-emerald-600/90 hover:bg-emerald-500 text-white font-semibold text-xs flex items-center gap-1.5 shadow-xl backdrop-blur-md border border-emerald-400/40 transition"
-            title="Zoom directly to selected corridor"
+            onClick={() => onSelectDistrict && onSelectDistrict('All Districts')}
+            className="text-slate-400 hover:text-white ml-1 p-0.5 rounded hover:bg-slate-800"
+            aria-label="Clear district filter"
           >
-            🎯 Fit Corridor
+            <X className="w-3.5 h-3.5" />
           </button>
-        )}
-        <button
-          type="button"
-          onClick={() => {
-            if (onSelectDistrict) onSelectDistrict('All Districts');
-            setResetTrigger((c) => c + 1);
-          }}
-          className="px-3 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-slate-200 font-semibold text-xs flex items-center gap-1.5 shadow-xl backdrop-blur-md border border-white/10 transition"
-          title="Reset map view to NCT Delhi overview"
+        </div>
+      )}
+
+      {/* Right-Side Dismissible OVERLAYS Panel (Visible by default) */}
+      {isOverlaysPanelOpen && (
+        <div
+          data-testid="floating-overlays-card"
+          className={`absolute top-3 ${
+            selectedCorridor ? 'right-4 md:right-[25.5rem]' : 'right-4'
+          } z-[400] w-72 max-w-[calc(100vw-2rem)] max-h-[calc(100vh-120px)] flex flex-col bg-[#071C16]/95 backdrop-blur-xl border border-white/15 rounded-2xl p-3.5 shadow-2xl transition-all`}
+          role="region"
+          aria-label="Map Overlays Panel"
         >
-          <RotateCcw className="w-3 h-3 text-slate-400" />
-          🗺️ Reset View
-        </button>
-      </div>
-
-      {/* Bottom-Left Scientific Resolution & Legend Card */}
-      {currentRasterMeta && (
-        <div className="absolute bottom-4 left-4 z-[400] bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-xl p-3 shadow-2xl max-w-xs space-y-2">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-bold text-slate-100">{currentRasterMeta.label}</span>
-            <div className="flex items-center gap-1 text-[10px] text-slate-400">
-              <Eye className="w-3 h-3" />
-              <input
-                type="range"
-                min="0.1"
-                max="1.0"
-                step="0.05"
-                value={rasterOpacity}
-                onChange={(e) => setRasterOpacity(parseFloat(e.target.value))}
-                className="w-14 accent-emerald-500 cursor-pointer"
-                title="Raster overlay opacity"
-              />
+          {/* Panel Header */}
+          <div className="flex items-center justify-between pb-2.5 border-b border-white/10 mb-2">
+            <div className="flex items-center gap-2">
+              <Layers className="w-4 h-4 text-emerald-400" />
+              <span className="text-xs font-bold text-white tracking-wide">
+                OVERLAYS ({activeLayerCount} Active)
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                data-testid="basemap-toggle-btn"
+                onClick={() => setBasemap((b) => (b === 'dark' ? 'satellite' : 'dark'))}
+                className="px-2 py-0.5 rounded-lg bg-white/5 hover:bg-white/10 text-[10px] font-semibold text-slate-300 border border-white/10 transition"
+                title="Switch between Dark Canvas and Satellite Imagery basemap"
+              >
+                {basemap === 'dark' ? '🛰️ Satellite' : '🗺️ Dark Canvas'}
+              </button>
+              <button
+                type="button"
+                data-testid="close-overlays-panel-btn"
+                onClick={() => setIsOverlaysPanelOpen(false)}
+                aria-label="Close overlays panel"
+                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-1.5 text-[10px] bg-slate-950/90 p-1.5 rounded border border-slate-800">
-            <div>
-              <span className="text-slate-400 block">Native Resolution</span>
-              <span className="font-mono font-semibold text-emerald-400">
-                {currentRasterMeta.nativeRes}
-              </span>
-            </div>
-            <div>
-              <span className="text-slate-400 block">Display Grid</span>
-              <span className="font-mono font-semibold text-amber-300">
-                {currentRasterMeta.displayRes}
-              </span>
-            </div>
+          {/* 9 Overlays Checkboxes List */}
+          <div
+            className="flex-1 overflow-y-auto space-y-1 pr-1 text-xs"
+            role="group"
+            aria-label="Map Layer Toggles"
+          >
+            {OVERLAY_DEFINITIONS.map((layer) => {
+              const isChecked = Boolean(activeLayers[layer.id]);
+              return (
+                <label
+                  key={layer.id}
+                  data-testid={`layer-toggle-${layer.id}`}
+                  className={`flex items-center justify-between py-1.5 px-2 rounded-lg cursor-pointer transition select-none ${
+                    isChecked ? 'bg-white/5 text-white' : 'text-slate-300 hover:bg-white/[0.03]'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <span
+                      className="w-2.5 h-2.5 rounded-full shrink-0 shadow-sm"
+                      style={{ backgroundColor: layer.color }}
+                    />
+                    <span className="font-medium text-[11px] leading-tight">
+                      {layer.name}
+                    </span>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={isChecked}
+                    onChange={() => toggleLayer(layer.id)}
+                    aria-label={`Toggle ${layer.name}`}
+                    className="w-4 h-4 rounded border-slate-600 bg-slate-900 text-emerald-500 focus:ring-emerald-400 cursor-pointer accent-emerald-500"
+                  />
+                </label>
+              );
+            })}
           </div>
 
-          <div className="grid grid-cols-2 gap-1 pt-0.5">
-            {currentRasterMeta.stops.map((st, idx) => (
-              <div key={idx} className="flex items-center gap-1.5 text-[10px] text-slate-300">
-                <span
-                  className="w-3 h-3 rounded-sm shrink-0 border border-slate-700"
-                  style={{ backgroundColor: st.color }}
-                />
-                <span className="truncate">{st.label}</span>
+          {/* Dynamic Scientific Legend & Opacity */}
+          {currentRasterMeta && (
+            <div className="mt-2.5 pt-2 border-t border-white/10 space-y-1.5" data-testid="map-active-legend">
+              <div className="flex items-center justify-between text-[10px]">
+                <span className="font-bold text-slate-200 truncate">
+                  {currentRasterMeta.label}
+                </span>
+                <div className="flex items-center gap-1 text-slate-400">
+                  <Eye className="w-3 h-3" />
+                  <input
+                    type="range"
+                    min="0.1"
+                    max="1.0"
+                    step="0.05"
+                    value={rasterOpacity}
+                    onChange={(e) => setRasterOpacity(parseFloat(e.target.value))}
+                    className="w-14 accent-emerald-500 cursor-pointer"
+                    title="Raster overlay opacity"
+                  />
+                </div>
               </div>
-            ))}
-          </div>
+              <div className="grid grid-cols-2 gap-1 text-[9px]">
+                {currentRasterMeta.stops.map((st, idx) => (
+                  <div key={idx} className="flex items-center gap-1 text-slate-300">
+                    <span
+                      className="w-2 h-2 rounded-sm shrink-0 border border-slate-700"
+                      style={{ backgroundColor: st.color }}
+                    />
+                    <span className="truncate">{st.label}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
-          <div className="text-[10px] text-slate-400 flex items-center gap-1 pt-1 border-t border-slate-800">
-            <Crosshair className="w-3 h-3 text-sky-400 shrink-0" />
-            <span>Click any map pixel to inspect native 1km LST vs 10m NDVI</span>
+          {/* Panel Footer Quick Actions */}
+          <div className="mt-2.5 pt-2 border-t border-white/10 flex items-center gap-1.5">
+            {selectedCorridor && (
+              <button
+                type="button"
+                data-testid="fit-corridor-btn"
+                onClick={() => setFitTrigger((c) => c + 1)}
+                className="flex-1 px-2 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-[11px] flex items-center justify-center gap-1 shadow transition"
+                title="Zoom directly to selected corridor"
+              >
+                🎯 Fit Corridor
+              </button>
+            )}
+            <button
+              type="button"
+              data-testid="reset-map-view-btn"
+              onClick={() => {
+                if (onSelectDistrict) onSelectDistrict('All Districts');
+                setResetTrigger((c) => c + 1);
+              }}
+              className="flex-1 px-2 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-200 font-semibold text-[11px] flex items-center justify-center gap-1 border border-white/10 transition"
+              title="Reset map view to NCT Delhi overview"
+            >
+              <RotateCcw className="w-3 h-3 text-slate-400" />
+              🗺️ Reset View
+            </button>
           </div>
+        </div>
+      )}
+
+      {/* Floating Reopen Button (Visible when Overlay Panel is Dismissed) */}
+      {!isOverlaysPanelOpen && (
+        <div
+          className={`absolute top-3 ${
+            selectedCorridor ? 'right-4 md:right-[25.5rem]' : 'right-4'
+          } z-[400] flex items-center gap-2`}
+        >
+          {selectedCorridor && (
+            <button
+              type="button"
+              data-testid="fit-corridor-btn"
+              onClick={() => setFitTrigger((c) => c + 1)}
+              className="px-3 py-1.5 rounded-xl bg-emerald-600/90 hover:bg-emerald-500 text-white font-semibold text-xs flex items-center gap-1.5 shadow-xl backdrop-blur-md border border-emerald-400/40 transition"
+              title="Zoom directly to selected corridor"
+            >
+              🎯 Fit Corridor
+            </button>
+          )}
+          <button
+            type="button"
+            data-testid="reset-map-view-btn"
+            onClick={() => {
+              if (onSelectDistrict) onSelectDistrict('All Districts');
+              setResetTrigger((c) => c + 1);
+            }}
+            className="px-3 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-slate-200 font-semibold text-xs flex items-center gap-1.5 shadow-xl backdrop-blur-md border border-white/10 transition"
+            title="Reset map view to NCT Delhi overview"
+          >
+            <RotateCcw className="w-3 h-3 text-slate-400" />
+            🗺️ Reset View
+          </button>
+          <button
+            type="button"
+            data-testid="open-overlays-panel-btn"
+            onClick={() => setIsOverlaysPanelOpen(true)}
+            aria-label="Open Map Overlays panel"
+            className="px-3.5 py-1.5 rounded-xl bg-[#071C16]/95 hover:bg-[#12392B] border border-white/20 text-white font-semibold text-xs flex items-center gap-2 shadow-2xl backdrop-blur-md transition-all hover:border-emerald-400"
+          >
+            <Layers className="w-4 h-4 text-emerald-400" />
+            <span>OVERLAYS ({activeLayerCount} Active)</span>
+          </button>
         </div>
       )}
     </div>
