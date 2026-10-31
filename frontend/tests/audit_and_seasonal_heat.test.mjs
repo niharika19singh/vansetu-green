@@ -390,5 +390,58 @@ test('Corridor Map Highlighting & Selection Visualization: Parity, Cyan Highligh
   assert.strictEqual(getCorridorColor({ severity_color: '#custom12' }), '#custom12');
 });
 
+test('Full Legacy Parity Restoration & Dedicated Entry Points: Prediction, Ranking, Heatwave, Community, Health', async () => {
+  // 1. Verify all 5 view components exist
+  const views = [
+    'src/views/CorridorPredictionView.jsx',
+    'src/views/CorridorRankingView.jsx',
+    'src/views/HeatwaveMappingView.jsx',
+    'src/views/CommunityInputView.jsx',
+    'src/views/HealthDataView.jsx',
+  ];
+  for (const v of views) {
+    const fullPath = path.resolve(frontendRoot, v);
+    assert.ok(fs.existsSync(fullPath), `View component must exist at ${v}`);
+    const src = fs.readFileSync(fullPath, 'utf8');
+    assert.ok(src.includes('export default function'), `Must export default function in ${v}`);
+  }
+
+  // 2. Verify App.jsx imports and routes all 5 views
+  const appSrc = fs.readFileSync(path.resolve(frontendRoot, 'src/App.jsx'), 'utf8');
+  assert.ok(appSrc.includes('CorridorPredictionView'), 'App.jsx must import CorridorPredictionView');
+  assert.ok(appSrc.includes('CorridorRankingView'), 'App.jsx must import CorridorRankingView');
+  assert.ok(appSrc.includes('HeatwaveMappingView'), 'App.jsx must import HeatwaveMappingView');
+  assert.ok(appSrc.includes('CommunityInputView'), 'App.jsx must import CommunityInputView');
+  assert.ok(appSrc.includes('HealthDataView'), 'App.jsx must import HealthDataView');
+
+  // Verify routing keys in App.jsx
+  assert.ok(appSrc.includes("activeView === 'prediction'"), "App.jsx must handle activeView === 'prediction'");
+  assert.ok(appSrc.includes("activeView === 'ranking'"), "App.jsx must handle activeView === 'ranking'");
+  assert.ok(appSrc.includes("activeView === 'heatwave_mapping'"), "App.jsx must handle activeView === 'heatwave_mapping'");
+  assert.ok(appSrc.includes("activeView === 'community_input'"), "App.jsx must handle activeView === 'community_input'");
+  assert.ok(appSrc.includes("activeView === 'health_data'"), "App.jsx must handle activeView === 'health_data'");
+
+  // 3. Verify AppSidebar includes dedicated entry points and workspace switcher
+  const sidebarSrc = fs.readFileSync(path.resolve(frontendRoot, 'src/components/AppSidebar.jsx'), 'utf8');
+  assert.ok(sidebarSrc.includes('DEDICATED_ENTRY_POINTS'), 'AppSidebar must define DEDICATED_ENTRY_POINTS');
+  assert.ok(sidebarSrc.includes('prediction'), 'Sidebar must include prediction entry point');
+  assert.ok(sidebarSrc.includes('ranking'), 'Sidebar must include ranking entry point');
+  assert.ok(sidebarSrc.includes('heatwave_mapping'), 'Sidebar must include heatwave_mapping entry point');
+  assert.ok(sidebarSrc.includes('community_input'), 'Sidebar must include community_input entry point');
+  assert.ok(sidebarSrc.includes('health_data'), 'Sidebar must include health_data entry point');
+  assert.ok(sidebarSrc.includes('onSwitchRole'), 'AppSidebar must support persona/workspace switching');
+
+  // 4. Verify client.js provides all required methods
+  const clientSrc = fs.readFileSync(path.resolve(frontendRoot, 'src/api/client.js'), 'utf8');
+  assert.ok(clientSrc.includes('getDistrictAudit:'), 'client.js must define getDistrictAudit');
+  assert.ok(clientSrc.includes('getPredictionHorizons:'), 'client.js must define getPredictionHorizons');
+  assert.ok(clientSrc.includes('predictCorridor:'), 'client.js must define predictCorridor');
+  assert.ok(clientSrc.includes('getCorridorsWhatIfRank:'), 'client.js must define getCorridorsWhatIfRank');
+  assert.ok(clientSrc.includes('explainCorridorRanking:'), 'client.js must define explainCorridorRanking');
+  assert.ok(clientSrc.includes('submitCommunityObservationLegacy:'), 'client.js must define submitCommunityObservationLegacy');
+  assert.ok(clientSrc.includes('submitHealthDataLegacy:'), 'client.js must define submitHealthDataLegacy');
+  assert.ok(clientSrc.includes('getHealthDataLegacy:'), 'client.js must define getHealthDataLegacy');
+});
+
 
 

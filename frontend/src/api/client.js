@@ -556,6 +556,58 @@ export const api = {
     }
   },
 
+  getDistrictAudit: () => requestJson('/api/corridors/districts/audit'),
+
+  // Corridor Climate Prediction
+  getPredictionHorizons: () => requestJson('/api/prediction/scenarios'),
+  getCorridorPrediction: (corridorId, horizonId = 'horizon_3yr_2029') =>
+    requestJson(`/api/prediction/corridor/${encodeURIComponent(corridorId)}?horizon_id=${encodeURIComponent(horizonId)}`),
+  predictCorridor: ({ corridorId, horizonId }) =>
+    requestJson('/api/prediction/corridor', {
+      method: 'POST',
+      body: JSON.stringify({ corridor_id: corridorId, horizon_id: horizonId }),
+    }),
+  predictAllCorridors: ({ horizonId = 'horizon_3yr_2029', district = null } = {}) => {
+    const p = new URLSearchParams({ horizon_id: horizonId });
+    if (district && district !== 'All Districts') p.set('district', district);
+    return requestJson(`/api/prediction/corridors?${p.toString()}`);
+  },
+
+  // Dedicated What-If Two-Factor Ranking
+  getCorridorsWhatIfRank: ({ heatWeight = 0.6, top = 10, district = null } = {}) => {
+    const p = new URLSearchParams({ heat_weight: String(heatWeight), top: String(top) });
+    if (district && district !== 'All Districts') p.set('district', district);
+    return requestJson(`/api/corridors/rank?${p.toString()}`);
+  },
+  explainCorridorRanking: (corridorData) =>
+    requestJson('/api/corridors/explain-ranking', {
+      method: 'POST',
+      body: JSON.stringify(corridorData),
+    }),
+
+  // Community & Health Observation Intake
+  getDistrictsList: () => requestJson('/api/districts'),
+  submitCommunityObservationLegacy: (data) =>
+    requestJson('/api/community-data', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  getCommunityObservationsLegacy: (status = null) => {
+    const p = status ? `?status=${encodeURIComponent(status)}` : '';
+    return requestJson(`/api/community-data${p}`);
+  },
+  submitHealthDataLegacy: (data) =>
+    requestJson('/api/health-data', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  getHealthDataLegacy: (district = null) => {
+    if (district && district !== 'All Districts') {
+      return requestJson(`/api/health-data/${encodeURIComponent(district)}`);
+    }
+    return requestJson('/api/health-data');
+  },
+
   getRasterZones: async (percentile = 85.0) => {
     try {
       return await requestJson(`/api/corridors/raster-zones?percentile=${encodeURIComponent(percentile)}`);

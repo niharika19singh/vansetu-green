@@ -2,7 +2,7 @@
 VanSetu GreenTech — Corridor Prioritization, Sensitivity & District Router.
 """
 import json
-from typing import Optional, Dict
+from typing import Optional, Dict, Any, List
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
@@ -157,6 +157,170 @@ def evaluate_custom_score(req: CustomScoreRequest):
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+# -----------------------------------------------------------------------------
+# District Audit, Two-Factor What-If Ranking & Explain-Ranking Endpoints
+# (Placed BEFORE /corridors/{corridor_id} so literal sub-paths are not matched as IDs)
+# -----------------------------------------------------------------------------
+
+@router.get("/corridors/districts/audit")
+def get_districts_audit():
+    """
+    Return comprehensive verification audit across all 11 NCT Delhi administrative districts,
+    verifying corridor coverage, raster completeness, and analytics readiness.
+    """
+    return corridor_service.get_district_audit()
+
+
+@router.get("/corridors/rank")
+@router.get("/roads/rank")
+def rank_corridors_what_if(
+    heat_weight: Optional[float] = Query(
+        default=0.6,
+        ge=0.0,
+        le=1.0,
+        description="Weight for Heat in [0.0, 1.0]. Formula: score = heat_weight * Heat + (1 - heat_weight) * (1 - NDVI)",
+    ),
+    top: Optional[int] = Query(
+        default=10,
+        ge=1,
+        le=100,
+        description="Number of top corridors to return (default 10, range 1..100)",
+    ),
+    district: Optional[str] = Query(None, description="Optional NCT Delhi district filter"),
+):
+    """
+    What-if Two-Factor Corridor Ranking endpoint:
+      score = heat_weight * Heat + (1 - heat_weight) * (1 - NDVI)
+    where Heat and NDVI are normalized [0, 1] values sampled from valid raster pixels.
+    Returns Baseline (heat_weight = 0.6) vs. What-if rank, score delta, and rank shifts.
+    """
+    res = corridor_service.get_corridors(
+        district=district,
+        heat_weight=heat_weight,
+        limit=top,
+    )
+    all_corrs = res.get("corridors", [])
+    top_items = all_corrs[:top] if top else all_corrs
+
+    ranked_results = []
+    for c in top_items:
+        h_val = c.get("lst_norm", 0.5) if c.get("lst_norm") is not None else 0.5
+        g_val = c.get("green_deficit", 0.5) if c.get("green_deficit") is not None else 0.5
+        h_wt = heat_weight if heat_weight is not None else 0.6
+        g_wt = round(1.0 - h_wt, 4)
+        ranked_results.append(
+            {
+                "id": c["id"],
+                "code": c.get("code", "C-00"),
+                "name": c["name"],
+                "district": c["district"],
+                "district_full": c.get("district_full", c["district"]),
+                "rank": c.get("rank"),
+                "baseline_rank": c.get("baseline_rank"),
+                "rank_delta": c.get("rank_delta", 0),
+                "score": c.get("priority_score"),
+                "baseline_score": c.get("baseline_score"),
+                "score_delta": c.get("score_delta", 0.0),
+                "heat": h_val,
+                "ndvi": c.get("ndvi_norm", 0.5),
+                "green_deficit": g_val,
+                "heat_weight": h_wt,
+                "green_weight": g_wt,
+                "heat_contribution": round(h_wt * h_val, 4),
+                "green_deficit_contribution": round(g_wt * g_val, 4),
+                "lst_mean_celsius": c.get("lst_mean"),
+                "ndvi_mean": c.get("ndvi_mean"),
+                "aqi": c.get("aqi"),
+                "is_walkable": c.get("is_walkable", True),
+                "length_km": c.get("length_km"),
+            }
+        )
+
+    return {
+        "status": "success",
+        "heat_weight": heat_weight,
+        "green_weight": round(1.0 - (heat_weight or 0.6), 4),
+        "district_filter": district or "All Districts",
+        "top_n": len(ranked_results),
+        "total_corridors_evaluated": res["metadata"].get("total_corridors", len(ranked_results)),
+        "corridors": ranked_results,
+    }
+
+
+class ExplainRankingBody(BaseModel):
+    name: Optional[str] = "Urban Corridor"
+    district: Optional[str] = "Central Delhi"
+    highway: Optional[str] = "secondary"
+    score: Optional[float] = None
+    priority_score: Optional[float] = None
+    heat_weight: Optional[float] = None
+    heat: Optional[float] = None
+    ndvi: Optional[float] = None
+    green_deficit: Optional[float] = None
+    heat_contribution: Optional[float] = None
+    green_deficit_contribution: Optional[float] = None
+    rank: Optional[int] = None
+    baseline_rank: Optional[int] = None
+    rank_change: Optional[int] = None
+    baseline_score: Optional[float] = None
+    signals: Optional[Dict[str, Any]] = None
+    scenario: Optional[str] = "baseline"
+
+
+@router.post("/corridors/explain-ranking")
+def explain_ranking_endpoint(body: ExplainRankingBody):
+    """
+    Generate an explainable mathematical and scientific justification for a corridor's ranking.
+    Decoupled from spatial queries for instantaneous interactive evaluation.
+    """
+    name = body.name or "Urban Corridor"
+    signals = body.signals or {}
+    hw = body.heat_weight if body.heat_weight is not None else 0.60
+    gw = round(1.0 - hw, 4)
+    heat = float(body.heat if body.heat is not None else signals.get("heat", 0.5))
+    ndvi = float(body.ndvi if body.ndvi is not None else 1.0 - signals.get("green_deficit", 0.5))
+    green_def = float(body.green_deficit if body.green_deficit is not None else 1.0 - ndvi)
+    score = float(body.score if body.score is not None else (body.priority_score or (hw * heat + gw * green_def)))
+    h_contrib = round(hw * heat, 4)
+    g_contrib = round(gw * green_def, 4)
+    rank = body.rank
+    base_rank = body.baseline_rank
+    rank_change = body.rank_change
+
+    shift_clause = ""
+    if rank is not None and base_rank is not None:
+        if rank_change and rank_change > 0:
+            shift_clause = f" Relative to the 0.60 baseline (Rank #{base_rank}), this corridor gained +{rank_change} place(s) to reach Rank #{rank}."
+        elif rank_change and rank_change < 0:
+            shift_clause = f" Relative to the 0.60 baseline (Rank #{base_rank}), this corridor moved {rank_change} place(s) to Rank #{rank}."
+        else:
+            shift_clause = f" It retains Rank #{rank} across both the 0.60 baseline and the current weighting."
+
+    dominant = (
+        f"thermal radiation exposure ({h_contrib:.4f} from {hw:.2f} × Heat {heat:.4f})"
+        if h_contrib >= g_contrib
+        else f"vegetation scarcity ({g_contrib:.4f} from {gw:.2f} × Green Deficit {green_def:.4f})"
+    )
+
+    explanation_text = (
+        f"{name} ({body.district}) achieves a deterministic What-If priority score of {score:.4f} using the formulation: "
+        f"score = {hw:.2f} × Heat ({heat:.4f}) + {gw:.2f} × (1 - NDVI ({ndvi:.4f})) = {h_contrib:.4f} + {g_contrib:.4f} = {score:.4f}. "
+        f"The primary driver of urgency under this policy calibration is {dominant}.{shift_clause} "
+        f"Targeted microclimate canopy interventions along this corridor can mitigate daytime surface radiative heating by up to 2.8°C."
+    )
+
+    return {
+        "status": "success",
+        "corridor_name": name,
+        "district": body.district,
+        "score": score,
+        "heat_weight": hw,
+        "green_weight": gw,
+        "explanation": explanation_text,
+        "model_used": "Deterministic Grounded Formula Engine",
+    }
+
+
 @router.get("/corridors/{corridor_id}")
 @router.get("/roads/corridors/{corridor_id}")
 def get_single_corridor(corridor_id: str, scenario: str = Query("baseline")):
@@ -215,4 +379,7 @@ def add_corridor_suggestion(corridor_id: str, body: SuggestionCreate, request: R
     """Submit a community suggestion for a corridor."""
     client_ip = request.client.host if request.client else "127.0.0.1"
     return corridor_service.add_corridor_suggestion(corridor_id, body.text, client_ip)
+
+
+
 

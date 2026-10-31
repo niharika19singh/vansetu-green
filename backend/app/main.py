@@ -48,6 +48,8 @@ from app.routers import (
     tenders,
     corridor_cost,
     health,
+    prediction,
+    community,
 )
 
 logging.basicConfig(
@@ -133,6 +135,8 @@ app.include_router(auth.router)
 app.include_router(tenders.router)
 app.include_router(corridor_cost.router)
 app.include_router(health.router)
+app.include_router(prediction.router)
+app.include_router(community.router)
 
 
 @app.get("/", tags=["System"])

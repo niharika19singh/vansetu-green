@@ -56,6 +56,13 @@ const ScenarioLabView = React.lazy(() => import('./views/ScenarioLabView'));
 const DecisionStudioView = React.lazy(() => import('./views/DecisionStudioView'));
 const RecordsView = React.lazy(() => import('./views/RecordsView'));
 
+// Dedicated Climate Tools & Public Intake Workspaces
+const CorridorPredictionView = React.lazy(() => import('./views/CorridorPredictionView'));
+const CorridorRankingView = React.lazy(() => import('./views/CorridorRankingView'));
+const HeatwaveMappingView = React.lazy(() => import('./views/HeatwaveMappingView'));
+const CommunityInputView = React.lazy(() => import('./views/CommunityInputView'));
+const HealthDataView = React.lazy(() => import('./views/HealthDataView'));
+
 // Niharika Government Institutional Workspaces
 const GovernmentOverviewView = React.lazy(() => import('./components/GovernmentOverviewView'));
 const CorridorInventoryView = React.lazy(() => import('./components/CorridorInventoryView'));
@@ -178,6 +185,13 @@ export const ROLE_PERMISSIONS_VIEW = {
   provenance: ['normal_user', 'pro_professional', 'government_admin', 'government_engineer'],
   shade: ['normal_user', 'pro_professional', 'government_admin', 'government_engineer'],
   seasonal: ['normal_user', 'pro_professional', 'government_admin', 'government_engineer'],
+
+  // Dedicated Climate Tools & Public Observations
+  prediction: ['normal_user', 'pro_professional', 'government_admin', 'government_engineer'],
+  ranking: ['normal_user', 'pro_professional', 'government_admin', 'government_engineer'],
+  heatwave_mapping: ['normal_user', 'pro_professional', 'government_admin', 'government_engineer'],
+  community_input: ['normal_user', 'pro_professional', 'government_admin', 'government_engineer'],
+  health_data: ['normal_user', 'pro_professional', 'government_admin', 'government_engineer'],
 };
 
 export function isViewAuthorized(viewId, role) {
@@ -474,6 +488,7 @@ export default function App() {
         onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
         currentRole={currentRole}
         currentUser={currentUser}
+        onSwitchRole={handleSwitchRole}
         mekoEnabled={mekoEnabled}
         onToggleMeko={() => setMekoEnabled(!mekoEnabled)}
         isMuted={isMuted}
@@ -906,6 +921,61 @@ export default function App() {
                 <InterventionIntelligenceView
                   selectedCorridor={selectedCorridor}
                   onSelectCorridor={setSelectedCorridor}
+                />
+              )}
+
+              {/* Dedicated Climate Tools & Observations */}
+              {activeView === 'prediction' && (
+                <CorridorPredictionView
+                  corridors={corridors}
+                  districts={districts}
+                  selectedDistrict={selectedDistrict}
+                  onSelectDistrict={setSelectedDistrict}
+                  selectedCorridor={selectedCorridor}
+                  onSelectCorridor={setSelectedCorridor}
+                  onNavigate={(v) => setActiveView(v)}
+                />
+              )}
+
+              {activeView === 'ranking' && (
+                <CorridorRankingView
+                  districts={districts}
+                  selectedDistrict={selectedDistrict}
+                  onSelectDistrict={setSelectedDistrict}
+                  onSelectCorridor={setSelectedCorridor}
+                  onNavigate={(v) => setActiveView(v)}
+                  onOpenPassport={(cid) => {
+                    setPassportCorridorId(cid);
+                    setPassportOpen(true);
+                  }}
+                />
+              )}
+
+              {activeView === 'heatwave_mapping' && (
+                <HeatwaveMappingView
+                  corridors={corridors}
+                  districts={districts}
+                  selectedDistrict={selectedDistrict}
+                  onSelectDistrict={setSelectedDistrict}
+                  selectedCorridor={selectedCorridor}
+                  onSelectCorridor={setSelectedCorridor}
+                  onNavigate={(v) => setActiveView(v)}
+                />
+              )}
+
+              {activeView === 'community_input' && (
+                <CommunityInputView
+                  districts={districts}
+                  selectedDistrict={selectedDistrict}
+                  onSelectDistrict={setSelectedDistrict}
+                />
+              )}
+
+              {activeView === 'health_data' && (
+                <HealthDataView
+                  districts={districts}
+                  selectedDistrict={selectedDistrict}
+                  onSelectDistrict={setSelectedDistrict}
                 />
               )}
             </React.Suspense>

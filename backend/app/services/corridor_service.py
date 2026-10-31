@@ -30,6 +30,80 @@ from app.services.intervention_service import intervention_service
 
 logger = logging.getLogger(__name__)
 
+DELHI_DISTRICTS_CANONICAL = [
+    "Central",
+    "East",
+    "New Delhi",
+    "North",
+    "North East",
+    "North West",
+    "Shahdara",
+    "South",
+    "South East",
+    "South West",
+    "West",
+]
+
+DISTRICT_FULL_NAME_MAP = {
+    "Central": "Central Delhi",
+    "East": "East Delhi",
+    "New Delhi": "New Delhi",
+    "North": "North Delhi",
+    "North East": "North East Delhi",
+    "North West": "North West Delhi",
+    "Shahdara": "Shahdara",
+    "South": "South Delhi",
+    "South East": "South East Delhi",
+    "South West": "South West Delhi",
+    "West": "West Delhi",
+}
+
+DISTRICT_NAME_MAP = {
+    "central": "Central",
+    "east": "East",
+    "new delhi": "New Delhi",
+    "north": "North",
+    "north east": "North East",
+    "northeast": "North East",
+    "north west": "North West",
+    "northwest": "North West",
+    "shahdara": "Shahdara",
+    "south": "South",
+    "south east": "South East",
+    "southeast": "South East",
+    "south west": "South West",
+    "southwest": "South West",
+    "west": "West",
+    "central delhi": "Central",
+    "east delhi": "East",
+    "north delhi": "North",
+    "north east delhi": "North East",
+    "northeast delhi": "North East",
+    "north west delhi": "North West",
+    "northwest delhi": "North West",
+    "shahdara delhi": "Shahdara",
+    "south delhi": "South",
+    "south east delhi": "South East",
+    "southeast delhi": "South East",
+    "south west delhi": "South West",
+    "southwest delhi": "South West",
+    "west delhi": "West",
+}
+
+
+def normalize_district_name(district: Optional[str]) -> str:
+    """Normalize any district spelling or variant to one of Delhi's 11 canonical districts."""
+    if not district:
+        return "Central"
+    cleaned = district.strip().lower()
+    if cleaned in DISTRICT_NAME_MAP:
+        return DISTRICT_NAME_MAP[cleaned]
+    if cleaned.endswith(" delhi") and cleaned != "new delhi":
+        cand = cleaned[:-6].strip()
+        if cand in DISTRICT_NAME_MAP:
+            return DISTRICT_NAME_MAP[cand]
+    return district.strip()
+
 
 def _linestring_length_m(coords: List[List[float]]) -> float:
     """Calculate total great-circle length in meters for a WGS84 LineString."""
@@ -262,7 +336,9 @@ class CorridorService:
             ward_id = "ward-12" if idx == 14 else f"ward-{idx:02d}"
             name = props.get("name", f"Urban Corridor {idx}")
             highway = props.get("highway", "secondary")
-            district = props.get("district", "Central Delhi")
+            raw_district = props.get("district", "Central Delhi")
+            district = normalize_district_name(raw_district)
+            district_full = DISTRICT_FULL_NAME_MAP.get(district, district)
             is_walkable = bool(props.get("is_walkable", highway not in ("motorway", "trunk")))
             length_m = _linestring_length_m(coords)
 
@@ -362,6 +438,7 @@ class CorridorService:
                     "ward_id": ward_id,
                     "name": name,
                     "district": district,
+                    "district_full": district_full,
                     "highway": highway,
                     "is_walkable": is_walkable,
                     "length_m": length_m,
@@ -442,11 +519,14 @@ class CorridorService:
         base_corridors = self._ensure_enriched_corridors()
         scenario_id = scoring_service.resolve_scenario_id(scenario)
 
-        # Optional district filter (case-insensitive)
+        # Optional district filter (case-insensitive and normalized)
         if district and district.strip().lower() not in ("all", "all districts", ""):
-            d_target = district.strip().lower()
+            d_target = normalize_district_name(district).lower()
             filtered = [
-                c for c in base_corridors if c["district"].strip().lower() == d_target
+                c
+                for c in base_corridors
+                if normalize_district_name(c["district"]).lower() == d_target
+                or c.get("district_full", "").strip().lower() == district.strip().lower()
             ]
         else:
             filtered = list(base_corridors)
@@ -546,7 +626,7 @@ class CorridorService:
                 }
             )
 
-        districts_available = sorted(list({c["district"] for c in base_corridors}))
+        districts_available = list(DELHI_DISTRICTS_CANONICAL)
 
         return {
             "type": "FeatureCollection",
@@ -759,24 +839,31 @@ class CorridorService:
         }
 
     def get_districts_summary(self, scenario: str = "baseline") -> List[Dict[str, Any]]:
-        """Aggregate corridor metrics by NCT Delhi administrative district."""
+        """Aggregate corridor metrics by NCT Delhi administrative district across all 11 districts."""
         res = self.get_corridors(scenario=scenario)
-        by_dist: Dict[str, List[Dict[str, Any]]] = {}
+        by_dist: Dict[str, List[Dict[str, Any]]] = {d: [] for d in DELHI_DISTRICTS_CANONICAL}
         for c in res["corridors"]:
-            by_dist.setdefault(c["district"], []).append(c)
+            canonical = normalize_district_name(c["district"])
+            if canonical in by_dist:
+                by_dist[canonical].append(c)
 
         summaries: List[Dict[str, Any]] = []
-        for dist_name, items in sorted(by_dist.items()):
+        for dist_name in DELHI_DISTRICTS_CANONICAL:
+            items = by_dist.get(dist_name, [])
+            if not items:
+                continue
             scores = [x["priority_score"] for x in items if x["priority_score"] is not None]
             lsts = [x["lst_mean"] for x in items if x["lst_mean"] is not None]
             ndvis = [x["ndvi_mean"] for x in items if x["ndvi_mean"] is not None]
             aqis = [x["aqi"] for x in items if x["aqi"] is not None]
             total_len_km = round(sum(x["length_km"] for x in items), 2)
             vuln_info = DISTRICT_VULNERABILITY_INDEX.get(dist_name, {"index": 0.65, "density_tier": "Moderate"})
+            dist_full = DISTRICT_FULL_NAME_MAP.get(dist_name, dist_name)
 
             summaries.append(
                 {
                     "district": dist_name,
+                    "district_full": dist_full,
                     "corridor_count": len(items),
                     "total_corridor_length_km": total_len_km,
                     "mean_priority_score": round(sum(scores) / len(scores), 4) if scores else None,
@@ -792,6 +879,54 @@ class CorridorService:
 
         summaries.sort(key=lambda d: -(d["mean_priority_score"] or 0.0))
         return summaries
+
+    def get_district_audit(self) -> Dict[str, Any]:
+        """
+        Audit of all 11 Delhi administrative districts:
+        Returns corridor coverage, completeness, and analytics eligibility.
+        """
+        res = self.get_corridors(scenario="baseline")
+        corridors = res["corridors"]
+        by_dist: Dict[str, List[Dict[str, Any]]] = {d: [] for d in DELHI_DISTRICTS_CANONICAL}
+        for c in corridors:
+            norm_d = normalize_district_name(c["district"])
+            if norm_d in by_dist:
+                by_dist[norm_d].append(c)
+
+        audit_list = []
+        for d_canon in DELHI_DISTRICTS_CANONICAL:
+            items = by_dist.get(d_canon, [])
+            d_full = DISTRICT_FULL_NAME_MAP.get(d_canon, d_canon)
+            lst_vals = [c["lst_mean"] for c in items if c.get("lst_mean") is not None]
+            ndvi_vals = [c["ndvi_mean"] for c in items if c.get("ndvi_mean") is not None]
+            scores = [c["priority_score"] for c in items if c.get("priority_score") is not None]
+            walkable_count = sum(1 for c in items if c.get("is_walkable"))
+            vuln_info = DISTRICT_VULNERABILITY_INDEX.get(d_canon, {"index": 0.65, "density_tier": "Moderate"})
+
+            audit_list.append(
+                {
+                    "district": d_canon,
+                    "district_full": d_full,
+                    "corridor_count": len(items),
+                    "total_length_km": round(sum(c.get("length_km", 0.0) for c in items), 2),
+                    "mean_priority_score": round(sum(scores) / len(scores), 4) if scores else None,
+                    "mean_lst_celsius": round(sum(lst_vals) / len(lst_vals), 2) if lst_vals else None,
+                    "mean_ndvi": round(sum(ndvi_vals) / len(ndvi_vals), 4) if ndvi_vals else None,
+                    "walkable_count": walkable_count,
+                    "vulnerability_index": vuln_info["index"],
+                    "density_tier": vuln_info["density_tier"],
+                    "ranking_eligible": len(items) > 0,
+                    "prediction_eligible": len(items) > 0,
+                    "data_completeness_pct": 100.0 if items else 0.0,
+                }
+            )
+
+        return {
+            "total_districts": len(DELHI_DISTRICTS_CANONICAL),
+            "covered_districts": sum(1 for a in audit_list if a["corridor_count"] > 0),
+            "total_corridors": len(corridors),
+            "districts": audit_list,
+        }
 
 
 corridor_service = CorridorService()
