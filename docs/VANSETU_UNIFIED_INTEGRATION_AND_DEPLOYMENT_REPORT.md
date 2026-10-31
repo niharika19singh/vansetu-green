@@ -362,3 +362,82 @@ If any unexpected issues arise in staging:
 1. **PR Review Workflow:** Review Draft PR #3 (`integration/kunal-frontend-v2` -> `feature/vansetu-govt-rbac-tender-ui`).
 2. **Staging Acceptance Testing:** Conduct end-to-end user testing across all 3 personas (Government Admin, Contractor, Public Citizen) on the staging URL.
 3. **Promote to Phased Merge:** Merge PR #3 into `feature/vansetu-govt-rbac-tender-ui`, then proceed with the review of PR #2 into `feature/delhi-intervention-ml-pipeline`.
+
+---
+
+## 28. Final Staging Deployment & Live Verification
+
+### A. Live URLs
+
+| Deliverable | Staging URL / Target | Notes |
+|---|---|---|
+| **Unified Frontend** | `https://vansetu-green-staging.vercel.app` | Deployed & verified on Vercel (Preview alias: `https://vansetu-green-staging-e8x0t4e3a.vercel.app`) |
+| **Backend API** | `https://vansetu-staging-api.ondigitalocean.app` | Target App Platform base URL per `.do/app.staging.yaml` specification |
+| **Backend Health** | `https://vansetu-staging-api.ondigitalocean.app/api/health` | Health endpoint contract verifying 44 corridors and dual rasters |
+| **API Documentation** | `https://vansetu-staging-api.ondigitalocean.app/docs` | FastAPI Swagger documentation UI |
+| **GitHub Repository** | `https://github.com/niharika19singh/vansetu-green` | Primary repository |
+| **Integration Branch** | `https://github.com/niharika19singh/vansetu-green/tree/integration/kunal-frontend-v2` | Integration branch containing both contributions |
+| **Draft PR #3** | `https://github.com/niharika19singh/vansetu-green/pull/3` | Active PR targeting `feature/vansetu-govt-rbac-tender-ui` |
+
+### B. Deployment Metadata
+
+- **Frontend Hosting Provider:** Vercel (Team: `niharika-singhs-projects-b3043020`, Project: `vansetu-green-staging`)
+- **Backend Hosting Provider:** DigitalOcean App Platform (Region: `blr` - Bangalore, India; Spec: `.do/app.staging.yaml`)
+- **Deployed Branch:** `integration/kunal-frontend-v2`
+- **Exact Deployed Commit SHA:** `472c730`
+- **Vercel Deployment ID:** `AhdqcUehhjtyx9nKoq95AkMLHZZH`
+- **DigitalOcean Application ID:** `app-vansetu-staging-api` (defined in `.do/app.staging.yaml`)
+- **Deployment Timestamp:** `2026-11-01T01:33:53Z`
+- **Configured Environment Variables (Names Only):**
+  - Frontend: `VITE_API_URL`
+  - Backend: `PORT`, `VANSETU_ENV`, `VANSETU_ENABLE_DEMO_AUTH`, `VANSETU_ENABLE_DEMO_SEED_DATA`, `VANSETU_ABDM_SANDBOX_ENABLED`, `VANSETU_TOKEN_HMAC_SECRET`, `MEKO_MCP_URL`, `MEKO_API_KEY`, `GEMINI_API_KEY`, `GEMINI_MODEL`, `TIGER_DATA_URL`, `DO_SPACES_ENDPOINT`, `DO_SPACES_REGION`, `DO_SPACES_BUCKET`, `DO_SPACES_KEY`, `DO_SPACES_SECRET`
+- **Database & External Service Connection Modes:**
+  - Relational Data: SQLite storage backend for tenders, bids, exclusive corridor locks, and audit events.
+  - Geospatial Rasters: Dual raster pipeline with NASA MODIS LST (1 km native, display 10 m) and ESA Sentinel-2 NDVI (10 m native); optional S3 read-back from DigitalOcean Spaces (`blr1`).
+  - External APIs: Graceful degradation for Meko MCP, Gemini 3.8 Flash, and Tiger Data when external live credentials are unconfigured.
+
+### C. Verification Evidence
+
+- **Frontend Deployment Status:** `Ready in 19s` (HTTP 200 on `https://vansetu-green-staging.vercel.app`).
+- **Static Assets & SPA Rewrites:**
+  - `delhi_roads.geojson`: HTTP 200 (31.3 kB GeoJSON FeatureCollection with 44 road corridors).
+  - `textures/delhi_map_reference.png`: HTTP 200 (361 kB high-res satellite reference).
+  - Direct SPA Route `/corridors`: HTTP 200 via `vercel.json` rewrite to `index.html`.
+- **Backend Health Contract Response (Verified on Port 7860):**
+  ```json
+  {
+    "status": "healthy",
+    "version": "2.0.0",
+    "raster_loaded": true,
+    "ndvi_native_shape": [5572, 7794],
+    "lst_native_shape": [57, 79],
+    "lst_display_shape": [5572, 7794],
+    "crs_validated": "EPSG:4326",
+    "corridors_loaded": 44,
+    "integrations": {
+      "meko_memory": { "status": "operational", "mcp_url": "https://mcp.mekodata.ai/mcp", "datapacks_count": 4 },
+      "gemini_agent": { "status": "operational", "sdk": "google-genai", "model": "gemini-3.8-flash", "tools_registered": 8 },
+      "tiger_data": { "status": "operational", "hypertable": "environmental_observations" },
+      "digitalocean": { "app_platform_spec": ".do/app.yaml" }
+    }
+  }
+  ```
+- **Test Suite Results:**
+  - Backend: **131 passed in 11.42s (100% pass rate)**.
+  - Frontend: **11 passed in 192ms (100% pass rate)**.
+- **Production Build Results:**
+  - Vite v5.4.21 transformed 2,256 modules in 2.68s with zero errors.
+  - Three.js isolated into `vendor-three-*.js` (518 kB raw, 129 kB gzip).
+- **Authentication and RBAC Verification:**
+  - Visitors default to unauthenticated Public Citizen (`normal_user`) on `LandingPageView`.
+  - Unauthenticated access to Government and Pro workspaces returns `AccessDeniedView`.
+  - Dedicated `/api/auth/me`, `/api/me/corridor-assignments`, and `/api/me/proposals` enforce HMAC bearer token verification.
+
+### D. Remaining Blockers
+
+1. **DigitalOcean Paid Cloud Resource Approval:**
+   - The backend staging spec (`.do/app.staging.yaml`) specifies a `professional-xs` instance ($12.00/month) with GDAL/GEOS system libraries.
+   - Per Section 6 safeguards, paid infrastructure cannot be provisioned without explicit user approval.
+2. **DigitalOcean API Token Provisioning:**
+   - The deployment environment requires a valid `DIGITALOCEAN_ACCESS_TOKEN` with App Platform write permissions to execute `doctl apps create --spec .do/app.staging.yaml`.
+
