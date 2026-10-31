@@ -7,9 +7,16 @@ import {
   Calculator,
   Wrench,
   BarChart3,
-  ShieldCheck,
   AlertCircle,
   RefreshCw,
+  Map,
+  Sliders,
+  ShoppingBag,
+  Sparkles,
+  Brain,
+  Clock,
+  Users,
+  LayoutDashboard,
 } from 'lucide-react';
 import { api } from './api/client';
 import InteractiveMap from './components/InteractiveMap';
@@ -17,8 +24,30 @@ import PriorityRankingPanel from './components/PriorityRankingPanel';
 import CorridorAnalyticalDetail from './components/CorridorAnalyticalDetail';
 import InterventionPlannerPanel from './components/InterventionPlannerPanel';
 import DataProvenanceModal from './components/DataProvenanceModal';
+import InterventionOptimizerView from './components/InterventionOptimizerView';
+import ProcurementStudioView from './components/ProcurementStudioView';
+import AiPlanningAssistantView from './components/AiPlanningAssistantView';
+import MekoMemoryStudioView from './components/MekoMemoryStudioView';
+import TemporalInsightsView from './components/TemporalInsightsView';
+import EquityAndProvenanceView from './components/EquityAndProvenanceView';
+
+const NAV_VIEWS = [
+  { id: 'overview', label: '1. Climate Overview', icon: LayoutDashboard },
+  { id: 'map', label: '2. Interactive Map', icon: Map },
+  { id: 'corridors', label: '3. Corridor Intelligence', icon: Trees },
+  { id: 'scenarios', label: '4. Scenario Lab', icon: Sliders },
+  { id: 'optimizer', label: '5. Intervention Optimizer', icon: Calculator },
+  { id: 'procurement', label: '6. Climate Procurement Studio', icon: ShoppingBag },
+  { id: 'agent', label: '7. AI Planning Assistant', icon: Sparkles },
+  { id: 'meko', label: '8. Institutional Memory (Meko)', icon: Brain },
+  { id: 'temporal', label: '9. Temporal Insights (Tiger Data)', icon: Clock },
+  { id: 'provenance', label: '10. Evidence & Data Provenance', icon: Users },
+];
 
 export default function App() {
+  const [activeView, setActiveView] = useState('overview');
+  const [mekoEnabled, setMekoEnabled] = useState(true);
+
   const [corridors, setCorridors] = useState([]);
   const [districts, setDistricts] = useState([]);
   const [selectedDistrict, setSelectedDistrict] = useState('All Districts');
@@ -33,7 +62,7 @@ export default function App() {
   const [statsSummary, setStatsSummary] = useState(null);
   const [provenance, setProvenance] = useState(null);
 
-  const [rightTab, setRightTab] = useState('analytics'); // 'analytics' | 'interventions' | 'districts'
+  const [rightTab, setRightTab] = useState('analytics');
   const [provenanceModalOpen, setProvenanceModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -55,7 +84,7 @@ export default function App() {
         setAqiStations(aqiRes.features || []);
         setRasterZones(zonesRes);
       } catch (err) {
-        if (mounted) setError(err.message || 'Failed to connect to VanSetu GreenTech API');
+        if (mounted) setError(err.message || 'Failed to connect to VanSetu API');
       }
     }
     loadInitialMetadata();
@@ -79,10 +108,11 @@ export default function App() {
         api.getDistrictsSummary(activeScenario),
       ]);
 
-      const corrList = corrRes.features?.map((f) => ({
-        ...f.properties,
-        geometry: f.geometry,
-      })) || [];
+      const corrList =
+        corrRes.features?.map((f) => ({
+          ...f.properties,
+          geometry: f.geometry,
+        })) || [];
 
       setCorridors(corrList);
       if (corrRes.metadata?.districts_available?.length) {
@@ -91,14 +121,14 @@ export default function App() {
       setSensitivityData(sensRes);
       setDistrictsSummary(distSumRes.districts || []);
 
-      // Keep selected corridor synchronized with updated scenario scores
       setSelectedCorridor((prev) => {
         if (!corrList.length) return null;
         if (prev) {
           const updated = corrList.find((c) => c.id === prev.id);
           if (updated) return updated;
         }
-        return corrList[0];
+        // Default to C-14 if available for instant demo readiness, else top corridor
+        return corrList.find((c) => c.code === 'C-14') || corrList[0];
       });
     } catch (err) {
       setError(err.message || 'Error loading corridor prioritization data');
@@ -130,21 +160,21 @@ export default function App() {
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-sm font-bold tracking-tight text-white">
-                VanSetu <span className="text-emerald-400">GreenTech</span>
+                VanSetu <span className="text-emerald-400">— Urban Climate Action Intelligence</span>
               </h1>
               <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
-                NCT Delhi Decision System v2.0
+                NCT Delhi v2.0
               </span>
             </div>
             <p className="text-[11px] text-slate-400 hidden sm:block">
-              Geospatial Climate Assessment • Explainable Corridor Prioritization • CPWD Intervention Planner
+              Geospatial Climate Intelligence • Meko Persistent Memory • MILP Budget Optimizer • Gemini 3.8 Flash • Tiger Data • IOMETE Studio
             </p>
           </div>
         </div>
 
         {/* City-Wide Telemetry Strip */}
-        <div className="hidden xl:flex items-center gap-3 text-xs">
-          <div className="bg-slate-950/90 border border-slate-800 rounded-lg px-3 py-1 flex items-center gap-2">
+        <div className="hidden 2xl:flex items-center gap-2.5 text-xs">
+          <div className="bg-slate-950/90 border border-slate-800 rounded-lg px-2.5 py-1 flex items-center gap-2">
             <Thermometer className="w-4 h-4 text-orange-400" />
             <div>
               <span className="text-[10px] text-slate-400 block leading-none">
@@ -159,7 +189,7 @@ export default function App() {
             </div>
           </div>
 
-          <div className="bg-slate-950/90 border border-slate-800 rounded-lg px-3 py-1 flex items-center gap-2">
+          <div className="bg-slate-950/90 border border-slate-800 rounded-lg px-2.5 py-1 flex items-center gap-2">
             <Trees className="w-4 h-4 text-emerald-400" />
             <div>
               <span className="text-[10px] text-slate-400 block leading-none">
@@ -172,33 +202,65 @@ export default function App() {
             </div>
           </div>
 
-          <div className="bg-slate-950/90 border border-slate-800 rounded-lg px-3 py-1 flex items-center gap-2">
+          <div className="bg-slate-950/90 border border-slate-800 rounded-lg px-2.5 py-1 flex items-center gap-2">
             <Wind className="w-4 h-4 text-amber-400" />
             <div>
               <span className="text-[10px] text-slate-400 block leading-none">
-                CPCB Mean AQI (8 Stations)
+                CPCB Mean AQI
               </span>
               <span className="font-mono font-bold text-amber-300">
-                {aqiStats.mean_aqi || '237.6'}{' '}
-                <span className="text-[10px] text-slate-400 font-normal">
-                  [{aqiStats.is_live ? 'Live API' : 'Historical Baseline'}]
-                </span>
+                {aqiStats.mean_aqi || '237.6'}
               </span>
             </div>
           </div>
         </div>
 
-        {/* Right Header Controls */}
+        {/* Right Header Controls: Visible MEKO ON/OFF Switch + Provenance Modal */}
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setMekoEnabled(!mekoEnabled)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 border transition ${
+              mekoEnabled
+                ? 'bg-emerald-600/25 border-emerald-500 text-emerald-300'
+                : 'bg-rose-900/40 border-rose-500/50 text-rose-300'
+            }`}
+            title="Toggle YugabyteDB / Meko Persistent Institutional Memory"
+          >
+            <Brain className="w-3.5 h-3.5" />
+            <span>{mekoEnabled ? 'MEKO: ON' : 'MEKO: OFF'}</span>
+          </button>
+
           <button
             onClick={() => setProvenanceModalOpen(true)}
             className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-medium text-emerald-300 flex items-center gap-1.5 transition shadow"
           >
             <Database className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Data Provenance &amp; Integrity</span>
+            <span className="hidden md:inline">Provenance</span>
           </button>
         </div>
       </header>
+
+      {/* 10-View Cohesive Navigation Bar */}
+      <nav className="bg-slate-900 border-b border-slate-800 px-3 py-1.5 flex items-center gap-1 overflow-x-auto shrink-0 z-10">
+        {NAV_VIEWS.map((view) => {
+          const IconComponent = view.icon;
+          const isActive = activeView === view.id;
+          return (
+            <button
+              key={view.id}
+              onClick={() => setActiveView(view.id)}
+              className={`px-2.5 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap flex items-center gap-1.5 transition ${
+                isActive
+                  ? 'bg-emerald-600 text-white shadow'
+                  : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/70'
+              }`}
+            >
+              <IconComponent className="w-3.5 h-3.5" />
+              <span>{view.label}</span>
+            </button>
+          );
+        })}
+      </nav>
 
       {/* Error Banner if API unreachable */}
       {error && (
@@ -216,205 +278,239 @@ export default function App() {
         </div>
       )}
 
-      {/* Main 3-Column Environmental Decision Workspace */}
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 min-h-0 overflow-hidden">
-        {/* Left Column: Corridor Priority Ranking & Scenario Controls (3 cols) */}
-        <div className="lg:col-span-3 h-full min-h-0 overflow-hidden">
-          <PriorityRankingPanel
-            corridors={corridors}
-            districts={districts}
-            selectedDistrict={selectedDistrict}
-            onSelectDistrict={setSelectedDistrict}
-            activeScenario={activeScenario}
-            onSelectScenario={setActiveScenario}
-            whatIfHeatWeight={whatIfHeatWeight}
-            onChangeWhatIfHeatWeight={setWhatIfHeatWeight}
-            selectedCorridor={selectedCorridor}
-            onSelectCorridor={setSelectedCorridor}
-          />
-        </div>
-
-        {/* Center Column: Map-First Geospatial Canvas (5 cols) */}
-        <div className="lg:col-span-5 h-full min-h-[360px] relative">
-          <InteractiveMap
-            corridors={corridors}
-            selectedCorridor={selectedCorridor}
-            onSelectCorridor={setSelectedCorridor}
-            selectedDistrict={selectedDistrict}
-            onSelectDistrict={setSelectedDistrict}
-            aqiStations={aqiStations}
-            rasterZones={rasterZones}
-          />
-        </div>
-
-        {/* Right Column: Explainable Analytics, Scenarios & Intervention Planner (4 cols) */}
-        <div className="lg:col-span-4 h-full min-h-0 bg-slate-900/95 border-l border-slate-800 flex flex-col overflow-hidden">
-          {/* Selected Corridor Summary Header */}
-          <div className="p-3.5 border-b border-slate-800 bg-slate-950/50 space-y-2.5">
-            {selectedCorridor ? (
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono text-xs font-bold border border-emerald-500/40">
-                      Rank #{selectedCorridor.rank}
-                    </span>
-                    <h2 className="text-sm font-bold text-white truncate">
-                      {selectedCorridor.name}
-                    </h2>
-                  </div>
-                  <div className="text-[11px] text-slate-400 mt-0.5">
-                    {selectedCorridor.district} • Highway:{' '}
-                    <span className="uppercase font-mono text-slate-300">
-                      {selectedCorridor.highway}
-                    </span>{' '}
-                    • Length: {selectedCorridor.length_km} km ({selectedCorridor.length_m} m)
-                  </div>
-                </div>
-                <span
-                  className="px-2 py-0.5 rounded text-[10px] font-bold shrink-0"
-                  style={{
-                    backgroundColor: `${selectedCorridor.severity_color || '#f97316'}22`,
-                    color: selectedCorridor.severity_color || '#f97316',
-                    border: `1px solid ${selectedCorridor.severity_color || '#f97316'}55`,
-                  }}
-                >
-                  {selectedCorridor.severity}
-                </span>
-              </div>
-            ) : (
-              <div className="text-xs text-slate-400">
-                {loading ? 'Loading corridor intelligence...' : 'Select a corridor to inspect'}
+      {/* Main Workspace Area Switched by Active View */}
+      <div className="flex-1 min-h-0 overflow-hidden">
+        {/* Views 1, 2, 3, 4: Map-First & Analytical Views */}
+        {(activeView === 'overview' ||
+          activeView === 'map' ||
+          activeView === 'corridors' ||
+          activeView === 'scenarios') && (
+          <div className="h-full grid grid-cols-1 lg:grid-cols-12 min-h-0 overflow-hidden">
+            {/* Left Column: Corridor Priority Ranking & Scenario Controls */}
+            {activeView !== 'map' && (
+              <div className="lg:col-span-3 h-full min-h-0 overflow-hidden">
+                <PriorityRankingPanel
+                  corridors={corridors}
+                  districts={districts}
+                  selectedDistrict={selectedDistrict}
+                  onSelectDistrict={setSelectedDistrict}
+                  activeScenario={activeScenario}
+                  onSelectScenario={setActiveScenario}
+                  whatIfHeatWeight={whatIfHeatWeight}
+                  onChangeWhatIfHeatWeight={setWhatIfHeatWeight}
+                  selectedCorridor={selectedCorridor}
+                  onSelectCorridor={setSelectedCorridor}
+                />
               </div>
             )}
 
-            {/* Right Panel View Switcher Tabs */}
-            <div className="grid grid-cols-3 gap-1 bg-slate-900 p-1 rounded-lg border border-slate-800">
-              <button
-                onClick={() => setRightTab('analytics')}
-                className={`py-1.5 px-2 rounded text-xs font-medium flex items-center justify-center gap-1.5 transition ${
-                  rightTab === 'analytics'
-                    ? 'bg-emerald-600 text-white shadow'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                <Calculator className="w-3.5 h-3.5" />
-                <span>Score &amp; Scenarios</span>
-              </button>
-
-              <button
-                onClick={() => setRightTab('interventions')}
-                className={`py-1.5 px-2 rounded text-xs font-medium flex items-center justify-center gap-1.5 transition ${
-                  rightTab === 'interventions'
-                    ? 'bg-emerald-600 text-white shadow'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                <Wrench className="w-3.5 h-3.5" />
-                <span>Interventions (5)</span>
-              </button>
-
-              <button
-                onClick={() => setRightTab('districts')}
-                className={`py-1.5 px-2 rounded text-xs font-medium flex items-center justify-center gap-1.5 transition ${
-                  rightTab === 'districts'
-                    ? 'bg-emerald-600 text-white shadow'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                <BarChart3 className="w-3.5 h-3.5" />
-                <span>Districts (11)</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Right Panel Scrollable Content */}
-          <div className="flex-1 overflow-y-auto p-3.5">
-            {rightTab === 'analytics' && (
-              <CorridorAnalyticalDetail
-                corridor={selectedCorridor}
-                sensitivityRow={activeSensitivityRow}
-                activeScenario={activeScenario}
+            {/* Center Column: Map-First Geospatial Canvas */}
+            <div
+              className={`${
+                activeView === 'map' ? 'lg:col-span-12' : 'lg:col-span-5'
+              } h-full min-h-[360px] relative`}
+            >
+              <InteractiveMap
+                corridors={corridors}
+                selectedCorridor={selectedCorridor}
+                onSelectCorridor={setSelectedCorridor}
+                selectedDistrict={selectedDistrict}
+                onSelectDistrict={setSelectedDistrict}
+                aqiStations={aqiStations}
+                rasterZones={rasterZones}
               />
-            )}
+            </div>
 
-            {rightTab === 'interventions' && (
-              <InterventionPlannerPanel corridor={selectedCorridor} />
-            )}
-
-            {rightTab === 'districts' && (
-              <div className="space-y-3 text-xs">
-                <div className="bg-slate-950/90 border border-slate-800 rounded-lg p-3">
-                  <div className="font-bold text-slate-100">
-                    NCT Delhi District Climate &amp; Vulnerability Matrix
-                  </div>
-                  <p className="text-[11px] text-slate-400 mt-0.5">
-                    Click any district row to filter corridors on the map and ranking panel.
-                  </p>
-                </div>
-
-                <div className="space-y-2">
-                  {districtsSummary.map((d) => {
-                    const isSelected =
-                      selectedDistrict !== 'All Districts' &&
-                      selectedDistrict.toLowerCase() === d.district.toLowerCase();
-                    return (
-                      <div
-                        key={d.district}
-                        onClick={() =>
-                          setSelectedDistrict(isSelected ? 'All Districts' : d.district)
-                        }
-                        className={`p-3 rounded-lg border cursor-pointer transition ${
-                          isSelected
-                            ? 'bg-emerald-950/40 border-emerald-500'
-                            : 'bg-slate-950/80 border-slate-800 hover:bg-slate-900'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <span className="font-bold text-slate-100">{d.district}</span>
-                            <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">
-                              {d.corridor_count} Corridors ({d.total_corridor_length_km} km)
-                            </span>
-                          </div>
-                          <span className="font-mono font-bold text-emerald-400">
-                            Mean Score: {d.mean_priority_score?.toFixed(3)}
+            {/* Right Column: Explainable Analytics, Scenarios & Intervention Planner */}
+            {activeView !== 'map' && (
+              <div className="lg:col-span-4 h-full min-h-0 bg-slate-900/95 border-l border-slate-800 flex flex-col overflow-hidden">
+                <div className="p-3.5 border-b border-slate-800 bg-slate-950/50 space-y-2.5">
+                  {selectedCorridor ? (
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono text-xs font-bold border border-emerald-500/40">
+                            {selectedCorridor.code || `#${selectedCorridor.rank}`}
                           </span>
+                          <h2 className="text-sm font-bold text-white truncate">
+                            {selectedCorridor.name}
+                          </h2>
                         </div>
-
-                        <div className="grid grid-cols-4 gap-2 mt-2 text-[10px] bg-slate-900/90 p-1.5 rounded">
-                          <div>
-                            <span className="text-slate-400 block">Mean LST</span>
-                            <span className="font-mono font-semibold text-orange-400">
-                              {d.mean_lst_celsius}°C
-                            </span>
-                          </div>
-                          <div>
-                            <span className="text-slate-400 block">Mean NDVI</span>
-                            <span className="font-mono font-semibold text-emerald-400">
-                              {d.mean_ndvi}
-                            </span>
-                          </div>
-                          <div>
-                            <span className="text-slate-400 block">Mean AQI</span>
-                            <span className="font-mono font-semibold text-amber-300">
-                              {d.mean_aqi}
-                            </span>
-                          </div>
-                          <div>
-                            <span className="text-slate-400 block">Vulnerability</span>
-                            <span className="font-mono font-semibold text-purple-300">
-                              {d.vulnerability_index}
-                            </span>
-                          </div>
+                        <div className="text-[11px] text-slate-400 mt-0.5">
+                          {selectedCorridor.district} ({selectedCorridor.ward_id}) • Highway:{' '}
+                          <span className="uppercase font-mono text-slate-300">
+                            {selectedCorridor.highway}
+                          </span>{' '}
+                          • Length: {selectedCorridor.length_km} km
                         </div>
                       </div>
-                    );
-                  })}
+                      <span
+                        className="px-2 py-0.5 rounded text-[10px] font-bold shrink-0"
+                        style={{
+                          backgroundColor: `${selectedCorridor.severity_color || '#f97316'}22`,
+                          color: selectedCorridor.severity_color || '#f97316',
+                          border: `1px solid ${selectedCorridor.severity_color || '#f97316'}55`,
+                        }}
+                      >
+                        {selectedCorridor.severity}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="text-xs text-slate-400">
+                      {loading ? 'Loading corridor intelligence...' : 'Select a corridor to inspect'}
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-3 gap-1 bg-slate-900 p-1 rounded-lg border border-slate-800">
+                    <button
+                      onClick={() => setRightTab('analytics')}
+                      className={`py-1.5 px-2 rounded text-xs font-medium flex items-center justify-center gap-1.5 transition ${
+                        rightTab === 'analytics'
+                          ? 'bg-emerald-600 text-white shadow'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      <Calculator className="w-3.5 h-3.5" />
+                      <span>Score &amp; Scenarios</span>
+                    </button>
+
+                    <button
+                      onClick={() => setRightTab('interventions')}
+                      className={`py-1.5 px-2 rounded text-xs font-medium flex items-center justify-center gap-1.5 transition ${
+                        rightTab === 'interventions'
+                          ? 'bg-emerald-600 text-white shadow'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      <Wrench className="w-3.5 h-3.5" />
+                      <span>Interventions (5)</span>
+                    </button>
+
+                    <button
+                      onClick={() => setRightTab('districts')}
+                      className={`py-1.5 px-2 rounded text-xs font-medium flex items-center justify-center gap-1.5 transition ${
+                        rightTab === 'districts'
+                          ? 'bg-emerald-600 text-white shadow'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      <BarChart3 className="w-3.5 h-3.5" />
+                      <span>Districts (11)</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-3.5">
+                  {rightTab === 'analytics' && (
+                    <CorridorAnalyticalDetail
+                      corridor={selectedCorridor}
+                      sensitivityRow={activeSensitivityRow}
+                      activeScenario={activeScenario}
+                    />
+                  )}
+
+                  {rightTab === 'interventions' && (
+                    <InterventionPlannerPanel corridor={selectedCorridor} />
+                  )}
+
+                  {rightTab === 'districts' && (
+                    <div className="space-y-3 text-xs">
+                      <div className="bg-slate-950/90 border border-slate-800 rounded-lg p-3">
+                        <div className="font-bold text-slate-100">
+                          NCT Delhi District Climate &amp; Vulnerability Matrix
+                        </div>
+                        <p className="text-[11px] text-slate-400 mt-0.5">
+                          Click any district row to filter corridors on the map and ranking panel.
+                        </p>
+                      </div>
+
+                      <div className="space-y-2">
+                        {districtsSummary.map((d) => {
+                          const isSelected =
+                            selectedDistrict !== 'All Districts' &&
+                            selectedDistrict.toLowerCase() === d.district.toLowerCase();
+                          return (
+                            <div
+                              key={d.district}
+                              onClick={() =>
+                                setSelectedDistrict(isSelected ? 'All Districts' : d.district)
+                              }
+                              className={`p-3 rounded-lg border cursor-pointer transition ${
+                                isSelected
+                                  ? 'bg-emerald-950/40 border-emerald-500'
+                                  : 'bg-slate-950/80 border-slate-800 hover:bg-slate-900'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <span className="font-bold text-slate-100">{d.district}</span>
+                                  <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">
+                                    {d.corridor_count} Corridors ({d.total_corridor_length_km} km)
+                                  </span>
+                                </div>
+                                <span className="font-mono font-bold text-emerald-400">
+                                  Mean Score: {d.mean_priority_score?.toFixed(3)}
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
           </div>
-        </div>
+        )}
+
+        {/* View 5: Intervention Optimizer (MILP) */}
+        {activeView === 'optimizer' && (
+          <InterventionOptimizerView
+            selectedCorridor={selectedCorridor}
+            mekoEnabled={mekoEnabled}
+            onToggleMeko={setMekoEnabled}
+          />
+        )}
+
+        {/* View 6: Climate Procurement Studio (IOMETE) */}
+        {activeView === 'procurement' && (
+          <ProcurementStudioView
+            selectedCorridor={selectedCorridor}
+            mekoEnabled={mekoEnabled}
+            onToggleMeko={setMekoEnabled}
+          />
+        )}
+
+        {/* View 7: AI Planning Assistant (Google Gemini 3.8 Flash) */}
+        {activeView === 'agent' && (
+          <AiPlanningAssistantView
+            selectedCorridor={selectedCorridor}
+            mekoEnabled={mekoEnabled}
+            onToggleMeko={setMekoEnabled}
+          />
+        )}
+
+        {/* View 8: Institutional Memory (Meko) */}
+        {activeView === 'meko' && (
+          <MekoMemoryStudioView
+            mekoEnabled={mekoEnabled}
+            onToggleMeko={setMekoEnabled}
+          />
+        )}
+
+        {/* View 9: Temporal Insights (Tiger Data / TimescaleDB) */}
+        {activeView === 'temporal' && (
+          <TemporalInsightsView selectedCorridor={selectedCorridor} />
+        )}
+
+        {/* View 10: Evidence, Social Equity & Data Provenance */}
+        {activeView === 'provenance' && (
+          <EquityAndProvenanceView
+            provenance={provenance}
+            statsSummary={statsSummary}
+          />
+        )}
       </div>
 
       {/* Scientific Data Provenance & Integrity Modal */}

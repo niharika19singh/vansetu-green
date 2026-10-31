@@ -93,6 +93,27 @@ class RasterService:
         self._loaded = True
         logger.info("Geospatial raster pipeline initialized and verified.")
 
+    def _ensure_asset_from_do_spaces(self, path: Path) -> None:
+        """If local raster is missing and DigitalOcean Spaces is configured, fetch from DO Spaces."""
+        if path.exists():
+            return
+        if not settings.do_spaces_endpoint or not settings.do_spaces_bucket:
+            return
+        try:
+            import httpx
+
+            endpoint = settings.do_spaces_endpoint.rstrip("/")
+            url = f"{endpoint}/{settings.do_spaces_bucket}/rasters/{path.name}"
+            logger.info("Fetching geospatial raster %s from DigitalOcean Spaces (%s)...", path.name, url)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with httpx.Client(timeout=30.0) as client:
+                resp = client.get(url)
+                if resp.status_code == 200 and len(resp.content) > 1024:
+                    path.write_bytes(resp.content)
+                    logger.info("Downloaded %s (%d bytes) from DigitalOcean Spaces.", path.name, len(resp.content))
+        except Exception as exc:
+            logger.warning("DigitalOcean Spaces fallback download failed for %s: %s", path.name, exc)
+
     def _load_geotiff(
         self,
         path: Path,
@@ -100,6 +121,8 @@ class RasterService:
         valid_max: float = 1e6,
     ) -> Tuple[np.ndarray, dict, Tuple[float, float, float, float], rasterio.Affine, CRS]:
         """Load a GeoTIFF, validate its CRS, and convert nodata/out-of-range pixels to NaN."""
+        if not path.exists():
+            self._ensure_asset_from_do_spaces(path)
         if not path.exists():
             raise FileNotFoundError(f"Geospatial raster file not found: {path}")
 

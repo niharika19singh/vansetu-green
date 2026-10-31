@@ -20,6 +20,8 @@ ENV/
 .coverage
 htmlcov/
 backend/cache/
+backend/data/*.sqlite
+backend/data/*.sqlite-*
 
 # Node / Frontend
 node_modules/

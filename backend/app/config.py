@@ -30,6 +30,30 @@ class Settings(BaseSettings):
     openaq_api_key: str = ""
     waqi_token: str = ""
 
+    # YugabyteDB / Meko MCP Context Layer (Track A — Open Project)
+    meko_mcp_url: str = "https://mcp.mekodata.ai/mcp"
+    meko_api_key: str = ""
+    meko_build_datapack_id: str = ""
+    meko_project_datapack_id: str = ""
+    meko_knowledge_datapack_id: str = ""
+    meko_decisions_datapack_id: str = ""
+
+    # MLH: Google Gemini API (Function-Calling Climate Agent)
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-3.8-flash"
+
+    # MLH: Tiger Data / TimescaleDB (Environmental Time-Series Layer)
+    tiger_data_url: str = ""
+    timescale_service_url: str = ""
+    tiger_data_hypertable: str = "environmental_observations"
+
+    # MLH: DigitalOcean Spaces (Durable S3-Compatible Geospatial Storage)
+    do_spaces_endpoint: str = ""
+    do_spaces_region: str = "blr1"
+    do_spaces_bucket: str = ""
+    do_spaces_key: str = ""
+    do_spaces_secret: str = ""
+
     # Legacy two-factor GDI raster weights
     lst_weight: float = 0.60
     ndvi_weight: float = 0.40
@@ -95,6 +119,13 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+DATA_DIR = settings.data_dir
+TIGER_DATA_HYPERTABLE = settings.tiger_data_hypertable
+TIGER_DATA_URL = settings.tiger_data_url
+TIMESCALE_SERVICE_URL = settings.timescale_service_url
+GEMINI_API_KEY = settings.gemini_api_key
+GEMINI_MODEL = settings.gemini_model
 
 
 # =============================================================================

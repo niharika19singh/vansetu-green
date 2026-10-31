@@ -98,6 +98,8 @@ class CorridorService:
                 continue
 
             cid = props.get("id", f"delhi_corridor_{idx:03d}")
+            short_code = f"C-{idx:02d}"
+            ward_id = "ward-12" if idx == 14 else f"ward-{idx:02d}"
             name = props.get("name", f"Urban Corridor {idx}")
             highway = props.get("highway", "secondary")
             district = props.get("district", "Central Delhi")
@@ -196,6 +198,8 @@ class CorridorService:
             enriched.append(
                 {
                     "id": cid,
+                    "code": short_code,
+                    "ward_id": ward_id,
                     "name": name,
                     "district": district,
                     "highway": highway,
@@ -404,17 +408,24 @@ class CorridorService:
     def get_corridor_by_id(self, corridor_id: str, scenario: str = "baseline") -> Dict[str, Any]:
         """Retrieve a single corridor with its full scoring trace, sensitivity profile, and intervention plan."""
         result = self.get_corridors(scenario=scenario)
+        target = str(corridor_id).strip().lower()
         for feat in result["features"]:
-            if str(feat["properties"]["id"]) == str(corridor_id):
+            p = feat["properties"]
+            if (
+                str(p["id"]).lower() == target
+                or str(p.get("code", "")).lower() == target
+                or str(p.get("ward_id", "")).lower() == target
+                or target in str(p.get("name", "")).lower()
+            ):
                 # Also attach 5-scenario sensitivity profile for this specific corridor
                 sens = scoring_service.run_sensitivity_analysis(
                     self._ensure_enriched_corridors(), focus_scenario=scenario
                 )
                 corr_sens = next(
-                    (c for c in sens["corridors"] if str(c["id"]) == str(corridor_id)),
+                    (c for c in sens["corridors"] if str(c["id"]) == str(p["id"])),
                     None,
                 )
-                payload = dict(feat["properties"])
+                payload = dict(p)
                 payload["geometry"] = feat["geometry"]
                 payload["sensitivity_profile"] = corr_sens
                 payload["explanation"] = self.explain_corridor(payload)
@@ -613,3 +624,25 @@ class CorridorService:
 
 
 corridor_service = CorridorService()
+
+
+def _normalize_corridor_aliases(c: Dict[str, Any]) -> Dict[str, Any]:
+    out = dict(c)
+    out.setdefault("lst", out.get("lst_mean"))
+    out.setdefault("ndvi", out.get("ndvi_mean"))
+    out.setdefault("ugs", out.get("priority_score"))
+    return out
+
+
+def get_all_corridors(scenario: str = "baseline") -> List[Dict[str, Any]]:
+    res = corridor_service.get_corridors(scenario=scenario)
+    return [_normalize_corridor_aliases(c) for c in res.get("corridors", [])]
+
+
+def get_corridor_by_id(corridor_id: str, scenario: str = "baseline") -> Optional[Dict[str, Any]]:
+    try:
+        c = corridor_service.get_corridor_by_id(corridor_id, scenario=scenario)
+        return _normalize_corridor_aliases(c)
+    except KeyError:
+        return None
+

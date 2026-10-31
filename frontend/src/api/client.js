@@ -1,6 +1,7 @@
 /**
- * VanSetu GreenTech — REST API Client
- * Connects the React + Vite frontend to the FastAPI geospatial backend.
+ * VanSetu — Urban Climate Action Intelligence REST API Client
+ * Connects the React + Vite frontend to the FastAPI geospatial, MILP optimizer,
+ * Meko memory, Gemini 3.8 Flash agent, Tiger Data, Social Equity, and IOMETE Procurement backend.
  */
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:7860';
@@ -72,4 +73,107 @@ export const api = {
 
   getAqiStations: () => requestJson('/api/aqi/stations'),
   getAqiSummary: () => requestJson('/api/aqi/summary'),
+
+  // Phase 2.4: MILP Budget Optimizer
+  getOptimizerPresets: () => requestJson('/api/optimizer/presets'),
+  runOptimizer: (payload) =>
+    requestJson('/api/optimizer/run', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  // Phase 3: YugabyteDB / Meko Institutional Memory
+  getMekoDatapacks: () => requestJson('/api/meko/datapacks'),
+  getMekoMemories: ({ agentId = 'climate_planner_agent', datapackId = '', corridorId = '', wardId = '', onlyVerified = false } = {}) => {
+    const params = new URLSearchParams({ agent_id: agentId });
+    if (datapackId) params.set('datapack_id', datapackId);
+    if (corridorId) params.set('corridor_id', corridorId);
+    if (wardId) params.set('ward_id', wardId);
+    if (onlyVerified) params.set('only_verified', 'true');
+    return requestJson(`/api/meko/memories?${params.toString()}`);
+  },
+  addMekoMemory: (payload) =>
+    requestJson('/api/meko/memories/add', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  promoteMekoMemory: (memoryId, payload) =>
+    requestJson(`/api/meko/memories/${encodeURIComponent(memoryId)}/promote`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  deleteMekoMemory: (memoryId, agentId = 'climate_planner_agent') =>
+    requestJson(`/api/meko/memories/${encodeURIComponent(memoryId)}?agent_id=${encodeURIComponent(agentId)}`, {
+      method: 'DELETE',
+    }),
+  compareMekoOnOff: ({ corridorId = 'C-14', wardId = 'ward-12', budgetLakh = 8.0 } = {}) =>
+    requestJson(
+      `/api/meko/compare-on-off?corridor_id=${encodeURIComponent(corridorId)}&ward_id=${encodeURIComponent(wardId)}&budget_lakh=${encodeURIComponent(budgetLakh)}`
+    ),
+  getMekoActivity: (limit = 35) => requestJson(`/api/meko/activity?limit=${limit}`),
+  getMekoCheckT: () => requestJson('/api/meko/check-t'),
+
+  // Phase 4: Google Gemini 3.8 Flash Multi-Tool Agent
+  getAgentTools: () => requestJson('/api/agent/tools'),
+  runAgentPlan: (payload) =>
+    requestJson('/api/agent/plan', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  invokeAgentTool: (toolName, args = {}) =>
+    requestJson('/api/agent/invoke-tool', {
+      method: 'POST',
+      body: JSON.stringify({ tool_name: toolName, arguments: args }),
+    }),
+
+  // Phase 5: Tiger Data (TimescaleDB) Temporal Intelligence
+  getTemporalSchema: () => requestJson('/api/temporal/schema'),
+  getTemporalTrends: (corridorId = 'C-14') =>
+    requestJson(`/api/temporal/trends/${encodeURIComponent(corridorId)}`),
+  getTemporalDailySummary: (corridorId = 'C-14', metric = 'lst_celsius', days = 30) =>
+    requestJson(
+      `/api/temporal/daily-summary?corridor_id=${encodeURIComponent(corridorId)}&metric=${encodeURIComponent(metric)}&days=${days}`
+    ),
+  getTemporalComparison: (corridorId = 'C-14', metric = 'lst_celsius') =>
+    requestJson(
+      `/api/temporal/comparison?corridor_id=${encodeURIComponent(corridorId)}&metric=${encodeURIComponent(metric)}`
+    ),
+  getTemporalMonitoring: (corridorId = '') => {
+    const q = corridorId ? `?corridor_id=${encodeURIComponent(corridorId)}` : '';
+    return requestJson(`/api/temporal/intervention-monitoring${q}`);
+  },
+  ingestTemporalObservation: (payload) =>
+    requestJson('/api/temporal/observations', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  // Phase 7: IOMETE Climate Technology Procurement Studio
+  getProcurementCatalog: (category = '') => {
+    const q = category ? `?category=${encodeURIComponent(category)}` : '';
+    return requestJson(`/api/procurement/catalog${q}`);
+  },
+  compareProcurementEquipment: (payload) =>
+    requestJson('/api/procurement/compare', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  generateProcurementRfp: (payload) =>
+    requestJson('/api/procurement/generate-rfp', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  // Phase 8: Social Equity & Community Observations
+  getEquitySummary: () => requestJson('/api/equity/summary'),
+  submitEquityObservation: (payload) =>
+    requestJson('/api/equity/observations', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  verifyEquityObservation: (observationId, payload) =>
+    requestJson(`/api/equity/observations/${encodeURIComponent(observationId)}/verify`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
 };

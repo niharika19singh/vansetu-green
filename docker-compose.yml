@@ -1,0 +1,45 @@
+version: "3.9"
+
+services:
+  tigerdata-timescaledb:
+    image: timescale/timescaledb:latest-pg16
+    container_name: vansetu-tigerdata
+    environment:
+      POSTGRES_USER: vansetu
+      POSTGRES_PASSWORD: vansetu_local_password
+      POSTGRES_DB: vansetu_climate
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vansetu -d vansetu_climate"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  vansetu-backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: vansetu-backend
+    ports:
+      - "7860:7860"
+    environment:
+      PORT: "7860"
+      MEKO_MCP_URL: "https://mcp.mekodata.ai/mcp"
+      GEMINI_MODEL: "gemini-3.8-flash"
+      TIGER_DATA_URL: "postgresql://vansetu:vansetu_local_password@tigerdata-timescaledb:5432/vansetu_climate"
+    depends_on:
+      tigerdata-timescaledb:
+        condition: service_healthy
+
+  vansetu-frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: "http://localhost:7860"
+    container_name: vansetu-frontend
+    ports:
+      - "8080:8080"
+    depends_on:
+      - vansetu-backend
