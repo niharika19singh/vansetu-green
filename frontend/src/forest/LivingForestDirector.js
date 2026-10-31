@@ -5,7 +5,7 @@
  */
 import * as THREE from 'three';
 import { ForestWaterVertexShader, ForestWaterFragmentShader } from './shaders/forestWaterShader';
-import { cinematicAudio } from '../cinematic/audioSynth';
+import { forestAudio } from './forestAudio';
 
 export class LivingForestDirector {
   constructor(canvasElement, options = {}) {
@@ -139,7 +139,7 @@ export class LivingForestDirector {
     this.ripples[this.rippleIndex].set(uvX, uvY, currentTime, amplitude);
     this.rippleIndex = (this.rippleIndex + 1) % 8;
 
-    cinematicAudio.triggerDropletImpact();
+    forestAudio.triggerDropletImpact();
     this.onRippleImpact({ x: uvX, y: uvY });
   }
 
@@ -179,7 +179,7 @@ export class LivingForestDirector {
     const delta = this.clock.getDelta();
     const elapsedTime = this.clock.getElapsedTime();
 
-    // Smooth cinematic mouse parallax
+    // Smooth natural mouse parallax
     this.mouse.lerp(this.targetMouse, 0.025);
 
     // Update shader uniforms

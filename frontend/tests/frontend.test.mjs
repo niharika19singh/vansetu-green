@@ -2,7 +2,7 @@
  * VanSetu — Urban Climate Action Intelligence Automated Frontend Verification Suite (Node Test Runner).
  * Verifies component architecture, 10-view navigation, Tailwind/Recharts/Leaflet stack compliance,
  * district GeoJSON validity, Meko ON/OFF controls, Gemini 3.8 Flash, Tiger Data, IOMETE Procurement Studio,
- * "The Living Forest" Photorealistic Water Engine, and "Veins of Life" 7-Stage 3D Cinematic Story Journey.
+ * "The Living Forest" Photorealistic Water Engine, and complete elimination of legacy cinematic artifacts.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -94,6 +94,7 @@ test('"The Living Forest" Photorealistic Water & Nature Engine is valid', () => 
     'src/forest/LivingForestDirector.js',
     'src/forest/LivingForestExperience.jsx',
     'src/forest/shaders/forestWaterShader.js',
+    'src/forest/forestAudio.js',
     'public/textures/forest_reference.jpg',
   ];
 
@@ -113,43 +114,49 @@ test('"The Living Forest" Photorealistic Water & Nature Engine is valid', () => 
   assert.ok(shaderSrc.includes('uRipples'), 'Missing uRipples in forestWaterShader.js');
 });
 
-test('"Veins of Life" 7-Stage 3D Cinematic Story Journey, Cloud Shaders, and Assets are valid', () => {
-  const cinematicFiles = [
-    'src/cinematic/VeinsOfLifeExperience.jsx',
+test('Veins of Life / Veins of Joy cinematic artifacts are completely removed, while real maps and forest engine are preserved', () => {
+  // Confirm complete deletion of exclusive cinematic directory and components
+  const deletedFiles = [
+    'src/cinematic',
     'src/components/VeinsOfLifeModal.jsx',
-    'src/cinematic/CinematicDirector.js',
-    'src/cinematic/mathUtils.js',
-    'src/cinematic/delhiNetwork.js',
-    'src/cinematic/veinNetwork.js',
-    'src/cinematic/audioSynth.js',
-    'src/cinematic/shaders/leafShader.js',
-    'src/cinematic/shaders/dropletShader.js',
-    'src/cinematic/shaders/cloudShader.js',
-    'src/cinematic/shaders/morphShader.js',
     'public/textures/leaf_cover.jpg',
     'public/textures/leaf_reference.jpg',
-    'public/textures/delhi_map_reference.png',
-    'public/delhi_roads.geojson',
   ];
 
-  for (const f of cinematicFiles) {
+  for (const f of deletedFiles) {
     const full = path.join(frontendRoot, f);
-    assert.ok(fs.existsSync(full), `Missing cinematic asset/module: ${f}`);
+    assert.ok(!fs.existsSync(full), `File or directory should have been removed: ${f}`);
   }
 
-  // Verify VeinsOfLifeModal hosts the 7-stage experience
-  const modalSrc = fs.readFileSync(path.join(frontendRoot, 'src/components/VeinsOfLifeModal.jsx'), 'utf-8');
-  assert.ok(modalSrc.includes('VeinsOfLifeExperience'), 'VeinsOfLifeModal missing VeinsOfLifeExperience');
-  assert.ok(modalSrc.includes('SCENE_STAGES'), 'VeinsOfLifeModal missing SCENE_STAGES');
+  // Confirm zero dead code references in active UI files
+  const checkedFiles = [
+    'src/App.jsx',
+    'src/views/LandingPageView.jsx',
+    'src/components/AppSidebar.jsx',
+    'src/forest/LivingForestDirector.js',
+  ];
 
-  // Verify App.jsx wires the story modal
-  const appSrc = fs.readFileSync(path.join(frontendRoot, 'src/App.jsx'), 'utf-8');
-  assert.ok(appSrc.includes('VeinsOfLifeModal'), 'App.jsx missing VeinsOfLifeModal');
+  for (const rel of checkedFiles) {
+    const content = fs.readFileSync(path.join(frontendRoot, rel), 'utf-8');
+    assert.ok(!content.includes('VeinsOfLife'), `Found lingering VeinsOfLife reference in ${rel}`);
+    assert.ok(!content.includes('isVeinsStoryOpen'), `Found lingering isVeinsStoryOpen in ${rel}`);
+    assert.ok(!content.includes('onOpenVeinsStory'), `Found lingering onOpenVeinsStory in ${rel}`);
+    assert.ok(!content.includes('cinematicAudio'), `Found lingering cinematicAudio in ${rel}`);
+  }
 
-  // Verify Delhi road network GeoJSON
+  // Confirm Delhi real roads GeoJSON and map textures are preserved
   const roadsGeo = JSON.parse(
     fs.readFileSync(path.join(frontendRoot, 'public/delhi_roads.geojson'), 'utf-8')
   );
   assert.equal(roadsGeo.type, 'FeatureCollection');
   assert.equal(roadsGeo.features.length, 44, 'Expected 44 Delhi verified corridors');
+
+  assert.ok(
+    fs.existsSync(path.join(frontendRoot, 'public/textures/delhi_map_reference.png')),
+    'Map preview texture must be preserved'
+  );
+  assert.ok(
+    fs.existsSync(path.join(frontendRoot, 'public/textures/forest_reference.jpg')),
+    'Forest background texture must be preserved'
+  );
 });

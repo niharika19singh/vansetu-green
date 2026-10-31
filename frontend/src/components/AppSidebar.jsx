@@ -16,7 +16,6 @@ import {
   ChevronRight,
   Volume2,
   VolumeX,
-  Sparkles,
 } from 'lucide-react';
 
 export const APP_NAV_ITEMS = [
@@ -37,7 +36,6 @@ export default function AppSidebar({
   onToggleMeko,
   isMuted,
   onToggleSound,
-  onOpenVeinsStory,
 }) {
   return (
     <aside
@@ -120,20 +118,6 @@ export default function AppSidebar({
 
       {/* Bottom Utilities & Controls */}
       <div className="p-3 border-t border-white/10 space-y-2">
-        {/* Veins of Life Story button */}
-        <button
-          onClick={onOpenVeinsStory}
-          className={`w-full flex items-center justify-center gap-2 py-2 px-2 rounded-xl text-xs font-bold border transition ${
-            collapsed
-              ? 'bg-[#12392B]/60 border-emerald-400/40 text-amber-200'
-              : 'bg-gradient-to-r from-emerald-950/60 to-amber-950/60 hover:from-emerald-900/60 hover:to-amber-900/60 border-emerald-400/40 text-amber-200'
-          }`}
-          title="Launch 7-Stage Veins of Life Cinematic Journey"
-        >
-          <span>🍃</span>
-          {!collapsed && <span>Veins of Life Story</span>}
-        </button>
-
         {/* MEKO ON/OFF toggle */}
         <button
           onClick={onToggleMeko}

@@ -36,10 +36,9 @@ import CanopyHydrologyView from './views/CanopyHydrologyView';
 import ScenarioLabView from './views/ScenarioLabView';
 import DecisionStudioView from './views/DecisionStudioView';
 import RecordsView from './views/RecordsView';
-import VeinsOfLifeModal from './components/VeinsOfLifeModal';
 import DataProvenanceModal from './components/DataProvenanceModal';
 import LivingForestExperience from './forest/LivingForestExperience';
-import { cinematicAudio } from './cinematic/audioSynth';
+import { forestAudio } from './forest/forestAudio';
 
 export const NAV_VIEWS = [
   { id: 'canopy', label: '1. Climate Overview', icon: LayoutDashboard },
@@ -61,7 +60,6 @@ export default function App() {
 
   // Audio & Modals
   const [isMuted, setIsMuted] = useState(true);
-  const [isVeinsStoryOpen, setIsVeinsStoryOpen] = useState(false);
   const [provenanceModalOpen, setProvenanceModalOpen] = useState(false);
 
   // Institutional Memory
@@ -159,7 +157,7 @@ export default function App() {
   }, [loadCorridorData]);
 
   const toggleSound = () => {
-    const unmuted = cinematicAudio.toggleMute();
+    const unmuted = forestAudio.toggleMute();
     setIsMuted(!unmuted);
   };
 
@@ -180,7 +178,6 @@ export default function App() {
         <div className="w-full h-full overflow-y-auto">
           <LandingPageView
             onNavigate={handleNavigate}
-            onOpenVeinsStory={() => setIsVeinsStoryOpen(true)}
             statsSummary={statsSummary}
           />
         </div>
@@ -199,7 +196,6 @@ export default function App() {
             onToggleMeko={() => setMekoEnabled(!mekoEnabled)}
             isMuted={isMuted}
             onToggleSound={toggleSound}
-            onOpenVeinsStory={() => setIsVeinsStoryOpen(true)}
           />
 
           {/* Main Page Workspace */}
@@ -303,20 +299,6 @@ export default function App() {
           </main>
         </div>
       )}
-
-      {/* Accessible "Veins of Life" 7-Stage Storytelling Modal */}
-      <VeinsOfLifeModal
-        isOpen={isVeinsStoryOpen}
-        onClose={() => setIsVeinsStoryOpen(false)}
-        onSelectCorridor={(id) => {
-          const found = corridors.find((c) => c.id === id || c.code === id);
-          if (found) setSelectedCorridor(found);
-          handleNavigate('map');
-        }}
-        onOpenStudioView={() => {
-          handleNavigate('studio');
-        }}
-      />
 
       {/* Scientific Data Provenance & Integrity Modal */}
       <DataProvenanceModal

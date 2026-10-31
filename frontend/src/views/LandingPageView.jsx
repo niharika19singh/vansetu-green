@@ -8,7 +8,7 @@
  *   2. How VanSetu Works (Observe -> Analyze -> Prioritize -> Plan)
  *   3. Explore the Map (Flagship Map Preview)
  *   4. Platform Capabilities (Corridors, Scenario Lab, Intervention Optimizer, Records)
- *   5. Closing Action & Veins of Life Storytelling link
+ *   5. Closing Action & Interactive Map Explorer Launch
  */
 import React from 'react';
 import {
@@ -30,7 +30,6 @@ import LivingForestExperience from '../forest/LivingForestExperience';
 
 export default function LandingPageView({
   onNavigate,
-  onOpenVeinsStory,
   statsSummary,
 }) {
   const scrollToSection = (id) => {
@@ -382,7 +381,7 @@ export default function LandingPageView({
       </section>
 
       {/* =========================================================================
-          SECTION 6: CLOSING ACTION & VEINS OF LIFE STORY
+          SECTION 6: CLOSING ACTION & MAP EXPLORER LAUNCH
           ========================================================================= */}
       <section
         id="closing-cta"
@@ -391,11 +390,11 @@ export default function LandingPageView({
         <div className="max-w-2xl space-y-6">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-950/60 border border-emerald-400/30 text-emerald-300 text-xs font-semibold">
             <span>🌿</span>
-            <span>Biological Venation to Urban Arteries</span>
+            <span>Ecological Corridors & Urban Heat Mitigation</span>
           </div>
 
           <h2 className="font-editorial text-4xl sm:text-6xl font-bold text-white tracking-tight">
-            Ready to Explore Delhi's Living Arteries?
+            Ready to Explore Delhi's Climate Corridors?
           </h2>
 
           <p className="text-sm sm:text-base text-[#F3F1E7]/80 leading-relaxed max-w-xl mx-auto">
@@ -410,14 +409,6 @@ export default function LandingPageView({
             >
               <span>Launch Map Explorer</span>
               <ArrowRight className="w-4 h-4" />
-            </button>
-
-            <button
-              onClick={onOpenVeinsStory}
-              className="px-6 py-4 rounded-full bg-[#12392B]/60 hover:bg-[#12392B] border border-emerald-400/40 text-amber-200 font-semibold text-sm backdrop-blur-md transition hover:scale-105 flex items-center gap-2"
-            >
-              <span>🍃</span>
-              <span>Experience 'Veins of Life' Story</span>
             </button>
           </div>
         </div>
