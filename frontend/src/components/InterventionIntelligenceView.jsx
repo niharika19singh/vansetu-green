@@ -38,10 +38,14 @@ export default function InterventionIntelligenceView({
   const [showAssessmentForm, setShowAssessmentForm] = useState(false);
   const [assArchetype, setAssArchetype] = useState('linear_street_trees');
   const [assState, setAssState] = useState('CONDITIONAL');
-  const [assReviewerId, setAssReviewerId] = useState('PWD_ENG_7104');
-  const [assToken, setAssToken] = useState('token_field_pwd_7104');
+  const [officerToken, setOfficerToken] = useState(() => {
+    return sessionStorage.getItem('vansetu_officer_token') || '';
+  });
   const [assEvidenceType, setAssEvidenceType] = useState('GPR_UTILITY_SURVEY');
-  const [assEvidenceRef, setAssEvidenceRef] = useState('PWD/D-12/2026/GPR-SURVEY-CLEARANCE');
+  const [assEvidenceRef, setAssEvidenceRef] = useState('');
+  const [assEvidenceFile, setAssEvidenceFile] = useState(null);
+  const [uploadedEvidence, setUploadedEvidence] = useState(null);
+  const [uploadingDoc, setUploadingDoc] = useState(false);
   const [assNotes, setAssNotes] = useState('');
   const [submittingAss, setSubmittingAss] = useState(false);
   const [assSuccessMsg, setAssSuccessMsg] = useState(null);
@@ -99,28 +103,47 @@ export default function InterventionIntelligenceView({
   // Handle assessment submit
   const handleAssessmentSubmit = async (e) => {
     e.preventDefault();
+    if (!officerToken.trim()) {
+      alert('Authentication error: An accredited municipal officer token is required.');
+      return;
+    }
     setSubmittingAss(true);
     setAssSuccessMsg(null);
     try {
+      let finalEvidenceId = uploadedEvidence?.evidence_id || null;
+
+      // If a file was selected but not yet uploaded, upload it now
+      if (assEvidenceFile && !finalEvidenceId) {
+        setUploadingDoc(true);
+        const formData = new FormData();
+        formData.append('file', assEvidenceFile);
+        formData.append('document_type', assEvidenceType);
+        const upRes = await api.uploadEvidenceDocument(formData, officerToken);
+        finalEvidenceId = upRes.evidence_id;
+        setUploadedEvidence(upRes);
+        setUploadingDoc(false);
+      }
+
       const res = await api.submitSiteAssessment(
         {
           segment_id: segmentId,
           corridor_id: featuresData?.corridor_code || 'C-14',
           intervention_archetype: assArchetype,
           suitability_state: assState,
-          reviewer_id: assReviewerId,
-          evidence_reference: assEvidenceRef,
+          evidence_reference: assEvidenceRef.trim() || (uploadedEvidence?.filename || 'FIELD_SURVEY_DOC'),
           evidence_document_type: assEvidenceType,
+          evidence_id: finalEvidenceId,
           reviewer_notes: assNotes,
         },
-        assToken
+        officerToken
       );
-      setAssSuccessMsg(`Assessment recorded: ${res.assessment_id} (${res.suitability_state}) • Identity verified server-side`);
+      setAssSuccessMsg(`Assessment recorded: ${res.assessment_id} (${res.suitability_state}) • Identity & evidence verified server-side`);
       fetchSegmentIntelligence();
     } catch (err) {
       alert(`Submission error: ${err.message}`);
     } finally {
       setSubmittingAss(false);
+      setUploadingDoc(false);
     }
   };
 
@@ -255,22 +278,18 @@ export default function InterventionIntelligenceView({
               </select>
             </div>
             <div>
-              <label className="text-slate-400 block mb-1">Accredited Credentials</label>
-              <select
-                value={assToken}
+              <label className="text-slate-400 block mb-1">Accredited Officer Token</label>
+              <input
+                type="password"
+                value={officerToken}
                 onChange={(e) => {
-                  setAssToken(e.target.value);
-                  if (e.target.value === 'token_field_pwd_7104') setAssReviewerId('field_pwd_7104');
-                  if (e.target.value === 'token_reviewer_mcd_3012') setAssReviewerId('reviewer_mcd_3012');
-                  if (e.target.value === 'token_senior_delhi_001') setAssReviewerId('senior_delhi_001');
+                  setOfficerToken(e.target.value);
+                  sessionStorage.setItem('vansetu_officer_token', e.target.value);
                 }}
-                className="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-white"
-              >
-                <option value="token_field_pwd_7104">PWD Field Assessor (token_field_pwd_7104)</option>
-                <option value="token_reviewer_mcd_3012">MCD Ward Reviewer (token_reviewer_mcd_3012)</option>
-                <option value="token_senior_delhi_001">Senior Climate Reviewer (token_senior_delhi_001)</option>
-                <option value="token_admin_delhi_root">Delhi Admin (token_admin_delhi_root)</option>
-              </select>
+                placeholder="Bearer token (e.g. vs_...)"
+                className="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 font-mono text-white text-xs"
+                required
+              />
             </div>
           </div>
 
@@ -291,23 +310,47 @@ export default function InterventionIntelligenceView({
               </select>
             </div>
             <div>
-              <label className="text-slate-400 block mb-1">Evidence / Survey Reference Document</label>
+              <label className="text-slate-400 block mb-1">Upload Clearance Document (PDF/PNG/JPEG)</label>
+              <input
+                type="file"
+                accept=".pdf,.png,.jpg,.jpeg"
+                onChange={(e) => {
+                  const file = e.target.files?.[0] || null;
+                  setAssEvidenceFile(file);
+                  setUploadedEvidence(null);
+                  if (file && !assEvidenceRef) {
+                    setAssEvidenceRef(file.name.replace(/\.[^/.]+$/, ''));
+                  }
+                }}
+                className="w-full bg-slate-950 border border-slate-700 rounded px-2 py-1 text-slate-300 text-xs file:mr-2 file:py-0.5 file:px-2 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-slate-800 file:text-slate-200 hover:file:bg-slate-700"
+              />
+              {uploadedEvidence && (
+                <span className="text-emerald-400 text-[10px] font-mono block mt-0.5">
+                  ✓ Uploaded: {uploadedEvidence.evidence_id}
+                </span>
+              )}
+            </div>
+            <div>
+              <label className="text-slate-400 block mb-1">Document Reference Identifier</label>
               <input
                 type="text"
                 value={assEvidenceRef}
                 onChange={(e) => setAssEvidenceRef(e.target.value)}
-                placeholder="e.g., PWD-SURVEY-2026-CHIRAG-DELHI"
+                placeholder="e.g., PWD/SOUTH/2026/GPR-7104"
                 className="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 font-mono text-white"
                 required
               />
             </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3">
             <div>
-              <label className="text-slate-400 block mb-1">Field Assessment Notes</label>
+              <label className="text-slate-400 block mb-1">Field Assessment Notes & Observations</label>
               <input
                 type="text"
                 value={assNotes}
                 onChange={(e) => setAssNotes(e.target.value)}
-                placeholder="Observed site realities, utility markers, soil condition..."
+                placeholder="Observed site realities, utility markers, soil condition, pedestrian clear width..."
                 className="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-white"
               />
             </div>

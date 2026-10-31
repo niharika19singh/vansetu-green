@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from ml.security.auth import AuthenticatedUser, Permission, UserRole
+from ml.training.spaces_storage import SpacesArtifactStore
 
 
 def _utc_now_iso() -> str:
@@ -30,6 +31,7 @@ class ModelRegistry:
         self.history_dir = self.models_dir / "history"
         self.history_dir.mkdir(parents=True, exist_ok=True)
         self.meta_file = self.models_dir / "latest_model_metadata.json"
+        self.spaces_store = SpacesArtifactStore()
 
     def get_latest_approved_model_metadata(self) -> Optional[Dict[str, Any]]:
         """Return metadata for currently approved model or None if no model has been approved."""
@@ -73,27 +75,9 @@ class ModelRegistry:
         Check DigitalOcean Spaces configuration for durable model storage.
         Reports DURABLE_MODEL_STORAGE_NOT_CONFIGURED when keys are absent.
         """
-        do_spaces_key = os.environ.get("DO_SPACES_KEY")
-        do_spaces_bucket = os.environ.get("DO_SPACES_BUCKET")
-        do_spaces_region = os.environ.get("DO_SPACES_REGION", "blr1")
-
-        if not do_spaces_key or not do_spaces_bucket:
-            return {
-                "status": "DURABLE_MODEL_STORAGE_NOT_CONFIGURED",
-                "storage_provider": "DigitalOcean Spaces (blr1)",
-                "bucket": do_spaces_bucket or None,
-                "local_fallback_active": True,
-                "local_storage_path": str(self.models_dir),
-                "message": "Production durable artifact store pending: models currently persisted to local volume fallback.",
-            }
-
-        return {
-            "status": "DURABLE_STORAGE_CONFIGURED",
-            "storage_provider": "DigitalOcean Spaces",
-            "bucket": do_spaces_bucket,
-            "region": do_spaces_region,
-            "local_fallback_active": False,
-        }
+        res = self.spaces_store.test_storage_connection()
+        res["local_storage_path"] = str(self.models_dir)
+        return res
 
     def promote_model(
         self,
@@ -150,6 +134,22 @@ class ModelRegistry:
         current["reviewer_name"] = reviewer.full_name
         current["reviewer_organization"] = reviewer.organization
         current["approval_note"] = approval_note
+
+        # If Spaces durable storage is configured, sync the artifact to object storage
+        if self.spaces_store.is_configured():
+            try:
+                fname = current.get("artifact_filename")
+                if fname:
+                    art_path = self.models_dir / fname
+                    if art_path.exists():
+                        up = self.spaces_store.upload_artifact(
+                            local_path=art_path,
+                            remote_key=f"models/{model_version}/{fname}",
+                            expected_sha256=current.get("artifact_sha256"),
+                        )
+                        current["durable_storage_uri"] = up.get("remote_uri")
+            except Exception as exc:
+                current["durable_storage_warning"] = f"Durable upload deferred: {exc}"
 
         self.meta_file.write_text(json.dumps(current, indent=2))
         (self.history_dir / f"metadata_{model_version}.json").write_text(json.dumps(current, indent=2))

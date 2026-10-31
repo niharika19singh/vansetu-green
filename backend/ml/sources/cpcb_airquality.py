@@ -113,7 +113,11 @@ class CpcbAirQualityAdapter(BaseSourceAdapter):
                 "verified_stations_count": len(DELHI_CAAQM_STATIONS),
                 "geographic_coverage": "All 11 NCT Delhi Revenue Districts",
             },
-            "live_observations_status": IngestionStatus.LIVE_DATA_FETCHED.value if live_verified else IngestionStatus.DATA_UNAVAILABLE.value,
+            "live_observations_status": (
+                IngestionStatus.LIVE_CONNECTION_VERIFIED.value
+                if live_verified
+                else IngestionStatus.DATA_UNAVAILABLE.value
+            ),
             "live_api_configured": has_key,
             "live_connection_verified": live_verified,
             "connection_error": conn_error,
@@ -198,13 +202,45 @@ class CpcbAirQualityAdapter(BaseSourceAdapter):
                 )
                 if resp.status_code == 200:
                     records = resp.json().get("records", [])
-                    return {
-                        "available": True,
-                        "status": IngestionStatus.LIVE_DATA_FETCHED.value,
-                        "observations_count": len(records),
-                        "station_match": station_match,
-                        "observations": records,
-                    }
+                    # Verify non-empty records AND presence of valid pollutant measurements
+                    valid_pollutants = {"pm2.5", "pm10", "no2", "so2", "co", "o3", "aqi"}
+                    valid_records = []
+                    for r in records:
+                        p_id = str(r.get("pollutant_id") or r.get("parameter") or "").strip().lower()
+                        p_val = r.get("pollutant_avg") or r.get("pollutant_min") or r.get("value")
+                        if p_id in valid_pollutants and p_val is not None:
+                            try:
+                                float(p_val)
+                                valid_records.append(r)
+                            except (ValueError, TypeError):
+                                pass
+                        elif any(k.lower() in valid_pollutants and r[k] is not None for k in r):
+                            valid_records.append(r)
+
+                    if valid_records:
+                        return {
+                            "available": True,
+                            "status": IngestionStatus.LIVE_DATA_FETCHED.value,
+                            "observations_count": len(valid_records),
+                            "station_match": station_match,
+                            "observations": valid_records,
+                        }
+                    elif records:
+                        return {
+                            "available": True,
+                            "status": IngestionStatus.CATALOGUE_METADATA_RETRIEVED.value,
+                            "observations_count": 0,
+                            "station_match": station_match,
+                            "message": "Data.gov.in returned station metadata but zero valid pollutant telemetry measurements.",
+                        }
+                    else:
+                        return {
+                            "available": False,
+                            "status": IngestionStatus.DATA_UNAVAILABLE.value,
+                            "observations_count": 0,
+                            "station_match": station_match,
+                            "message": "Data.gov.in returned empty observations array for Delhi.",
+                        }
             except Exception:
                 pass
 

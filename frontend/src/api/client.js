@@ -29,6 +29,28 @@ async function requestJson(path, options = {}) {
   return response.json();
 }
 
+async function requestUpload(path, formData, token = null) {
+  const url = `${API_BASE}${path}`;
+  const headers = {};
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  const response = await fetch(url, {
+    method: 'POST',
+    headers,
+    body: formData,
+  });
+  if (!response.ok) {
+    let detail = `HTTP ${response.status}`;
+    try {
+      const errJson = await response.json();
+      detail = errJson.detail || detail;
+    } catch {}
+    throw new Error(detail);
+  }
+  return response.json();
+}
+
 export function getTileUrl(layer, z = '{z}', x = '{x}', y = '{y}') {
   return `${API_BASE}/api/tiles/${layer}/${z}/${x}/${y}.png`;
 }
@@ -263,13 +285,27 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
-  submitSiteAssessment: (payload, token = 'token_field_pwd_7104') =>
+  uploadEvidenceDocument: (formData, token) =>
+    requestUpload('/api/ml/evidence/upload', formData, token),
+  verifyEvidenceDocument: (evidenceId, payload, token) =>
+    requestJson(`/api/ml/evidence/${encodeURIComponent(evidenceId)}/verify`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: JSON.stringify(payload),
+    }),
+  listEvidenceDocuments: (params = {}, token) => {
+    const q = new URLSearchParams(params).toString();
+    return requestJson(`/api/ml/evidence${q ? `?${q}` : ''}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+  },
+  submitSiteAssessment: (payload, token) =>
     requestJson('/api/ml/site-assessments', {
       method: 'POST',
       headers: token ? { Authorization: `Bearer ${token}` } : {},
       body: JSON.stringify(payload),
     }),
-  reviewSiteAssessment: (assessmentId, payload, token = 'token_reviewer_mcd_3012') =>
+  reviewSiteAssessment: (assessmentId, payload, token) =>
     requestJson(`/api/ml/site-assessments/${encodeURIComponent(assessmentId)}`, {
       method: 'PATCH',
       headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -279,19 +315,19 @@ export const api = {
     const q = new URLSearchParams(params).toString();
     return requestJson(`/api/ml/site-assessments${q ? `?${q}` : ''}`);
   },
-  submitOutcomeObservation: (payload, token = 'token_field_pwd_7104') =>
+  submitOutcomeObservation: (payload, token) =>
     requestJson('/api/ml/outcome-observations', {
       method: 'POST',
       headers: token ? { Authorization: `Bearer ${token}` } : {},
       body: JSON.stringify(payload),
     }),
-  promoteModel: (payload, token = 'token_senior_delhi_001') =>
+  promoteModel: (payload, token) =>
     requestJson('/api/ml/model/promote', {
       method: 'POST',
       headers: token ? { Authorization: `Bearer ${token}` } : {},
       body: JSON.stringify(payload),
     }),
-  rollbackModel: (payload, token = 'token_senior_delhi_001') =>
+  rollbackModel: (payload, token) =>
     requestJson('/api/ml/model/rollback', {
       method: 'POST',
       headers: token ? { Authorization: `Bearer ${token}` } : {},

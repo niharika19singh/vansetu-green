@@ -2,7 +2,7 @@
 VanSetu GreenTech — Human-Verified Suitability Label Schema (Phase 4A & Remediation).
 
 Defines the 4-state suitability ontology, 5 GreenTech intervention classes,
-evidence classification types, and strict server-side reviewer provenance.
+evidence classification types, evidence document lifecycle, and strict server-side reviewer provenance.
 """
 from __future__ import annotations
 
@@ -34,6 +34,14 @@ class ReviewStatus(str, Enum):
     SUPERSEDED = "SUPERSEDED"
 
 
+class EvidenceVerificationStatus(str, Enum):
+    EVIDENCE_NOT_PROVIDED = "EVIDENCE_NOT_PROVIDED"
+    EVIDENCE_UPLOADED_UNVERIFIED = "EVIDENCE_UPLOADED_UNVERIFIED"
+    EVIDENCE_PENDING_REVIEW = "EVIDENCE_PENDING_REVIEW"
+    EVIDENCE_VERIFIED = "EVIDENCE_VERIFIED"
+    EVIDENCE_REJECTED = "EVIDENCE_REJECTED"
+
+
 class EvidenceDocumentType(str, Enum):
     GPR_UTILITY_SURVEY = "GPR_UTILITY_SURVEY"
     MUNICIPAL_WORK_ORDER = "MUNICIPAL_WORK_ORDER"
@@ -49,6 +57,26 @@ class ReviewActionType(str, Enum):
     CORRECT = "CORRECT"
 
 
+class EvidenceDocumentMetadata(BaseModel):
+    """
+    Metadata for uploaded and verified empirical evidence documents (e.g. GPR scans, PWD work orders).
+    """
+    evidence_id: str
+    filename: str
+    file_size_bytes: int
+    mime_type: str
+    sha256_checksum: str
+    document_type: EvidenceDocumentType
+    uploaded_by_user_id: str
+    uploaded_by_username: str
+    uploaded_at: str
+    verification_status: EvidenceVerificationStatus = EvidenceVerificationStatus.EVIDENCE_UPLOADED_UNVERIFIED
+    verified_by_user_id: Optional[str] = None
+    verified_at: Optional[str] = None
+    verification_notes: Optional[str] = None
+    storage_path: str
+
+
 class SiteAssessmentSubmission(BaseModel):
     """
     Client submission model for field assessments.
@@ -62,6 +90,10 @@ class SiteAssessmentSubmission(BaseModel):
     evidence_document_type: EvidenceDocumentType = Field(
         default=EvidenceDocumentType.GPR_UTILITY_SURVEY,
         description="Classification of supporting physical evidence.",
+    )
+    evidence_id: Optional[str] = Field(
+        default=None,
+        description="Optional unique identifier of uploaded supporting document.",
     )
     survey_reference: Optional[str] = None
     engineering_constraints: List[str] = Field(default_factory=list, description="Subsurface utilities, ROW bottlenecks, or structural limits.")
@@ -98,11 +130,13 @@ class SiteAssessmentRecord(BaseModel):
     reviewer_role: str
     evidence_reference: str
     evidence_document_type: str
+    evidence_id: Optional[str] = None
+    evidence_verification_status: str = EvidenceVerificationStatus.EVIDENCE_NOT_PROVIDED.value
     is_evidence_verified: bool
     survey_reference: Optional[str] = None
     engineering_constraints: List[str] = Field(default_factory=list)
     reviewer_notes: Optional[str] = None
     created_at: str
     updated_at: str
-    schema_version: str = "2.1.0"
+    schema_version: str = "2.2.0"
     audit_history_count: int = 1

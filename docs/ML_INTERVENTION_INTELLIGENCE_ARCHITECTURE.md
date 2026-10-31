@@ -77,22 +77,23 @@ flowchart TD
 
 | Component Path | Responsibility | Implementation Standard |
 | :--- | :--- | :--- |
-| `backend/ml/security/` | Server-side RBAC security & authentication | Bearer / API-Key auth, role hierarchy, rate limiting, and municipal credentials. |
+| `backend/ml/security/` | Server-side RBAC security & authentication | Salted SHA-256 token hashing, credential lifecycle (create, rotate, revoke), rate limiting, zero plaintext tokens. |
 | `backend/ml/validation.py` | Training data quarantine & contamination validator | Zero-synthetic policy; rejects `is_simulated=1` and circular model scores. |
-| `backend/ml/sources/` | 8 Standardized data adapters | Explicit CRS, native resolutions, provenance, and credential fallback. |
+| `backend/ml/sources/` | 8 Standardized data adapters | Explicit CRS, native resolutions, provenance, `CATALOGUE_METADATA_RETRIEVED` vs `LIVE_DATA_FETCHED`. |
 | `backend/ml/preprocessing/segmentation.py` | 75m Metric road segmentation | Computes in `EPSG:32643` (UTM 43N) to prevent metric distortion; outputs `EPSG:4326`. |
 | `backend/ml/preprocessing/zonal_stats.py` | Rasterio buffer zonal statistics | True pixel counts, valid pixel fractions, and NoData transparency. |
 | `backend/ml/preprocessing/feature_pipeline.py` | 1,302 Delhi road segments feature dataset | Generates Parquet and GeoJSON with strict 7-class feature provenance tags. |
-| `backend/ml/labels/` | Field assessment schema & SQLite store | Server-injected identity, self-approval prevention, immutable audit history. |
-| `backend/ml/training/data_builder.py` | Dataset builder & spatial GroupKFold | Implements non-negotiable minimum evidence gate (`min_labels=50`, `min_corridors=3`). |
+| `backend/ml/labels/` | Field assessment schema & evidence store | Binary uploads (PDF/PNG/JPEG <= 10MB, magic-byte checks), evidence lifecycle, self-approval prevention. |
+| `backend/ml/training/data_builder.py` | Dataset builder & spatial GroupKFold | Implements non-negotiable minimum evidence gate (`min_labels=50`, `min_corridors=3`, verified disk doc check). |
 | `backend/ml/training/suitability_trainer.py` | Spatial cross-validation model trainer | Spatial GroupKFold; disqualifies models with >5% false eligible rate; sets EXPERIMENTAL status. |
-| `backend/ml/training/registry.py` | Model versioning & governance lifecycle | SHA-256 artifact hashing, RBAC promotion, Spaces durable store status, and rollback. |
-| `backend/ml/inference/hard_constraints.py` | Deterministic hard engineering constraints | Physical safety overrides: 4 canonical states, guideline vs surveyed ROW. |
+| `backend/ml/training/spaces_storage.py` | Durable object storage adapter (Spaces) | S3 client with SHA-256 pre/post transfer verification and graceful local volume fallback. |
+| `backend/ml/training/registry.py` | Model versioning & governance lifecycle | SHA-256 artifact hashing, RBAC promotion, Spaces durable store sync, and zero-downtime rollback. |
+| `backend/ml/inference/hard_constraints.py` | Deterministic hard engineering constraints | Physical safety overrides: 4 canonical states; guideline width never forces INELIGIBLE (only measured widths). |
 | `backend/ml/inference/explanation.py` | Engineering recommendation explainer | Environmental drivers, limiting constraints, and missing survey warnings. |
 | `backend/ml/inference/predictor.py` | Predictor & multi-criteria ranker | Orchestrates ML classifier with rule-based fallback and policy objectives. |
 | `backend/ml/outcome/` | Empirical outcome telemetry & causal learning | Pre/post difference-in-differences schema with matched control sites; baseline collection only. |
-| `backend/app/routers/ml_interventions.py` | FastAPI router (10 endpoints) | Exposes predictions, features, label submissions, reviews, promotions, and rollbacks. |
-| `frontend/src/components/InterventionIntelligenceView.jsx` | React municipal planning interface | Interactive inspection, feature exploration, and field survey submission. |
+| `backend/app/routers/ml_interventions.py` | FastAPI router (14 endpoints) | Exposes predictions, features, label submissions, binary evidence uploads, reviews, promotions, and rollbacks. |
+| `frontend/src/components/InterventionIntelligenceView.jsx` | React municipal planning interface | Interactive inspection, feature exploration, dynamic token entry, and binary evidence upload. |
 
 ---
 

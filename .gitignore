@@ -22,6 +22,8 @@ htmlcov/
 backend/cache/
 backend/data/*.sqlite
 backend/data/*.sqlite-*
+backend/data/evidence_documents/*
+!backend/data/evidence_documents/.gitkeep
 
 # Node / Frontend
 node_modules/

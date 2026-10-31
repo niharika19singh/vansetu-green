@@ -63,3 +63,17 @@ If upstream APIs are unreachable, local assets are automatically verified and se
    - Order MOD11A2 8-day composite via NASA Earthdata Search.
    - Extract `LST_Day_1km`, apply scale factor $0.02$, convert Kelvin to Celsius ($-273.15$).
    - Reproject to EPSG:4326 and save to `backend/data/delhi_lst_modis_daily_celsius.tif`.
+
+---
+
+## 5. Ingestion Status Framework & Semantics
+
+All data source adapters implement standardized status reporting:
+- `NOT_CONFIGURED`: Remote credentials and endpoints not configured.
+- `CREDENTIALS_CONFIGURED`: Credentials present, live connection not yet tested.
+- `LIVE_CONNECTION_VERIFIED`: Remote endpoint connection successfully established.
+- `CATALOGUE_METADATA_RETRIEVED`: Remote catalogue queried and product metadata retrieved; raster payload or continuous telemetry stream not yet decoded.
+- `LIVE_DATA_FETCHED`: Actual empirical observations or raster bands retrieved, parsed, and validated. *(Empty observation responses or missing pollutant measurements return `DATA_UNAVAILABLE` or `CATALOGUE_METADATA_RETRIEVED`, never `LIVE_DATA_FETCHED`.)*
+- `AVAILABLE_LOCAL_CACHE`: Valid, uncorrupted local cached raster or vector asset present.
+- `INGESTION_FAILED`: Remote query or local read failed.
+- `DATA_UNAVAILABLE`: Neither remote data nor local cache is available.

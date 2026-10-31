@@ -44,8 +44,8 @@ stateDiagram-v2
 ### 3. `INELIGIBLE`
 - **Definition**: The segment cannot accommodate the intervention due to insurmountable physical, legal, or safety constraints.
 - **Mandatory Rejection Conditions**:
-  - **Right-of-Way Bottleneck**: Available sidewalk width is strictly less than the minimum required (e.g., $< 2.5\text{m}$ for street trees).
-  - **Subsurface Utility Conflict**: High-voltage electrical conduits, main water trunk lines, metro tunneling, or gas pipelines within $1.5\text{m}$ depth.
+  - **Right-of-Way Bottleneck**: Measured physical sidewalk width (`surveyed_row_width_m`, `clear_pedestrian_width_m`, `available_planting_verge_m`) is strictly less than the minimum required. *Note: Guideline-only roadway width (`road_class_guideline_row_m`) cannot trigger ineligibility; it flags CONDITIONAL_PENDING_INSPECTION.*
+  - **Subsurface Utility Conflict**: High-voltage electrical conduits, main water trunk lines, metro tunneling, or gas pipelines within $1.5\text{m}$ depth verified via GPR.
   - **Pedestrian Safety Hazard**: High-speed arterial/motorway corridor without physical separation from vehicular traffic.
   - **Heritage Restriction**: Archaeological Survey of India (ASI) regulated buffer forbidding ground disturbance.
 
@@ -55,7 +55,23 @@ stateDiagram-v2
 
 ---
 
-## 3. Reviewer Provenance & Audit Protocol
+## 3. Evidence Document Lifecycle & Binary Uploads
+
+To eliminate evidence verification bypasses, string matching and heuristic pattern parsing have been completely removed:
+1. **Binary Document Upload**: Supporting evidence must be uploaded as a binary file (`POST /api/ml/evidence/upload`) with strict magic-byte validation (PDF `%PDF-`, PNG `\x89PNG`, JPEG `\xff\xd8\xff`) and a size limit of $\le 10\text{ MB}$.
+2. **Cryptographic Fingerprint**: A deterministic SHA-256 hash is computed and stored with file metadata in `evidence_documents`.
+3. **Formal Verification Lifecycle**: Documents progress through explicit states:
+   - `EVIDENCE_NOT_PROVIDED`
+   - `EVIDENCE_UPLOADED_UNVERIFIED`
+   - `EVIDENCE_PENDING_REVIEW`
+   - `EVIDENCE_VERIFIED`
+   - `EVIDENCE_REJECTED`
+4. **Independent Reviewer Sign-Off**: Verification requires an accredited municipal reviewer (`VERIFY_EVIDENCE` permission) who is **not** the uploader.
+5. **Training Eligibility**: A label is only training-eligible if its linked document has status `EVIDENCE_VERIFIED`, the binary file exists on disk, and its real SHA-256 matches the recorded checksum.
+
+---
+
+## 4. Reviewer Provenance & Audit Protocol
 
 To prevent ground-truth contamination, every label submission is validated through the server-side RBAC security layer:
 1. `assessor_id` & `organization`: Injected strictly from the server-verified Bearer token session. Client-supplied role strings are ignored to prevent privilege escalation.

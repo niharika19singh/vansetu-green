@@ -2,12 +2,15 @@
 VanSetu GreenTech — Site Assessment & Suitability Label Store (Phase 4B & Remediation).
 
 Persists field survey assessments, maintains immutable audit revision histories,
+manages binary evidence document lifecycle (PDF, PNG, JPEG with magic-byte validation),
 enforces strict server-side authorization, prevents self-approvals, and guarantees
 that unverified or circular labels never enter supervised ML training.
 """
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 import sqlite3
 import uuid
 from datetime import datetime, timezone
@@ -18,7 +21,9 @@ import pandas as pd
 
 from ml.labels.schema import (
     AssessmentReviewAction,
+    EvidenceDocumentMetadata,
     EvidenceDocumentType,
+    EvidenceVerificationStatus,
     InterventionArchetype,
     ReviewActionType,
     ReviewStatus,
@@ -34,18 +39,48 @@ def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def validate_evidence_file_bytes(file_bytes: bytes, filename: str) -> Tuple[str, str]:
+    """
+    Validate magic bytes and file size for physical evidence documents.
+    Accepts only authentic PDF, PNG, or JPEG files <= 10 MB.
+    Returns (mime_type, sha256_checksum).
+    """
+    MAX_SIZE = 10 * 1024 * 1024  # 10 MB
+    if len(file_bytes) > MAX_SIZE:
+        raise ValueError(f"Evidence file size ({len(file_bytes)} bytes) exceeds the maximum allowed limit of 10 MB.")
+    if len(file_bytes) < 4:
+        raise ValueError("Evidence document is empty or corrupted.")
+
+    if file_bytes.startswith(b"%PDF-"):
+        mime = "application/pdf"
+    elif file_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
+        mime = "image/png"
+    elif file_bytes.startswith(b"\xff\xd8\xff"):
+        mime = "image/jpeg"
+    else:
+        raise ValueError(
+            f"Invalid file format for '{filename}': Evidence documents must be authentic PDF, PNG, or JPEG files. "
+            "Magic header verification failed."
+        )
+
+    sha256 = hashlib.sha256(file_bytes).hexdigest()
+    return mime, sha256
+
+
 class AssessmentLabelStore:
-    """Manages verified human assessment records and revision trails."""
+    """Manages verified human assessment records, evidence documents, and revision trails."""
 
     def __init__(self, db_path: Optional[Any] = None, data_dir: Optional[Any] = None) -> None:
         self.data_dir = Path(data_dir) if data_dir else (Path(__file__).parent.parent.parent / "data")
         self.db_path = Path(db_path) if db_path else (self.data_dir / "site_assessments.sqlite")
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self.evidence_dir = self.data_dir / "evidence_documents"
+        self.evidence_dir.mkdir(parents=True, exist_ok=True)
         self._valid_segment_ids: Optional[Set[str]] = None
         self._init_db()
 
     def _get_conn(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=15.0)
         conn.row_factory = sqlite3.Row
         return conn
 
@@ -53,6 +88,23 @@ class AssessmentLabelStore:
         with self._get_conn() as conn:
             conn.executescript(
                 """
+                CREATE TABLE IF NOT EXISTS evidence_documents (
+                    evidence_id TEXT PRIMARY KEY,
+                    filename TEXT NOT NULL,
+                    file_size_bytes INTEGER NOT NULL,
+                    mime_type TEXT NOT NULL,
+                    sha256_checksum TEXT NOT NULL,
+                    document_type TEXT NOT NULL,
+                    uploaded_by_user_id TEXT NOT NULL,
+                    uploaded_by_username TEXT NOT NULL,
+                    uploaded_at TEXT NOT NULL,
+                    verification_status TEXT NOT NULL,
+                    verified_by_user_id TEXT,
+                    verified_at TEXT,
+                    verification_notes TEXT,
+                    storage_path TEXT NOT NULL
+                );
+
                 CREATE TABLE IF NOT EXISTS site_assessments (
                     assessment_id TEXT PRIMARY KEY,
                     segment_id TEXT NOT NULL,
@@ -65,13 +117,16 @@ class AssessmentLabelStore:
                     reviewer_organization TEXT,
                     evidence_reference TEXT NOT NULL,
                     evidence_document_type TEXT NOT NULL,
+                    evidence_id TEXT,
+                    evidence_verification_status TEXT,
                     is_evidence_verified INTEGER NOT NULL,
                     survey_reference TEXT,
                     engineering_constraints TEXT,
                     reviewer_notes TEXT,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
-                    schema_version TEXT NOT NULL
+                    schema_version TEXT NOT NULL,
+                    FOREIGN KEY(evidence_id) REFERENCES evidence_documents(evidence_id)
                 );
 
                 CREATE TABLE IF NOT EXISTS assessment_audit_history (
@@ -94,6 +149,8 @@ class AssessmentLabelStore:
                 CREATE INDEX IF NOT EXISTS idx_assessment_corridor ON site_assessments(corridor_id);
                 CREATE INDEX IF NOT EXISTS idx_assessment_archetype ON site_assessments(intervention_archetype);
                 CREATE INDEX IF NOT EXISTS idx_assessment_status ON site_assessments(review_status);
+                CREATE INDEX IF NOT EXISTS idx_evidence_status ON evidence_documents(verification_status);
+                CREATE INDEX IF NOT EXISTS idx_evidence_user ON evidence_documents(uploaded_by_user_id);
                 """
             )
             # Automatic schema migration for pre-existing databases
@@ -105,6 +162,10 @@ class AssessmentLabelStore:
                 conn.execute("ALTER TABLE site_assessments ADD COLUMN evidence_document_type TEXT NOT NULL DEFAULT 'UNVERIFIED_TEXTUAL_NOTE'")
             if "reviewer_organization" not in existing_cols and len(existing_cols) > 0:
                 conn.execute("ALTER TABLE site_assessments ADD COLUMN reviewer_organization TEXT")
+            if "evidence_id" not in existing_cols and len(existing_cols) > 0:
+                conn.execute("ALTER TABLE site_assessments ADD COLUMN evidence_id TEXT")
+            if "evidence_verification_status" not in existing_cols and len(existing_cols) > 0:
+                conn.execute("ALTER TABLE site_assessments ADD COLUMN evidence_verification_status TEXT")
 
             cur_aud = conn.execute("PRAGMA table_info(assessment_audit_history)")
             aud_cols = {row[1] for row in cur_aud.fetchall()}
@@ -131,7 +192,6 @@ class AssessmentLabelStore:
             except Exception:
                 pass
 
-        # Fallback to known Delhi pattern if parquet is not compiled yet
         self._valid_segment_ids = set()
         return self._valid_segment_ids
 
@@ -140,28 +200,157 @@ class AssessmentLabelStore:
         valid_segs = self._load_valid_segments()
         if valid_segs:
             return segment_id in valid_segs
-        # Structural check if feature dataset is compiling
         return segment_id.startswith("C-") and "-S" in segment_id
 
-    @staticmethod
-    def classify_evidence_verification(evidence_ref: str, doc_type: EvidenceDocumentType) -> bool:
+    # =========================================================================
+    # Evidence Document Lifecycle
+    # =========================================================================
+
+    def save_evidence_document(
+        self,
+        file_bytes: bytes,
+        filename: str,
+        document_type: EvidenceDocumentType,
+        user: AuthenticatedUser,
+    ) -> Dict[str, Any]:
         """
-        Verify whether evidence reference is an official verifiable document ID
-        vs an unverified textual placeholder note.
+        Save an uploaded evidence document with magic-byte validation, SHA-256 calculation,
+        and atomic metadata insertion. Starts in EVIDENCE_PENDING_REVIEW status.
         """
-        if doc_type == EvidenceDocumentType.UNVERIFIED_TEXTUAL_NOTE:
-            return False
+        mime_type, sha256_hash = validate_evidence_file_bytes(file_bytes, filename)
+        evidence_id = f"evid-{uuid.uuid4().hex[:12]}"
+        now = _utc_now_iso()
 
-        ref_lower = evidence_ref.strip().lower()
-        if any(unv in ref_lower for unv in ("unverified", "text note", "placeholder", "tbd", "none", "demo_scenario")):
-            return False
+        # Sanitize filename
+        safe_name = os.path.basename(filename).replace(" ", "_")
+        target_path = self.evidence_dir / f"{evidence_id}_{safe_name}"
+        target_path.write_bytes(file_bytes)
 
-        # Must have an official institutional pattern or document identifier
-        prefixes = ("pwd/", "mcd/", "cpwd/", "asi/", "dpcc/", "delhi/", "gpr/", "dtc/", "dimts/")
-        if any(ref_lower.startswith(p) for p in prefixes) or "/" in evidence_ref or "-" in evidence_ref:
-            return True
+        initial_status = EvidenceVerificationStatus.EVIDENCE_PENDING_REVIEW.value
+        doc_type_val = document_type.value if hasattr(document_type, "value") else str(document_type)
 
-        return len(evidence_ref.strip()) >= 6
+        with self._get_conn() as conn:
+            conn.execute(
+                """
+                INSERT INTO evidence_documents (
+                    evidence_id, filename, file_size_bytes, mime_type, sha256_checksum,
+                    document_type, uploaded_by_user_id, uploaded_by_username, uploaded_at,
+                    verification_status, verified_by_user_id, verified_at, verification_notes,
+                    storage_path
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?)
+                """,
+                (
+                    evidence_id,
+                    safe_name,
+                    len(file_bytes),
+                    mime_type,
+                    sha256_hash,
+                    doc_type_val,
+                    user.user_id,
+                    user.username,
+                    now,
+                    initial_status,
+                    str(target_path),
+                ),
+            )
+            conn.commit()
+
+        return self.get_evidence_document(evidence_id) or {}
+
+    def get_evidence_document(self, evidence_id: str) -> Optional[Dict[str, Any]]:
+        with self._get_conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM evidence_documents WHERE evidence_id = ?",
+                (evidence_id,),
+            ).fetchone()
+            if not row:
+                return None
+            return dict(row)
+
+    def list_evidence_documents(
+        self,
+        user_id: Optional[str] = None,
+        status: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        query = "SELECT * FROM evidence_documents WHERE 1=1"
+        params: List[Any] = []
+        if user_id:
+            query += " AND uploaded_by_user_id = ?"
+            params.append(user_id)
+        if status:
+            query += " AND verification_status = ?"
+            params.append(status)
+        query += " ORDER BY uploaded_at DESC"
+
+        with self._get_conn() as conn:
+            rows = conn.execute(query, params).fetchall()
+            return [dict(r) for r in rows]
+
+    def verify_evidence_document(
+        self,
+        evidence_id: str,
+        action: str,
+        reviewer: AuthenticatedUser,
+        notes: str,
+    ) -> Dict[str, Any]:
+        """
+        Verify or reject an uploaded physical evidence document.
+        Enforces:
+        1. Reviewer must have VERIFY_EVIDENCE or REVIEW_ASSESSMENT permission.
+        2. Uploader cannot verify their own document (conflict of interest prevention).
+        """
+        if not (reviewer.has_permission(Permission.VERIFY_EVIDENCE) or reviewer.has_permission(Permission.REVIEW_ASSESSMENT)):
+            raise PermissionError(f"Role '{reviewer.role.value}' does not have permission to verify evidence.")
+
+        with self._get_conn() as conn:
+            doc = conn.execute(
+                "SELECT * FROM evidence_documents WHERE evidence_id = ?",
+                (evidence_id,),
+            ).fetchone()
+            if not doc:
+                raise KeyError(f"Evidence document '{evidence_id}' not found.")
+
+            if reviewer.user_id == doc["uploaded_by_user_id"]:
+                raise ValueError(
+                    f"Conflict of interest: User '{reviewer.user_id}' uploaded this document and cannot verify it."
+                )
+
+            act_upper = action.strip().upper()
+            if act_upper in ("APPROVE", "VERIFY"):
+                new_status = EvidenceVerificationStatus.EVIDENCE_VERIFIED.value
+                is_verified_int = 1
+            elif act_upper in ("REJECT", "DISQUALIFY"):
+                new_status = EvidenceVerificationStatus.EVIDENCE_REJECTED.value
+                is_verified_int = 0
+            else:
+                raise ValueError(f"Invalid verification action '{action}'. Must be APPROVE or REJECT.")
+
+            now = _utc_now_iso()
+            conn.execute(
+                """
+                UPDATE evidence_documents
+                SET verification_status = ?, verified_by_user_id = ?, verified_at = ?, verification_notes = ?
+                WHERE evidence_id = ?
+                """,
+                (new_status, reviewer.user_id, now, notes, evidence_id),
+            )
+
+            # Cascade verification status to all linked site assessments
+            conn.execute(
+                """
+                UPDATE site_assessments
+                SET is_evidence_verified = ?, evidence_verification_status = ?, updated_at = ?
+                WHERE evidence_id = ?
+                """,
+                (is_verified_int, new_status, now, evidence_id),
+            )
+            conn.commit()
+
+        return self.get_evidence_document(evidence_id) or {}
+
+    # =========================================================================
+    # Site Assessment Management
+    # =========================================================================
 
     def submit_assessment(
         self,
@@ -170,7 +359,7 @@ class AssessmentLabelStore:
     ) -> Dict[str, Any]:
         """
         Submit a new field assessment with strict server-side validation.
-        Reviewer identity and role are strictly derived from authenticated user context.
+        Reviewer identity and role are derived strictly from authenticated user session.
         Every new submission starts as PENDING_REVIEW.
         """
         # 1. Geographic integrity: Validate segment exists in Delhi network
@@ -183,16 +372,27 @@ class AssessmentLabelStore:
             reviewer_role = authenticated_user.role.value
             reviewer_org = authenticated_user.organization
         else:
-            # Fallback for direct unit tests: must still have valid non-empty values
             reviewer_id = sub.reviewer_id or "PWD_ENG_DEFAULT"
             reviewer_role = sub.reviewer_role or ReviewerRole.FIELD_ASSESSOR.value
             reviewer_org = "Municipal Field Cell"
 
-        # 3. Evidence classification
-        is_verified_doc = self.classify_evidence_verification(
-            sub.evidence_reference,
-            sub.evidence_document_type,
-        )
+        # 3. Evidence document linkage & verification status check
+        evidence_id = sub.evidence_id
+        is_verified_doc = False
+        evidence_status = EvidenceVerificationStatus.EVIDENCE_NOT_PROVIDED.value
+
+        if evidence_id:
+            doc = self.get_evidence_document(evidence_id)
+            if not doc:
+                raise ValueError(f"Evidence document '{evidence_id}' does not exist.")
+            evidence_status = doc["verification_status"]
+            is_verified_doc = (evidence_status == EvidenceVerificationStatus.EVIDENCE_VERIFIED.value)
+        else:
+            # Check if an unverified text note was submitted
+            if sub.evidence_document_type == EvidenceDocumentType.UNVERIFIED_TEXTUAL_NOTE:
+                evidence_status = EvidenceVerificationStatus.EVIDENCE_NOT_PROVIDED.value
+            else:
+                evidence_status = EvidenceVerificationStatus.EVIDENCE_PENDING_REVIEW.value
 
         # 4. Data integrity check
         validation_payload = {
@@ -208,12 +408,10 @@ class AssessmentLabelStore:
 
         now = _utc_now_iso()
         aid = f"assmnt-{uuid.uuid4().hex[:10]}"
-        # MANDATORY SECURITY RULE: All new submissions start as PENDING_REVIEW
         initial_status = ReviewStatus.PENDING_REVIEW.value
         constraints_json = json.dumps(sub.engineering_constraints)
 
         with self._get_conn() as conn:
-            # Check for existing assessment on same segment + archetype
             existing = conn.execute(
                 "SELECT assessment_id, suitability_state, review_status FROM site_assessments WHERE segment_id = ? AND intervention_archetype = ?",
                 (sub.segment_id, sub.intervention_archetype.value),
@@ -228,8 +426,8 @@ class AssessmentLabelStore:
                     UPDATE site_assessments
                     SET suitability_state = ?, review_status = ?, reviewer_id = ?, reviewer_role = ?,
                         reviewer_organization = ?, evidence_reference = ?, evidence_document_type = ?,
-                        is_evidence_verified = ?, survey_reference = ?, engineering_constraints = ?,
-                        reviewer_notes = ?, updated_at = ?
+                        evidence_id = ?, evidence_verification_status = ?, is_evidence_verified = ?,
+                        survey_reference = ?, engineering_constraints = ?, reviewer_notes = ?, updated_at = ?
                     WHERE assessment_id = ?
                     """,
                     (
@@ -240,6 +438,8 @@ class AssessmentLabelStore:
                         reviewer_org,
                         sub.evidence_reference,
                         sub.evidence_document_type.value,
+                        evidence_id,
+                        evidence_status,
                         1 if is_verified_doc else 0,
                         sub.survey_reference,
                         constraints_json,
@@ -258,9 +458,10 @@ class AssessmentLabelStore:
                         assessment_id, segment_id, corridor_id, intervention_archetype,
                         suitability_state, review_status, reviewer_id, reviewer_role,
                         reviewer_organization, evidence_reference, evidence_document_type,
-                        is_evidence_verified, survey_reference, engineering_constraints,
-                        reviewer_notes, created_at, updated_at, schema_version
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        evidence_id, evidence_verification_status, is_evidence_verified,
+                        survey_reference, engineering_constraints, reviewer_notes,
+                        created_at, updated_at, schema_version
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         aid,
@@ -274,13 +475,15 @@ class AssessmentLabelStore:
                         reviewer_org,
                         sub.evidence_reference,
                         sub.evidence_document_type.value,
+                        evidence_id,
+                        evidence_status,
                         1 if is_verified_doc else 0,
                         sub.survey_reference,
                         constraints_json,
                         sub.reviewer_notes,
                         now,
                         now,
-                        "2.1.0",
+                        "2.2.0",
                     ),
                 )
                 action_name = "INITIAL_SUBMISSION"
@@ -341,6 +544,7 @@ class AssessmentLabelStore:
             prev_state = current["suitability_state"]
             prev_status = current["review_status"]
             original_assessor = current["reviewer_id"]
+            evidence_id = current["evidence_id"]
 
             # MANDATORY CONFLICT OF INTEREST CHECK: An assessor cannot approve their own assessment
             act_str = str(action.action.value if hasattr(action.action, "value") else action.action).upper()
@@ -369,14 +573,43 @@ class AssessmentLabelStore:
             else:
                 raise ValueError(f"Invalid review action '{act_str}'. Must be APPROVE, REJECT, or CORRECT.")
 
+            # Evidence document verification sync
+            is_evidence_verified = bool(current["is_evidence_verified"])
+            ev_status = current["evidence_verification_status"] or EvidenceVerificationStatus.EVIDENCE_NOT_PROVIDED.value
+
+            if act_str in ("APPROVE", "CORRECT"):
+                if evidence_id:
+                    doc = self.get_evidence_document(evidence_id)
+                    if doc:
+                        if doc["verification_status"] == EvidenceVerificationStatus.EVIDENCE_VERIFIED.value:
+                            is_evidence_verified = True
+                            ev_status = EvidenceVerificationStatus.EVIDENCE_VERIFIED.value
+                        elif authenticated_reviewer and authenticated_reviewer.user_id != doc["uploaded_by_user_id"]:
+                            # Concurrently approve the supporting evidence document
+                            self.verify_evidence_document(
+                                evidence_id=evidence_id,
+                                action="APPROVE",
+                                reviewer=authenticated_reviewer,
+                                notes=f"Approved concurrently with assessment {action.assessment_id}: {action.reviewer_note}",
+                            )
+                            is_evidence_verified = True
+                            ev_status = EvidenceVerificationStatus.EVIDENCE_VERIFIED.value
+                        else:
+                            is_evidence_verified = False
+                    else:
+                        is_evidence_verified = False
+                else:
+                    is_evidence_verified = False
+
             # Update master record
             conn.execute(
                 """
                 UPDATE site_assessments
-                SET review_status = ?, suitability_state = ?, updated_at = ?
+                SET review_status = ?, suitability_state = ?, is_evidence_verified = ?,
+                    evidence_verification_status = ?, updated_at = ?
                 WHERE assessment_id = ?
                 """,
-                (new_status, new_state, now, action.assessment_id),
+                (new_status, new_state, 1 if is_evidence_verified else 0, ev_status, now, action.assessment_id),
             )
 
             # Add immutable audit log
@@ -463,19 +696,49 @@ class AssessmentLabelStore:
         2. suitability_state in ('ELIGIBLE', 'CONDITIONAL', 'INELIGIBLE')
         3. UNASSESSED is strictly excluded.
         4. is_evidence_verified == 1 (backed by verifiable official document).
+        5. evidence_id exists and references an active record in evidence_documents.
+        6. Document status is EVIDENCE_VERIFIED.
+        7. The file exists on disk and its SHA-256 matches the stored checksum.
         """
         with self._get_conn() as conn:
             rows = conn.execute(
                 """
-                SELECT assessment_id, segment_id, corridor_id, intervention_archetype,
-                       suitability_state, reviewer_id, reviewer_role, evidence_reference,
-                       is_evidence_verified, updated_at
-                FROM site_assessments
-                WHERE review_status = 'APPROVED'
-                  AND suitability_state IN ('ELIGIBLE', 'CONDITIONAL', 'INELIGIBLE')
-                  AND is_evidence_verified = 1
-                ORDER BY updated_at ASC
+                SELECT a.assessment_id, a.segment_id, a.corridor_id, a.intervention_archetype,
+                       a.suitability_state, a.reviewer_id, a.reviewer_role, a.evidence_reference,
+                       a.evidence_id, a.is_evidence_verified, a.updated_at,
+                       e.storage_path, e.sha256_checksum, e.verification_status
+                FROM site_assessments a
+                LEFT JOIN evidence_documents e ON a.evidence_id = e.evidence_id
+                WHERE a.review_status = 'APPROVED'
+                  AND a.suitability_state IN ('ELIGIBLE', 'CONDITIONAL', 'INELIGIBLE')
+                  AND a.is_evidence_verified = 1
+                  AND a.evidence_id IS NOT NULL
+                  AND e.verification_status = 'EVIDENCE_VERIFIED'
+                ORDER BY a.updated_at ASC
                 """
             ).fetchall()
 
-        return [dict(r) for r in rows]
+        eligible: List[Dict[str, Any]] = []
+        for r in rows:
+            rec = dict(r)
+            path_str = rec.get("storage_path")
+            expected_sha = rec.get("sha256_checksum")
+            if not path_str or not expected_sha:
+                continue
+
+            file_path = Path(path_str)
+            if not file_path.exists():
+                # Document file missing on disk — disqualify
+                continue
+
+            try:
+                actual_sha = hashlib.sha256(file_path.read_bytes()).hexdigest()
+                if actual_sha.lower() != expected_sha.lower():
+                    # Checksum mismatch / corrupted file — disqualify
+                    continue
+            except Exception:
+                continue
+
+            eligible.append(rec)
+
+        return eligible

@@ -76,9 +76,22 @@ If a newly approved model demonstrates unexpected predictions in the field:
 
 ---
 
-## 5. Durable Object Storage (DigitalOcean Spaces)
+## 5. Durable Object Storage (DigitalOcean Spaces Adapter)
 
-In production environments, model artifacts are mirrored to DigitalOcean Spaces (`blr1` region).
-If `DO_SPACES_KEY` or `DO_SPACES_BUCKET` are unconfigured, `ModelRegistry.check_durable_storage_status()` reports:
-`DURABLE_MODEL_STORAGE_NOT_CONFIGURED`
-while allowing secure local filesystem fallback for development and isolated testing. Model promotion enforces that local artifacts pass SHA-256 integrity verification before activation.
+In production environments, model artifacts are mirrored to DigitalOcean Spaces (`blr1` region in Bangalore) via the `SpacesArtifactStore` adapter using Boto3 / S3 API:
+- **Pre-upload Checksum Verification**: Local artifact SHA-256 is verified prior to transmission.
+- **Upload with S3 Metadata**: Stored with `x-amz-meta-sha256` header.
+- **Post-download Verification**: Downloaded artifact checksum is re-verified before disk persistence; corrupted downloads are deleted immediately.
+- **Graceful Unconfigured Fallback**: If `DO_SPACES_KEY` or `DO_SPACES_BUCKET` are absent, `ModelRegistry.check_durable_storage_status()` reports:
+  `DURABLE_MODEL_STORAGE_NOT_CONFIGURED`
+  with `local_fallback_active: true`, enabling development and isolated testing on local volumes without service interruption.
+
+---
+
+## 6. Access Control & Governance Permissions
+
+Model promotion and rollback are protected by server-side Role-Based Access Control (RBAC):
+- **Required Permission**: `Permission.PROMOTE_MODEL`
+- **Permitted Roles**: `SENIOR_REVIEWER` (e.g. Chief Town Planner), `ADMINISTRATOR`.
+- **Prohibited Roles**: `FIELD_ASSESSOR` and `AUTHORIZED_REVIEWER` receive HTTP 403 Forbidden.
+- **Token Redaction**: Tokens and authentication headers are masked in system logs (`[REDACTED]`). Exposed seeded credentials in source code are strictly banned and rejected by automated CI security scans.

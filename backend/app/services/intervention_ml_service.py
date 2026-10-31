@@ -120,6 +120,36 @@ class InterventionMlService:
         """Submit a verified human field assessment with server-side identity injection."""
         return self.label_store.submit_assessment(sub, authenticated_user=authenticated_user)
 
+    def save_evidence_document(
+        self,
+        file_bytes: bytes,
+        filename: str,
+        document_type: Any,
+        user: AuthenticatedUser,
+    ) -> Dict[str, Any]:
+        """Save and validate an empirical evidence document."""
+        return self.label_store.save_evidence_document(file_bytes, filename, document_type, user)
+
+    def verify_evidence_document(
+        self,
+        evidence_id: str,
+        action: str,
+        reviewer: AuthenticatedUser,
+        notes: str,
+    ) -> Dict[str, Any]:
+        """Review and verify or reject an evidence document."""
+        return self.label_store.verify_evidence_document(evidence_id, action, reviewer, notes)
+
+    def get_evidence_document(self, evidence_id: str) -> Optional[Dict[str, Any]]:
+        return self.label_store.get_evidence_document(evidence_id)
+
+    def list_evidence_documents(
+        self,
+        user_id: Optional[str] = None,
+        status: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        return self.label_store.list_evidence_documents(user_id=user_id, status=status)
+
     def review_site_assessment(
         self,
         act: AssessmentReviewAction,

@@ -55,13 +55,17 @@ CDS_API_KEY=your_ecmwf_cds_api_key
 CPCB_API_KEY=your_cpcb_or_data_gov_in_api_key
 
 # ==============================================================================
-# ML PIPELINE RUNTIME CONFIGURATION
+# ML PIPELINE RUNTIME & SECURITY CONFIGURATION
 # ==============================================================================
 VANSETU_DATA_DIR=/app/backend/data
 VANSETU_MODELS_DIR=/app/backend/models
 ML_MIN_LABELS_GATE=50
 ML_MIN_CORRIDORS_GATE=3
 ML_AUTO_DOWNLOAD_SPACES_ASSETS=true
+
+# Server-Side Municipal Authentication Tokens (JSON array loaded at bootstrap)
+# Tokens are securely hashed using salted SHA-256 upon ingestion; raw tokens are never saved.
+VANSETU_MUNICIPAL_TOKENS_JSON='[{"user_id":"MUNICIPAL_OFFICER_01","username":"officer.delhi","full_name":"Senior Climate Officer","role":"SENIOR_REVIEWER","organization":"GNCTD Planning","token":"vs_secure_random_hex_32"}]'
 ```
 
 ---

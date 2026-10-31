@@ -181,8 +181,8 @@ class NasaModisAdapter(BaseSourceAdapter):
                 if resp.status_code == 200:
                     entries = resp.json().get("feed", {}).get("entry", [])
                     return {
-                        "available": True,
-                        "status": IngestionStatus.LIVE_DATA_FETCHED.value,
+                        "available": bool(entries),
+                        "status": IngestionStatus.CATALOGUE_METADATA_RETRIEVED.value,
                         "granules_count": len(entries),
                         "granules": [
                             {

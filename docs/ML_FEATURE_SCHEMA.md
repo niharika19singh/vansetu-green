@@ -86,4 +86,5 @@ Every feature in the VanSetu feature store is explicitly tagged with one of seve
 
 3. **Separation of Guideline Estimates from Field Measurements**:
    - `road_class_guideline_row_m` reflects Indian Roads Congress design specifications based on OSM road hierarchy.
-   - Guideline width can **never** establish unconditional physical feasibility for tree pits or swales; `surveyed_row_width_m` remains `None` until an accredited surveyor records empirical cross-section measurements.
+   - Guideline width can **never** establish unconditional physical feasibility or physical ineligibility (`INELIGIBLE`) for tree pits or swales; `surveyed_row_width_m` remains `None` until an accredited surveyor records empirical cross-section measurements.
+   - If guideline width is below the archetype requirement, the system marks the segment `CONDITIONAL_PENDING_INSPECTION` with an explicit warning that guideline widths are indicative only. Physical ineligibility can only be established through physical field measurements (`surveyed_row_width_m`, `clear_pedestrian_width_m`, `available_planting_verge_m`).

@@ -109,38 +109,49 @@ class HardConstraintValidator:
 
         # 3. ROW and clear sidewalk width check (Guideline vs Measured)
         surveyed_row = segment_features.get("surveyed_row_width_m")
+        clear_ped = segment_features.get("clear_pedestrian_width_m")
+        verge_m = segment_features.get("available_planting_verge_m")
         guideline_row = segment_features.get("road_class_guideline_row_m") or segment_features.get("estimated_row_width_m")
         min_required = cls.MIN_ROW_WIDTH_METRES.get(archetype, 1.5)
 
-        # If a verified surveyed ROW is present and below minimum -> INELIGIBLE
-        if surveyed_row is not None:
-            if surveyed_row < min_required:
-                reasons.append(
-                    f"Inadequate surveyed Right-of-Way width: measured {surveyed_row}m is below minimum {min_required}m required for {archetype}."
-                )
-                forced_state = "INELIGIBLE"
-                canonical_state = ConstraintState.INELIGIBLE_HARD_CONSTRAINT
-        elif guideline_row is not None:
-            # If guideline ROW is below minimum -> INELIGIBLE
-            if guideline_row < min_required:
-                reasons.append(
-                    f"Inadequate Right-of-Way width: guideline {guideline_row}m is below minimum {min_required}m required for {archetype}."
-                )
-                forced_state = "INELIGIBLE"
-                canonical_state = ConstraintState.INELIGIBLE_HARD_CONSTRAINT
-            else:
-                # Guideline ROW alone CANNOT produce VERIFIED_ELIGIBLE; must flag pending inspection
-                warnings.append(
-                    "Field survey required: Road width is based on road-class guideline, not measured cross-section."
-                )
+        # Physical measurements ONLY can establish physical ineligibility
+        if surveyed_row is not None and surveyed_row < min_required:
+            reasons.append(
+                f"Inadequate surveyed Right-of-Way width: measured {surveyed_row}m is below minimum {min_required}m required for {archetype}."
+            )
+            forced_state = "INELIGIBLE"
+            canonical_state = ConstraintState.INELIGIBLE_HARD_CONSTRAINT
+        elif clear_ped is not None and clear_ped < 1.5 and archetype in ("linear_street_trees", "architectural_shade_structures", "living_green_walls"):
+            reasons.append(
+                f"Inadequate measured clear pedestrian footway: {clear_ped}m is below IRC minimum 1.5m unobstructed walkway requirement."
+            )
+            forced_state = "INELIGIBLE"
+            canonical_state = ConstraintState.INELIGIBLE_HARD_CONSTRAINT
+        elif verge_m is not None and verge_m < 1.2 and archetype == "linear_street_trees":
+            reasons.append(
+                f"Inadequate measured planting verge: {verge_m}m is below minimum 1.2m soil pit width required for street trees."
+            )
+            forced_state = "INELIGIBLE"
+            canonical_state = ConstraintState.INELIGIBLE_HARD_CONSTRAINT
+        elif surveyed_row is None:
+            # Guideline-only width NEVER establishes physical ineligibility (INELIGIBLE)
+            if guideline_row is not None:
+                if guideline_row < min_required:
+                    warnings.append(
+                        f"Physical cross-section required: Road-class guideline width ({guideline_row}m) is indicative only and cannot establish physical ineligibility without field measurement."
+                    )
+                else:
+                    warnings.append(
+                        "Field survey required: Road width is based on road-class guideline, not measured cross-section."
+                    )
                 if forced_state is None:
                     forced_state = "CONDITIONAL"
                     canonical_state = ConstraintState.CONDITIONAL_PENDING_INSPECTION
-        else:
-            warnings.append("Right-of-Way width unassessed: physical cross-section data unavailable.")
-            if forced_state is None:
-                forced_state = "UNASSESSED"
-                canonical_state = ConstraintState.UNASSESSED_INSUFFICIENT_EVIDENCE
+            else:
+                warnings.append("Right-of-Way width unassessed: physical cross-section data unavailable.")
+                if forced_state is None:
+                    forced_state = "UNASSESSED"
+                    canonical_state = ConstraintState.UNASSESSED_INSUFFICIENT_EVIDENCE
 
         # 4. Highway walkability and pedestrian safety
         is_walkable = segment_features.get("is_walkable")

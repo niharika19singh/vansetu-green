@@ -12,16 +12,20 @@ Tests:
 9. FastAPI API Endpoints (All 7 endpoints)
 """
 
+import hashlib
+import io
 import os
 import tempfile
-from pathlib import Path
-import pytest
 from datetime import datetime, timezone
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+import pytest
 from fastapi.testclient import TestClient
 from shapely.geometry import Point, LineString
 
 from app.main import app
 from ml.validation import TrainingDataEligibilityValidator, ContaminatedDataError
+from ml.security.auth import AuthenticatedUser, Permission, ReviewerRole, get_auth_manager
 from ml.sources import (
     CopernicusSentinel2Adapter,
     NasaModisAdapter,
@@ -34,19 +38,24 @@ from ml.sources import (
     get_all_source_adapters,
     get_data_ecosystem_status,
 )
+from ml.sources.base import IngestionStatus
 from ml.sources.cpcb_airquality import DELHI_CAAQM_STATIONS
 from ml.preprocessing.segmentation import CorridorSegmenter
 from ml.preprocessing.zonal_stats import ZonalStatsSampler
 from ml.labels.schema import (
     AssessmentReviewAction,
+    EvidenceDocumentType,
+    EvidenceVerificationStatus,
     InterventionArchetype,
+    ReviewActionType,
     SiteAssessmentSubmission,
     SuitabilityState,
 )
 from ml.labels.store import AssessmentLabelStore
 from ml.training.data_builder import TrainingDatasetBuilder, InsufficientLabelsError
 from ml.training.registry import ModelRegistry
-from ml.inference.hard_constraints import HardConstraintValidator
+from ml.training.spaces_storage import SpacesArtifactStore
+from ml.inference.hard_constraints import HardConstraintValidator, ConstraintState
 from ml.inference.explanation import RecommendationExplainer
 from ml.inference.predictor import InterventionIntelligencePredictor
 from ml.outcome.outcome_schema import DeploymentOutcomeObservation, OutcomeMetricType
@@ -320,15 +329,15 @@ def test_model_registry_summary():
 # -------------------------------------------------------------------------
 
 def test_hard_constraint_overrides_prediction():
-    # Case A: Narrow ROW (< 2.5m) should strictly forbid linear_street_trees
+    # Case A: Narrow surveyed ROW (< 2.5m) should strictly forbid linear_street_trees
     narrow_features = {
-        "estimated_row_width_m": 1.8,
+        "surveyed_row_width_m": 1.8,
         "gpr_utility_survey_status": "VERIFIED_CLEAR",
     }
     res = HardConstraintValidator.evaluate_constraints("linear_street_trees", narrow_features)
     assert res.has_hard_constraint is True
     assert res.forced_state == "INELIGIBLE"
-    assert any("Inadequate Right-of-Way" in r for r in res.constraint_reasons)
+    assert any("Inadequate" in r for r in res.constraint_reasons)
 
     # Case B: GPR Subsurface Utility Conflict should strictly forbid bioswales
     restrictions = [{"excluded_interventions": ["roadside_bioswales"], "reason": "High-voltage conduit at 0.6m"}]
@@ -490,7 +499,56 @@ def test_api_data_status_endpoint(client):
     assert "ecosystem_status" in data
 
 
+def test_source_code_zero_hardcoded_credentials():
+    """Verify that none of the previously leaked credentials appear in source files."""
+    repo_root = Path(__file__).parent.parent.parent
+    banned_tokens = [
+        "token_field_pwd_7104",
+        "token_reviewer_mcd_3012",
+        "token_senior_delhi_001",
+        "token_admin_delhi_root",
+    ]
+    checked_dirs = [
+        repo_root / "backend" / "ml",
+        repo_root / "backend" / "app",
+        repo_root / "backend" / "tests",
+        repo_root / "frontend" / "src",
+    ]
+    for check_dir in checked_dirs:
+        if not check_dir.exists():
+            continue
+        for p in check_dir.rglob("*"):
+            if p.is_file() and p.suffix in (".py", ".js", ".jsx", ".ts", ".tsx", ".json", ".html"):
+                if p.name == "test_ml_pipeline.py" and "banned_tokens" in p.read_text():
+                    # Skip the test definition itself when checking strings
+                    content = p.read_text()
+                    for tok in banned_tokens:
+                        # Ensure it only appears within banned_tokens list in this test file
+                        occurrences = content.count(tok)
+                        assert occurrences <= 1, f"Banned credential '{tok}' found in {p} outside blacklist definition"
+                else:
+                    content = p.read_text()
+                    for tok in banned_tokens:
+                        assert tok not in content, f"Leaked credential '{tok}' found in source file: {p}"
+
+
 def test_api_site_assessments_security_and_roundtrip(client):
+    auth_mgr = get_auth_manager()
+    assessor_tok, assessor_user = auth_mgr.provision_test_user(
+        role=ReviewerRole.FIELD_ASSESSOR,
+        user_id="PWD_ENG_TEST_01",
+        username="test.assessor",
+        full_name="Test Assessor",
+        organization="Public Works Department - South",
+    )
+    reviewer_tok, reviewer_user = auth_mgr.provision_test_user(
+        role=ReviewerRole.AUTHORIZED_REVIEWER,
+        user_id="MCD_REV_TEST_02",
+        username="test.reviewer",
+        full_name="Test Reviewer",
+        organization="Municipal Corporation of Delhi",
+    )
+
     payload = {
         "segment_id": "C-14-S002",
         "corridor_id": "C-14",
@@ -507,13 +565,13 @@ def test_api_site_assessments_security_and_roundtrip(client):
     assert unauth_res.status_code == 401
 
     # 2. Authenticated field assessor submission succeeds
-    auth_headers = {"Authorization": "Bearer token_field_pwd_7104"}
+    auth_headers = {"Authorization": f"Bearer {assessor_tok}"}
     post_res = client.post("/api/ml/site-assessments", json=payload, headers=auth_headers)
     assert post_res.status_code in (200, 201)
     saved = post_res.json()
     assert saved["assessment_id"] is not None
     # Server injected identity, rejecting client role tampering
-    assert saved["reviewer_id"] == "PWD_ENG_7104"
+    assert saved["reviewer_id"] == "PWD_ENG_TEST_01"
     assert saved["review_status"] == "PENDING_REVIEW"
     ass_id = saved["assessment_id"]
 
@@ -525,12 +583,12 @@ def test_api_site_assessments_security_and_roundtrip(client):
     assessor_review_res = client.patch(
         f"/api/ml/site-assessments/{ass_id}",
         json=review_payload,
-        headers={"Authorization": "Bearer token_field_pwd_7104"},
+        headers={"Authorization": f"Bearer {assessor_tok}"},
     )
     assert assessor_review_res.status_code == 403
 
     # 4. Authorized Reviewer from MCD reviews assessment
-    reviewer_headers = {"Authorization": "Bearer token_reviewer_mcd_3012"}
+    reviewer_headers = {"Authorization": f"Bearer {reviewer_tok}"}
     review_res = client.patch(
         f"/api/ml/site-assessments/{ass_id}",
         json=review_payload,
@@ -539,8 +597,8 @@ def test_api_site_assessments_security_and_roundtrip(client):
     assert review_res.status_code == 200
     reviewed_data = review_res.json()
     assert reviewed_data["review_status"] == "APPROVED"
-    assert reviewed_data["last_reviewed_by"] == "MCD_REV_3012"
-    assert reviewed_data["audit_history"][-1]["performed_by"] == "MCD_REV_3012"
+    assert reviewed_data["last_reviewed_by"] == "MCD_REV_TEST_02"
+    assert reviewed_data["audit_history"][-1]["performed_by"] == "MCD_REV_TEST_02"
 
     # 5. List endpoint returns recorded assessments
     get_res = client.get("/api/ml/site-assessments?segment_id=C-14-S002")
@@ -550,6 +608,12 @@ def test_api_site_assessments_security_and_roundtrip(client):
 
 
 def test_api_outcome_observations_security_and_roundtrip(client):
+    auth_mgr = get_auth_manager()
+    assessor_tok, assessor_user = auth_mgr.provision_test_user(
+        role=ReviewerRole.FIELD_ASSESSOR,
+        user_id="PWD_ENG_TEST_03",
+    )
+
     payload = {
         "deployment_id": "DEP-TEST-002",
         "segment_id": "C-14-S003",
@@ -574,16 +638,20 @@ def test_api_outcome_observations_security_and_roundtrip(client):
     assert unauth_res.status_code == 401
 
     # 2. Authenticated submission succeeds
-    auth_headers = {"Authorization": "Bearer token_field_pwd_7104"}
+    auth_headers = {"Authorization": f"Bearer {assessor_tok}"}
     post_res = client.post("/api/ml/outcome-observations", json=payload, headers=auth_headers)
     assert post_res.status_code in (200, 201)
     saved = post_res.json()
     assert saved["observation_id"] is not None
     assert saved["deployment_id"] == "DEP-TEST-002"
-    assert saved["recorder_id"] == "PWD_ENG_7104"
+    assert saved["recorder_id"] == "PWD_ENG_TEST_03"
 
 
 def test_api_model_governance_rbac_promotion(client):
+    auth_mgr = get_auth_manager()
+    assessor_tok, _ = auth_mgr.provision_test_user(role=ReviewerRole.FIELD_ASSESSOR)
+    senior_tok, _ = auth_mgr.provision_test_user(role=ReviewerRole.SENIOR_REVIEWER)
+
     promote_payload = {
         "model_version": "v_nonexistent_test",
         "approval_note": "Attempted unauthorized promotion",
@@ -592,7 +660,7 @@ def test_api_model_governance_rbac_promotion(client):
     res_field = client.post(
         "/api/ml/model/promote",
         json=promote_payload,
-        headers={"Authorization": "Bearer token_field_pwd_7104"},
+        headers={"Authorization": f"Bearer {assessor_tok}"},
     )
     assert res_field.status_code == 403
 
@@ -600,6 +668,227 @@ def test_api_model_governance_rbac_promotion(client):
     res_senior = client.post(
         "/api/ml/model/promote",
         json=promote_payload,
-        headers={"Authorization": "Bearer token_senior_delhi_001"},
+        headers={"Authorization": f"Bearer {senior_tok}"},
     )
     assert res_senior.status_code in (400, 404)
+
+
+def test_evidence_document_magic_bytes_and_lifecycle(client):
+    """Test binary evidence upload, magic byte validation, conflict of interest, and verification."""
+    auth_mgr = get_auth_manager()
+    assessor_tok, assessor_user = auth_mgr.provision_test_user(
+        role=ReviewerRole.FIELD_ASSESSOR,
+        user_id="UPLOADER_ENG_01",
+    )
+    reviewer_tok, reviewer_user = auth_mgr.provision_test_user(
+        role=ReviewerRole.AUTHORIZED_REVIEWER,
+        user_id="REVIEWER_DOC_02",
+    )
+
+    # 1. Invalid file format (text/executable) rejected with 400
+    bad_file = io.BytesIO(b"MZ\x90\x00\x03\x00\x00\x00DOS executable fake")
+    res_bad = client.post(
+        "/api/ml/evidence/upload",
+        files={"file": ("fake.exe", bad_file, "application/octet-stream")},
+        data={"document_type": "GPR_UTILITY_SURVEY"},
+        headers={"Authorization": f"Bearer {assessor_tok}"},
+    )
+    assert res_bad.status_code == 400
+    assert "Magic header verification failed" in res_bad.json()["detail"]
+
+    # 2. Valid PDF file accepted
+    valid_pdf_content = b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF"
+    pdf_file = io.BytesIO(valid_pdf_content)
+    res_ok = client.post(
+        "/api/ml/evidence/upload",
+        files={"file": ("gpr_clearance.pdf", pdf_file, "application/pdf")},
+        data={"document_type": "GPR_UTILITY_SURVEY"},
+        headers={"Authorization": f"Bearer {assessor_tok}"},
+    )
+    assert res_ok.status_code in (200, 201)
+    ev_data = res_ok.json()
+    assert ev_data["evidence_id"].startswith("evid-")
+    assert ev_data["mime_type"] == "application/pdf"
+    assert ev_data["verification_status"] == EvidenceVerificationStatus.EVIDENCE_PENDING_REVIEW.value
+    ev_id = ev_data["evidence_id"]
+
+    # 3. Conflict of Interest: Uploader cannot verify their own document
+    res_self_verify = client.post(
+        f"/api/ml/evidence/{ev_id}/verify",
+        json={"action": "APPROVE", "verification_notes": "Self verification attempt"},
+        headers={"Authorization": f"Bearer {assessor_tok}"},
+    )
+    # Field assessor has no VERIFY_EVIDENCE permission -> 403
+    assert res_self_verify.status_code == 403
+
+    # 4. Independent Reviewer verifies document
+    res_verify = client.post(
+        f"/api/ml/evidence/{ev_id}/verify",
+        json={"action": "APPROVE", "verification_notes": "Verified against PWD portal records"},
+        headers={"Authorization": f"Bearer {reviewer_tok}"},
+    )
+    assert res_verify.status_code == 200
+    assert res_verify.json()["verification_status"] == EvidenceVerificationStatus.EVIDENCE_VERIFIED.value
+
+    # 5. Retrieve verified document metadata
+    res_get = client.get(f"/api/ml/evidence/{ev_id}")
+    assert res_get.status_code == 200
+    assert res_get.json()["verified_by_user_id"] == "REVIEWER_DOC_02"
+
+
+def test_row_safety_logic_guideline_width_never_forces_ineligible():
+    """Guideline ROW below minimum must return CONDITIONAL_PENDING_INSPECTION, never INELIGIBLE."""
+    # Guideline width 1.0m is below the 1.5m required for linear_street_trees
+    features_guideline_only = {
+        "road_class_guideline_row_m": 1.0,
+        "surveyed_row_width_m": None,
+        "clear_pedestrian_width_m": None,
+        "available_planting_verge_m": None,
+        "gpr_utility_survey_status": "VERIFIED_CLEAR",
+        "overhead_ht_powerline": False,
+        "heritage_monument_zone": False,
+        "highway_class": "secondary",
+        "is_walkable": True,
+    }
+
+    eval_res = HardConstraintValidator.evaluate_constraints(
+        "linear_street_trees",
+        features_guideline_only,
+    )
+    assert eval_res.has_hard_constraint is False
+    assert eval_res.forced_state == "CONDITIONAL"
+    assert eval_res.constraint_state == ConstraintState.CONDITIONAL_PENDING_INSPECTION
+    assert any("Road-class guideline width (1.0m) is indicative only" in w for w in eval_res.missing_evidence_warnings)
+    assert not any("Inadequate" in r for r in eval_res.constraint_reasons)
+
+    # When surveyed physical width is below minimum -> INELIGIBLE
+    features_surveyed = dict(features_guideline_only)
+    features_surveyed["surveyed_row_width_m"] = 1.0
+    eval_surveyed = HardConstraintValidator.evaluate_constraints(
+        "linear_street_trees",
+        features_surveyed,
+    )
+    assert eval_surveyed.has_hard_constraint is True
+    assert eval_surveyed.forced_state == "INELIGIBLE"
+    assert eval_surveyed.constraint_state == ConstraintState.INELIGIBLE_HARD_CONSTRAINT
+    assert any("Inadequate surveyed Right-of-Way width" in r for r in eval_surveyed.constraint_reasons)
+
+
+def test_cpcb_empty_records_returns_data_unavailable_or_metadata():
+    """Empty CPCB response must return DATA_UNAVAILABLE, never LIVE_DATA_FETCHED."""
+    adapter = CpcbAirQualityAdapter()
+    adapter.api_key = "test_key"
+
+    # Mock connection test
+    with patch("httpx.get") as mock_get:
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"records": []}
+        mock_get.return_value = mock_resp
+
+        # fetch_observations_or_raster with empty records
+        res = adapter.fetch_observations_or_raster(lat=28.55, lon=77.20)
+        assert res["status"] in (
+            IngestionStatus.DATA_UNAVAILABLE.value,
+            IngestionStatus.AVAILABLE_LOCAL_CACHE.value,
+        )
+        assert res["status"] != IngestionStatus.LIVE_DATA_FETCHED.value
+
+
+def test_spaces_storage_adapter_and_checksum_verification(tmp_path):
+    """Test DigitalOcean Spaces storage unconfigured fallback and checksum validation."""
+    # 1. When unconfigured -> reports DURABLE_MODEL_STORAGE_NOT_CONFIGURED
+    unconfigured_store = SpacesArtifactStore(key="", secret="", bucket="")
+    status = unconfigured_store.test_storage_connection()
+    assert status["status"] == "DURABLE_MODEL_STORAGE_NOT_CONFIGURED"
+    assert status["local_fallback_active"] is True
+
+    # 2. Upload with checksum verification using mock S3 client
+    mock_s3 = MagicMock()
+    configured_store = SpacesArtifactStore(
+        key="test_key",
+        secret="test_secret",
+        bucket="vansetu-models",
+        region="blr1",
+    )
+    configured_store._get_s3_client = MagicMock(return_value=mock_s3)
+
+    dummy_artifact = tmp_path / "test_model.joblib"
+    dummy_artifact.write_bytes(b"dummy trained model weights")
+    correct_sha = hashlib.sha256(dummy_artifact.read_bytes()).hexdigest()
+
+    # Upload with correct checksum
+    receipt = configured_store.upload_artifact(
+        local_path=dummy_artifact,
+        remote_key="models/v1/test_model.joblib",
+        expected_sha256=correct_sha,
+    )
+    assert receipt["status"] == "UPLOADED_TO_SPACES"
+    assert receipt["sha256_checksum"] == correct_sha
+    mock_s3.upload_file.assert_called_once()
+
+    # Upload with bad checksum raises ValueError
+    with pytest.raises(ValueError) as exc:
+        configured_store.upload_artifact(
+            local_path=dummy_artifact,
+            remote_key="models/v1/test_model.joblib",
+            expected_sha256="wrong_checksum",
+        )
+    assert "Checksum mismatch" in str(exc.value)
+
+
+def test_label_store_disqualifies_unbacked_evidence_from_training(tmp_path):
+    """Approved assessment must have a verified on-disk document with matching SHA-256 to enter training."""
+    db_file = tmp_path / "test_labels.sqlite"
+    store = AssessmentLabelStore(db_path=db_file, data_dir=tmp_path)
+
+    auth_mgr = get_auth_manager()
+    assessor_tok, assessor = auth_mgr.provision_test_user(role=ReviewerRole.FIELD_ASSESSOR, user_id="FLD_01")
+    reviewer_tok, reviewer = auth_mgr.provision_test_user(role=ReviewerRole.AUTHORIZED_REVIEWER, user_id="REV_02")
+
+    # Upload genuine document
+    pdf_bytes = b"%PDF-1.5 legitimate engineering survey"
+    doc_meta = store.save_evidence_document(
+        file_bytes=pdf_bytes,
+        filename="survey_report.pdf",
+        document_type=EvidenceDocumentType.ENGINEERING_CROSS_SECTION,
+        user=assessor,
+    )
+    ev_id = doc_meta["evidence_id"]
+
+    # Submit assessment linking to uploaded evidence
+    sub = SiteAssessmentSubmission(
+        segment_id="C-14-S001",
+        corridor_id="C-14",
+        intervention_archetype=InterventionArchetype.LINEAR_STREET_TREES,
+        suitability_state=SuitabilityState.ELIGIBLE,
+        evidence_reference="SURVEY-2026-001",
+        evidence_document_type=EvidenceDocumentType.ENGINEERING_CROSS_SECTION,
+        evidence_id=ev_id,
+        reviewer_notes="Accurate cross-section",
+    )
+    rec = store.submit_assessment(sub, authenticated_user=assessor)
+    ass_id = rec["assessment_id"]
+
+    # Before approval: 0 training labels
+    assert len(store.get_training_eligible_labels()) == 0
+
+    # Reviewer approves assessment (which also approves evidence)
+    action = AssessmentReviewAction(
+        assessment_id=ass_id,
+        action=ReviewActionType.APPROVE,
+        reviewer_note="Fully verified by municipal supervisor",
+    )
+    store.review_assessment(action, authenticated_reviewer=reviewer)
+
+    # Now 1 verified label is eligible
+    eligible = store.get_training_eligible_labels()
+    assert len(eligible) == 1
+    assert eligible[0]["assessment_id"] == ass_id
+
+    # If the file on disk is tampered or deleted, it is immediately disqualified
+    disk_path = Path(doc_meta["storage_path"])
+    disk_path.write_bytes(b"tampered contents")
+    eligible_tampered = store.get_training_eligible_labels()
+    assert len(eligible_tampered) == 0
+

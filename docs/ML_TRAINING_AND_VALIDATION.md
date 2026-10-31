@@ -92,3 +92,17 @@ Average of recall obtained on each class, guarding against majority-class collap
 ### 3. False Eligible Rate (Safety Critical Metric)
 $$\text{False Eligible Rate} = \frac{\text{False Positives for ELIGIBLE}}{\text{Total Actual INELIGIBLE}}$$
 Predicting that a physically obstructed or unsafe site is `ELIGIBLE` could cause underground utility ruptures or project cancellation. A candidate model is **disqualified from promotion** if its False Eligible Rate exceeds $5.0\%$, regardless of its overall accuracy.
+
+---
+
+## 6. Physical Evidence Verification Gate for Supervised Training
+
+To be eligible for entry into the supervised training matrix, an assessment record must satisfy an end-to-end cryptographic and institutional audit:
+1. `review_status == 'APPROVED'`
+2. `suitability_state IN ('ELIGIBLE', 'CONDITIONAL', 'INELIGIBLE')` (strictly excluding `UNASSESSED`)
+3. `is_evidence_verified == 1`
+4. Linked to a verified document in `evidence_documents` with status `EVIDENCE_VERIFIED` signed off by an authorized municipal reviewer
+5. The supporting binary document (PDF, PNG, or JPEG $\le 10\text{ MB}$) must physically exist at `storage_path` on disk
+6. Cryptographic verification: $\text{SHA256}(\text{disk\_bytes}) == \text{sha256\_checksum}$ recorded in metadata
+
+Any missing, corrupted, unverified, or self-approved document immediately disqualifies the label from training, guaranteeing zero synthetic or fabricated contamination.

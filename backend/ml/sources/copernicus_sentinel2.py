@@ -163,8 +163,8 @@ class CopernicusSentinel2Adapter(BaseSourceAdapter):
                 if resp.status_code == 200:
                     items = resp.json().get("value", [])
                     return {
-                        "available": True,
-                        "status": IngestionStatus.LIVE_DATA_FETCHED.value,
+                        "available": bool(items),
+                        "status": IngestionStatus.CATALOGUE_METADATA_RETRIEVED.value,
                         "retrieved_products_count": len(items),
                         "products": [
                             {

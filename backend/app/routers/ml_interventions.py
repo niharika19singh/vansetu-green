@@ -16,14 +16,20 @@ Exposes all research-grade ML endpoints with RBAC authentication:
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from pydantic import BaseModel, Field
 
 from app.services.intervention_ml_service import (
     RecommendInterventionsRequest,
     get_intervention_ml_service,
 )
-from ml.labels.schema import AssessmentReviewAction, ReviewActionType, SiteAssessmentSubmission, SuitabilityState
+from ml.labels.schema import (
+    AssessmentReviewAction,
+    EvidenceDocumentType,
+    ReviewActionType,
+    SiteAssessmentSubmission,
+    SuitabilityState,
+)
 from ml.outcome.outcome_schema import DeploymentOutcomeObservation
 from ml.security.auth import AuthenticatedUser, Permission, require_permission
 
@@ -34,6 +40,11 @@ class ReviewPatchBody(BaseModel):
     action: ReviewActionType = Field(description="APPROVE, REJECT, or CORRECT.")
     corrected_suitability_state: Optional[SuitabilityState] = None
     reviewer_note: str = Field(min_length=3, description="Review justification note.")
+
+
+class EvidenceVerifyBody(BaseModel):
+    action: str = Field(description="APPROVE or REJECT.")
+    verification_notes: str = Field(min_length=3, description="Justification for evidence verification decision.")
 
 
 class ModelPromoteBody(BaseModel):
@@ -71,6 +82,82 @@ async def get_segment_features(segment_id: str) -> Dict[str, Any]:
         return svc.get_segment_features(segment_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.post("/evidence/upload", status_code=status.HTTP_201_CREATED)
+async def upload_evidence_document(
+    file: UploadFile = File(...),
+    document_type: str = Form(default="GPR_UTILITY_SURVEY"),
+    current_user: AuthenticatedUser = Depends(require_permission(Permission.SUBMIT_ASSESSMENT)),
+) -> Dict[str, Any]:
+    """
+    Upload a binary evidence document (PDF, PNG, JPEG <= 10MB).
+    Enforces magic bytes verification and SHA-256 integrity calculation.
+    """
+    svc = get_intervention_ml_service()
+    try:
+        content = await file.read()
+        try:
+            doc_enum = EvidenceDocumentType(document_type)
+        except ValueError:
+            doc_enum = EvidenceDocumentType.GPR_UTILITY_SURVEY
+        return svc.save_evidence_document(
+            file_bytes=content,
+            filename=file.filename or "evidence_document",
+            document_type=doc_enum,
+            user=current_user,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Evidence upload failed: {exc}")
+
+
+@router.post("/evidence/{evidence_id}/verify")
+async def verify_evidence_document(
+    evidence_id: str,
+    body: EvidenceVerifyBody,
+    current_user: AuthenticatedUser = Depends(require_permission(Permission.VERIFY_EVIDENCE)),
+) -> Dict[str, Any]:
+    """
+    Verify or reject an uploaded empirical evidence document.
+    Enforces conflict-of-interest check: uploader cannot verify their own document.
+    """
+    svc = get_intervention_ml_service()
+    try:
+        return svc.verify_evidence_document(
+            evidence_id=evidence_id,
+            action=body.action,
+            reviewer=current_user,
+            notes=body.verification_notes,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
+
+
+@router.get("/evidence/{evidence_id}")
+async def get_evidence_document(evidence_id: str) -> Dict[str, Any]:
+    """Retrieve metadata and verification status of an evidence document."""
+    svc = get_intervention_ml_service()
+    doc = svc.get_evidence_document(evidence_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail=f"Evidence document '{evidence_id}' not found.")
+    return doc
+
+
+@router.get("/evidence")
+async def list_evidence_documents(
+    user_id: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),
+) -> Dict[str, Any]:
+    """List uploaded evidence documents."""
+    svc = get_intervention_ml_service()
+    items = svc.list_evidence_documents(user_id=user_id, status=status)
+    return {"count": len(items), "evidence_documents": items}
 
 
 @router.post("/site-assessments", status_code=status.HTTP_201_CREATED)

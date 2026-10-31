@@ -34,6 +34,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r backend/requirements.txt
 
+      - name: Security & credential scan
+        run: |
+          echo "Scanning application code for exposed credentials..."
+          ! grep -rn "token_field_pwd_7104\|token_reviewer_mcd_3012\|token_senior_delhi_001\|token_admin_delhi_root" \
+            backend/ml backend/app frontend/src
+
       - name: Run backend pytest suite
         run: |
           cd backend
