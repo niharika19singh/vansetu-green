@@ -332,7 +332,11 @@ async def get_site_assessment(
     Field Assessors can only view their own submissions.
     """
     svc = get_intervention_ml_service()
-    assessment = svc.get_assessment(assessment_id)
+    try:
+        assessment = svc.get_assessment(assessment_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"Site assessment '{assessment_id}' not found.")
+
     if not assessment:
         raise HTTPException(status_code=404, detail=f"Site assessment '{assessment_id}' not found.")
 
