@@ -4,7 +4,17 @@
  * Meko memory, Gemini 3.8 Flash agent, Tiger Data, Social Equity, and IOMETE Procurement backend.
  */
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:7860';
+function resolveApiBase() {
+  if (import.meta.env.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL.replace(/\/$/, '');
+  }
+  if (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+    return 'https://van-setu-backend.onrender.com';
+  }
+  return 'http://localhost:7860';
+}
+
+const API_BASE = resolveApiBase();
 
 async function requestJson(path, options = {}) {
   const url = `${API_BASE}${path}`;
@@ -15,10 +25,25 @@ async function requestJson(path, options = {}) {
   if (options.token) {
     headers['Authorization'] = `Bearer ${options.token}`;
   }
-  const response = await fetch(url, {
-    ...options,
-    headers,
-  });
+  let response;
+  try {
+    response = await fetch(url, {
+      ...options,
+      headers,
+    });
+  } catch (netErr) {
+    // Graceful offline/static fallback for core corridor geometries
+    if (typeof window !== 'undefined' && (path.startsWith('/api/corridors') || path.startsWith('/api/roads/simple'))) {
+      try {
+        const fallbackRes = await fetch('/delhi_roads.geojson');
+        if (fallbackRes.ok) {
+          const fallbackData = await fallbackRes.json();
+          return fallbackData;
+        }
+      } catch {}
+    }
+    throw netErr;
+  }
 
   if (!response.ok) {
     let detail = `HTTP ${response.status}`;
@@ -27,6 +52,15 @@ async function requestJson(path, options = {}) {
       detail = errJson.detail || detail;
     } catch {
       // ignore parse error
+    }
+    // Secondary fallback if server returned 404/500 for corridors
+    if (typeof window !== 'undefined' && (path.startsWith('/api/corridors') || path.startsWith('/api/roads/simple'))) {
+      try {
+        const fallbackRes = await fetch('/delhi_roads.geojson');
+        if (fallbackRes.ok) {
+          return await fallbackRes.json();
+        }
+      } catch {}
     }
     throw new Error(detail);
   }
