@@ -1,8 +1,8 @@
 """
 VanSetu GreenTech — Server-Side Authentication & Authorization Layer.
 
-Implements strict Role-Based Access Control (RBAC) with cryptographic token hashing,
-salt generation, secure credential lifecycle (creation, rotation, revocation),
+Implements strict Role-Based Access Control (RBAC) with keyed HMAC-SHA256 token indexing,
+secure credential lifecycle (creation, transactional rotation, revocation),
 and zero exposed plaintext tokens in source code.
 
 Rules:
@@ -10,14 +10,15 @@ Rules:
 2. Every request is verified against server-side accredited hashed user records.
 3. Explicit permission matrix for Assessors, Reviewers, Senior Reviewers, and Admins.
 4. Reviewers are strictly prohibited from approving their own field assessments.
-5. Tokens are hashed with SHA-256 + unique cryptographic salt; raw tokens are never persisted.
-6. In-memory sliding-window rate limiting prevents API abuse.
+5. Tokens are hashed with keyed HMAC-SHA256 using server environment secret; raw tokens are never persisted.
+6. In-memory sliding-window rate limiting prevents API abuse (process-local per worker).
 """
 from __future__ import annotations
 
 import hashlib
 import hmac
 import json
+import logging
 import os
 import secrets
 import sqlite3
@@ -30,6 +31,28 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 from fastapi import Header, HTTPException, Request, Security, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+
+logger = logging.getLogger("vansetu.auth")
+
+# Keyed HMAC Secret for deterministic, indexed O(1) token lookups
+_DEFAULT_DEV_SECRET = "vansetu_dev_hmac_secret_delhi_2026_unconfigured_fallback"
+
+
+def get_token_hmac_secret() -> str:
+    """Retrieve server HMAC secret from environment or fallback with warning in dev."""
+    secret = (
+        os.getenv("VANSETU_TOKEN_HMAC_SECRET")
+        or os.getenv("VANSETU_API_AUTH_SECRET")
+        or ""
+    ).strip()
+    if not secret:
+        # In production environments, missing HMAC secret must fail closed
+        if os.getenv("VANSETU_ENV", "development").lower() in ("production", "prod"):
+            raise RuntimeError(
+                "CRITICAL SECURITY CONFIGURATION ERROR: VANSETU_TOKEN_HMAC_SECRET must be set in production."
+            )
+        return _DEFAULT_DEV_SECRET
+    return secret
 
 
 class ReviewerRole(str, Enum):
@@ -54,6 +77,7 @@ class Permission(str, Enum):
     SUBMIT_OUTCOME = "SUBMIT_OUTCOME"
     VERIFY_OUTCOME = "VERIFY_OUTCOME"
     VERIFY_EVIDENCE = "VERIFY_EVIDENCE"
+    VIEW_EVIDENCE = "VIEW_EVIDENCE"
     MANAGE_USERS = "MANAGE_USERS"
     MANAGE_REGISTRY = "MANAGE_REGISTRY"
 
@@ -63,6 +87,7 @@ ROLE_PERMISSIONS: Dict[ReviewerRole, Set[Permission]] = {
     ReviewerRole.FIELD_ASSESSOR: {
         Permission.SUBMIT_ASSESSMENT,
         Permission.SUBMIT_OUTCOME,
+        Permission.VIEW_EVIDENCE,
     },
     ReviewerRole.AUTHORIZED_REVIEWER: {
         Permission.SUBMIT_ASSESSMENT,
@@ -70,6 +95,7 @@ ROLE_PERMISSIONS: Dict[ReviewerRole, Set[Permission]] = {
         Permission.CORRECT_ASSESSMENT,
         Permission.SUBMIT_OUTCOME,
         Permission.VERIFY_EVIDENCE,
+        Permission.VIEW_EVIDENCE,
     },
     ReviewerRole.SENIOR_REVIEWER: {
         Permission.SUBMIT_ASSESSMENT,
@@ -81,6 +107,7 @@ ROLE_PERMISSIONS: Dict[ReviewerRole, Set[Permission]] = {
         Permission.VERIFY_OUTCOME,
         Permission.SUBMIT_OUTCOME,
         Permission.VERIFY_EVIDENCE,
+        Permission.VIEW_EVIDENCE,
     },
     ReviewerRole.ADMINISTRATOR: set(Permission),
 }
@@ -113,18 +140,25 @@ def redact_token(token: Optional[str]) -> str:
     return f"{clean[:4]}...{clean[-4:]}"
 
 
-def _hash_token(raw_token: str, salt: str) -> str:
-    """Compute deterministic cryptographic SHA-256 hash with salt."""
-    return hashlib.sha256((salt + raw_token).encode("utf-8")).hexdigest()
+def compute_token_hmac(raw_token: str, secret: Optional[str] = None) -> str:
+    """Compute keyed HMAC-SHA256 digest for constant-time, indexed O(1) token lookups."""
+    sec = secret or get_token_hmac_secret()
+    return hmac.new(
+        sec.encode("utf-8"),
+        raw_token.strip().encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
 
 
 class CredentialStore:
     """
     Server-side credential store for accredited municipal officer tokens.
-    Persists salted SHA-256 hashes in SQLite. Raw tokens are NEVER stored.
+    Persists keyed HMAC-SHA256 digests in SQLite with direct indexed lookup.
+    Raw tokens are NEVER stored in plaintext.
     """
 
-    def __init__(self, db_path: Optional[Path] = None) -> None:
+    def __init__(self, db_path: Optional[Path] = None, hmac_secret: Optional[str] = None) -> None:
+        self.hmac_secret = hmac_secret or get_token_hmac_secret()
         if db_path:
             self.db_path = Path(db_path)
         else:
@@ -144,8 +178,10 @@ class CredentialStore:
                 """
                 CREATE TABLE IF NOT EXISTS api_credentials (
                     token_id TEXT PRIMARY KEY,
-                    token_hash TEXT NOT NULL UNIQUE,
-                    salt TEXT NOT NULL,
+                    token_hmac TEXT UNIQUE,
+                    token_prefix TEXT,
+                    token_hash TEXT,
+                    salt TEXT,
                     user_id TEXT NOT NULL,
                     username TEXT NOT NULL,
                     full_name TEXT NOT NULL,
@@ -158,16 +194,30 @@ class CredentialStore:
                 );
                 """
             )
+            # Automatic schema migration for pre-existing databases
+            cur = conn.execute("PRAGMA table_info(api_credentials)")
+            existing_cols = {row[1] for row in cur.fetchall()}
+            if "token_hmac" not in existing_cols and len(existing_cols) > 0:
+                conn.execute("ALTER TABLE api_credentials ADD COLUMN token_hmac TEXT")
+            if "token_prefix" not in existing_cols and len(existing_cols) > 0:
+                conn.execute("ALTER TABLE api_credentials ADD COLUMN token_prefix TEXT")
+
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_cred_token_hmac ON api_credentials(token_hmac);"
+            )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_cred_user_id ON api_credentials(user_id);"
             )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_cred_active ON api_credentials(is_active);"
             )
+            conn.commit()
 
     def count_tokens(self) -> int:
         with self._get_conn() as conn:
-            row = conn.execute("SELECT COUNT(*) AS cnt FROM api_credentials WHERE is_active = 1").fetchone()
+            row = conn.execute(
+                "SELECT COUNT(*) AS cnt FROM api_credentials WHERE is_active = 1 AND revoked_at IS NULL"
+            ).fetchone()
             return int(row["cnt"]) if row else 0
 
     def create_token(
@@ -176,27 +226,30 @@ class CredentialStore:
         expires_at: Optional[str] = None,
     ) -> str:
         """
-        Generate a cryptographically secure random token, store its salted hash,
+        Generate a cryptographically secure random token, store its keyed HMAC-SHA256,
         and return the raw token. The raw token is returned ONCE and never saved.
         """
         raw_token = f"vs_{secrets.token_urlsafe(32)}"
-        salt = secrets.token_hex(16)
-        token_hash = _hash_token(raw_token, salt)
+        token_hmac = compute_token_hmac(raw_token, self.hmac_secret)
         token_id = f"tok_{secrets.token_hex(8)}"
+        token_prefix = raw_token[:7]
         created_at = datetime.now(timezone.utc).isoformat()
 
+        legacy_compat_hash = f"hmac_{token_id}"
         with self._get_conn() as conn:
             conn.execute(
                 """
                 INSERT INTO api_credentials (
-                    token_id, token_hash, salt, user_id, username, full_name,
-                    role, organization, is_active, created_at, expires_at, revoked_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, NULL)
+                    token_id, token_hmac, token_prefix, token_hash, salt, user_id,
+                    username, full_name, role, organization, is_active,
+                    created_at, expires_at, revoked_at
+                ) VALUES (?, ?, ?, ?, '', ?, ?, ?, ?, ?, 1, ?, ?, NULL)
                 """,
                 (
                     token_id,
-                    token_hash,
-                    salt,
+                    token_hmac,
+                    token_prefix,
+                    legacy_compat_hash,
                     user.user_id,
                     user.username,
                     user.full_name,
@@ -206,6 +259,7 @@ class CredentialStore:
                     expires_at,
                 ),
             )
+            conn.commit()
         return raw_token
 
     def register_known_token(
@@ -215,23 +269,24 @@ class CredentialStore:
         expires_at: Optional[str] = None,
     ) -> None:
         """Register a specific token (used for environment bootstrapping or test isolation)."""
-        salt = secrets.token_hex(16)
-        token_hash = _hash_token(raw_token, salt)
+        token_hmac = compute_token_hmac(raw_token, self.hmac_secret)
         token_id = f"tok_{secrets.token_hex(8)}"
+        token_prefix = raw_token[:7]
         created_at = datetime.now(timezone.utc).isoformat()
 
         with self._get_conn() as conn:
             conn.execute(
                 """
                 INSERT OR REPLACE INTO api_credentials (
-                    token_id, token_hash, salt, user_id, username, full_name,
-                    role, organization, is_active, created_at, expires_at, revoked_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, NULL)
+                    token_id, token_hmac, token_prefix, token_hash, salt, user_id,
+                    username, full_name, role, organization, is_active,
+                    created_at, expires_at, revoked_at
+                ) VALUES (?, ?, ?, '', '', ?, ?, ?, ?, ?, 1, ?, ?, NULL)
                 """,
                 (
                     token_id,
-                    token_hash,
-                    salt,
+                    token_hmac,
+                    token_prefix,
                     user.user_id,
                     user.username,
                     user.full_name,
@@ -241,80 +296,164 @@ class CredentialStore:
                     expires_at,
                 ),
             )
+            conn.commit()
 
     def authenticate(self, raw_token: str) -> Optional[AuthenticatedUser]:
-        """Authenticate a raw token against active hashed credentials in constant-time."""
+        """
+        Authenticate a raw token via O(1) indexed keyed HMAC-SHA256 lookup in constant time.
+        Includes self-migrating backward compatibility for any legacy salt/hash rows.
+        """
         if not raw_token or not raw_token.strip():
             return None
         token_clean = raw_token.strip()
+        cand_hmac = compute_token_hmac(token_clean, self.hmac_secret)
+        now_iso = datetime.now(timezone.utc).isoformat()
 
         with self._get_conn() as conn:
-            rows = conn.execute(
+            # 1. Fast indexed O(1) lookup by token_hmac
+            row = conn.execute(
+                """
+                SELECT token_id, token_hmac, user_id, username, full_name,
+                       role, organization, is_active, expires_at, revoked_at
+                FROM api_credentials
+                WHERE token_hmac = ? AND is_active = 1 AND revoked_at IS NULL
+                """,
+                (cand_hmac,),
+            ).fetchone()
+
+            if row:
+                if row["expires_at"] and row["expires_at"] < now_iso:
+                    return None
+                if hmac.compare_digest(row["token_hmac"], cand_hmac):
+                    try:
+                        role_enum = ReviewerRole(row["role"])
+                    except ValueError:
+                        role_enum = ReviewerRole.FIELD_ASSESSOR
+                    return AuthenticatedUser(
+                        user_id=row["user_id"],
+                        username=row["username"],
+                        full_name=row["full_name"],
+                        role=role_enum,
+                        organization=row["organization"],
+                        is_active=bool(row["is_active"]),
+                    )
+
+            # 2. Self-migrating fallback for legacy salt/hash rows where token_hmac is NULL
+            legacy_rows = conn.execute(
                 """
                 SELECT token_id, token_hash, salt, user_id, username, full_name,
                        role, organization, is_active, expires_at, revoked_at
                 FROM api_credentials
-                WHERE is_active = 1 AND revoked_at IS NULL
+                WHERE (token_hmac IS NULL OR token_hmac = '')
+                  AND is_active = 1 AND revoked_at IS NULL
                 """
             ).fetchall()
 
-        now_iso = datetime.now(timezone.utc).isoformat()
-        for r in rows:
-            if r["expires_at"] and r["expires_at"] < now_iso:
-                continue
-            cand_hash = _hash_token(token_clean, r["salt"])
-            if hmac.compare_digest(cand_hash, r["token_hash"]):
-                try:
-                    role_enum = ReviewerRole(r["role"])
-                except ValueError:
-                    role_enum = ReviewerRole.FIELD_ASSESSOR
-                return AuthenticatedUser(
-                    user_id=r["user_id"],
-                    username=r["username"],
-                    full_name=r["full_name"],
-                    role=role_enum,
-                    organization=r["organization"],
-                    is_active=bool(r["is_active"]),
-                )
+            for r in legacy_rows:
+                if r["expires_at"] and r["expires_at"] < now_iso:
+                    continue
+                salt = r["salt"] or ""
+                legacy_hash = hashlib.sha256((salt + token_clean).encode("utf-8")).hexdigest()
+                if hmac.compare_digest(legacy_hash, r["token_hash"] or ""):
+                    # Upgrade legacy row with keyed HMAC digest
+                    conn.execute(
+                        "UPDATE api_credentials SET token_hmac = ?, token_prefix = ? WHERE token_id = ?",
+                        (cand_hmac, token_clean[:7], r["token_id"]),
+                    )
+                    conn.commit()
+                    try:
+                        role_enum = ReviewerRole(r["role"])
+                    except ValueError:
+                        role_enum = ReviewerRole.FIELD_ASSESSOR
+                    return AuthenticatedUser(
+                        user_id=r["user_id"],
+                        username=r["username"],
+                        full_name=r["full_name"],
+                        role=role_enum,
+                        organization=r["organization"],
+                        is_active=bool(r["is_active"]),
+                    )
+
         return None
 
     def revoke_token(self, raw_token: str) -> bool:
         """Revoke a token by its raw representation."""
         if not raw_token:
             return False
+        cand_hmac = compute_token_hmac(raw_token, self.hmac_secret)
+        now_iso = datetime.now(timezone.utc).isoformat()
         with self._get_conn() as conn:
-            rows = conn.execute(
-                "SELECT token_id, token_hash, salt FROM api_credentials WHERE is_active = 1"
-            ).fetchall()
-            for r in rows:
-                cand_hash = _hash_token(raw_token.strip(), r["salt"])
-                if hmac.compare_digest(cand_hash, r["token_hash"]):
-                    revoked_at = datetime.now(timezone.utc).isoformat()
-                    conn.execute(
-                        "UPDATE api_credentials SET is_active = 0, revoked_at = ? WHERE token_id = ?",
-                        (revoked_at, r["token_id"]),
-                    )
-                    return True
-        return False
+            cur = conn.execute(
+                "UPDATE api_credentials SET is_active = 0, revoked_at = ? WHERE token_hmac = ? AND is_active = 1",
+                (now_iso, cand_hmac),
+            )
+            conn.commit()
+            return cur.rowcount > 0
 
     def rotate_token(self, old_raw_token: str) -> Optional[Tuple[str, AuthenticatedUser]]:
-        """Atomically revoke the old token and issue a fresh new token for the user."""
+        """
+        Atomically revoke the old token and issue a fresh new token for the user in a single transaction.
+        Guarantees no window of vulnerability where old is revoked but new fails to persist.
+        """
         user = self.authenticate(old_raw_token)
         if not user:
             return None
-        self.revoke_token(old_raw_token)
-        new_token = self.create_token(user)
-        return new_token, user
+
+        old_hmac = compute_token_hmac(old_raw_token, self.hmac_secret)
+        new_raw_token = f"vs_{secrets.token_urlsafe(32)}"
+        new_hmac = compute_token_hmac(new_raw_token, self.hmac_secret)
+        new_token_id = f"tok_{secrets.token_hex(8)}"
+        new_prefix = new_raw_token[:7]
+        now_iso = datetime.now(timezone.utc).isoformat()
+
+        legacy_compat_hash = f"hmac_{new_token_id}"
+        with self._get_conn() as conn:
+            with conn:  # Atomic SQLite transaction (BEGIN / COMMIT)
+                # 1. Revoke the old token
+                conn.execute(
+                    "UPDATE api_credentials SET is_active = 0, revoked_at = ? WHERE token_hmac = ?",
+                    (now_iso, old_hmac),
+                )
+                # 2. Insert the fresh new replacement token
+                conn.execute(
+                    """
+                    INSERT INTO api_credentials (
+                        token_id, token_hmac, token_prefix, token_hash, salt, user_id,
+                        username, full_name, role, organization, is_active,
+                        created_at, expires_at, revoked_at
+                    ) VALUES (?, ?, ?, ?, '', ?, ?, ?, ?, ?, 1, ?, NULL, NULL)
+                    """,
+                    (
+                        new_token_id,
+                        new_hmac,
+                        new_prefix,
+                        legacy_compat_hash,
+                        user.user_id,
+                        user.username,
+                        user.full_name,
+                        user.role.value,
+                        user.organization,
+                        now_iso,
+                    ),
+                )
+        return new_raw_token, user
 
 
 class AuthManager:
-    """Manages token resolution, credential lifecycle, and sliding-window rate limiting."""
+    """
+    Manages token resolution, credential lifecycle, and sliding-window rate limiting.
+    
+    NOTE ON RATE LIMITING:
+    Rate limiting in this class is strictly PROCESS-LOCAL (in-memory per worker process).
+    In multi-worker production environments (e.g. Uvicorn/Gunicorn with multiple workers or Kubernetes pods),
+    distributed rate limiting must be deployed via Redis or an edge proxy (e.g. Cloudflare / Nginx).
+    """
 
     def __init__(self, store: Optional[CredentialStore] = None) -> None:
         self.store = store or CredentialStore()
         # Ephemeral memory store for fast testing/mocking
         self._ephemeral_tokens: Dict[str, AuthenticatedUser] = {}
-        # Sliding-window rate limiter: client_id -> list of unix timestamps
+        # Process-local sliding-window rate limiter: client_id -> list of unix timestamps
         self._rate_limits: Dict[str, List[float]] = defaultdict(list)
         self.rate_limit_window_seconds = 60.0
         self.rate_limit_max_requests = 60
@@ -381,7 +520,7 @@ class AuthManager:
         return self.store.authenticate(token_clean)
 
     def check_rate_limit(self, client_key: str) -> bool:
-        """Sliding-window rate limiter. Returns True if allowed, False if exceeded."""
+        """Process-local sliding-window rate limiter. Returns True if allowed, False if exceeded."""
         now = time.time()
         window_start = now - self.rate_limit_window_seconds
         timestamps = self._rate_limits[client_key]

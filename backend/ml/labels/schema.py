@@ -60,6 +60,7 @@ class ReviewActionType(str, Enum):
 class EvidenceDocumentMetadata(BaseModel):
     """
     Metadata for uploaded and verified empirical evidence documents (e.g. GPR scans, PWD work orders).
+    Internal model including server storage paths.
     """
     evidence_id: str
     filename: str
@@ -75,6 +76,46 @@ class EvidenceDocumentMetadata(BaseModel):
     verified_at: Optional[str] = None
     verification_notes: Optional[str] = None
     storage_path: str
+    storage_backend: Optional[str] = "LOCAL"
+    object_key: Optional[str] = None
+
+
+class EvidenceDocumentPublic(BaseModel):
+    """
+    Sanitized public-facing metadata for API responses.
+    Strictly omits internal filesystem storage paths.
+    """
+    evidence_id: str
+    filename: str
+    file_size_bytes: int
+    mime_type: str
+    sha256_checksum: str
+    document_type: EvidenceDocumentType
+    uploaded_by_user_id: str
+    uploaded_by_username: str
+    uploaded_at: str
+    verification_status: EvidenceVerificationStatus = EvidenceVerificationStatus.EVIDENCE_UPLOADED_UNVERIFIED
+    verified_by_user_id: Optional[str] = None
+    verified_at: Optional[str] = None
+    verification_notes: Optional[str] = None
+    storage_backend: Optional[str] = "LOCAL"
+    is_available: bool = True
+
+
+class EvidenceVerificationHistoryItem(BaseModel):
+    """
+    Immutable audit history record for physical evidence verification lifecycle decisions.
+    """
+    history_id: str
+    evidence_id: str
+    previous_status: Optional[str] = None
+    new_status: str
+    reviewer_id: str
+    reviewer_role: str
+    timestamp: str
+    decision: str
+    verification_notes: Optional[str] = None
+    sha256_checksum: str
 
 
 class SiteAssessmentSubmission(BaseModel):

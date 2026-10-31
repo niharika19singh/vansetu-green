@@ -150,6 +150,12 @@ class InterventionMlService:
     ) -> List[Dict[str, Any]]:
         return self.label_store.list_evidence_documents(user_id=user_id, status=status)
 
+    def get_evidence_verification_history(self, evidence_id: str) -> List[Dict[str, Any]]:
+        return self.label_store.get_evidence_verification_history(evidence_id)
+
+    def get_evidence_storage_status(self) -> Dict[str, Any]:
+        return self.label_store.get_evidence_storage_status()
+
     def review_site_assessment(
         self,
         act: AssessmentReviewAction,

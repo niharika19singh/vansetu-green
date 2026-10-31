@@ -22,7 +22,9 @@ import pandas as pd
 from ml.labels.schema import (
     AssessmentReviewAction,
     EvidenceDocumentMetadata,
+    EvidenceDocumentPublic,
     EvidenceDocumentType,
+    EvidenceVerificationHistoryItem,
     EvidenceVerificationStatus,
     InterventionArchetype,
     ReviewActionType,
@@ -31,6 +33,7 @@ from ml.labels.schema import (
     SiteAssessmentSubmission,
     SuitabilityState,
 )
+from ml.labels.storage import EvidenceStorageManager
 from ml.security.auth import AuthenticatedUser, Permission, ReviewerRole
 from ml.validation import TrainingDataEligibilityValidator
 
@@ -76,6 +79,7 @@ class AssessmentLabelStore:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.evidence_dir = self.data_dir / "evidence_documents"
         self.evidence_dir.mkdir(parents=True, exist_ok=True)
+        self.storage_mgr = EvidenceStorageManager(base_dir=self.evidence_dir)
         self._valid_segment_ids: Optional[Set[str]] = None
         self._init_db()
 
@@ -102,7 +106,23 @@ class AssessmentLabelStore:
                     verified_by_user_id TEXT,
                     verified_at TEXT,
                     verification_notes TEXT,
-                    storage_path TEXT NOT NULL
+                    storage_path TEXT NOT NULL,
+                    storage_backend TEXT DEFAULT 'LOCAL',
+                    object_key TEXT
+                );
+
+                CREATE TABLE IF NOT EXISTS evidence_verification_history (
+                    history_id TEXT PRIMARY KEY,
+                    evidence_id TEXT NOT NULL,
+                    previous_status TEXT,
+                    new_status TEXT NOT NULL,
+                    reviewer_id TEXT NOT NULL,
+                    reviewer_role TEXT NOT NULL,
+                    timestamp TEXT NOT NULL,
+                    decision TEXT NOT NULL,
+                    verification_notes TEXT,
+                    sha256_checksum TEXT NOT NULL,
+                    FOREIGN KEY(evidence_id) REFERENCES evidence_documents(evidence_id)
                 );
 
                 CREATE TABLE IF NOT EXISTS site_assessments (
@@ -151,6 +171,7 @@ class AssessmentLabelStore:
                 CREATE INDEX IF NOT EXISTS idx_assessment_status ON site_assessments(review_status);
                 CREATE INDEX IF NOT EXISTS idx_evidence_status ON evidence_documents(verification_status);
                 CREATE INDEX IF NOT EXISTS idx_evidence_user ON evidence_documents(uploaded_by_user_id);
+                CREATE INDEX IF NOT EXISTS idx_ev_hist_evidence_id ON evidence_verification_history(evidence_id);
                 """
             )
             # Automatic schema migration for pre-existing databases
@@ -166,6 +187,13 @@ class AssessmentLabelStore:
                 conn.execute("ALTER TABLE site_assessments ADD COLUMN evidence_id TEXT")
             if "evidence_verification_status" not in existing_cols and len(existing_cols) > 0:
                 conn.execute("ALTER TABLE site_assessments ADD COLUMN evidence_verification_status TEXT")
+
+            cur_ev = conn.execute("PRAGMA table_info(evidence_documents)")
+            ev_cols = {row[1] for row in cur_ev.fetchall()}
+            if "storage_backend" not in ev_cols and len(ev_cols) > 0:
+                conn.execute("ALTER TABLE evidence_documents ADD COLUMN storage_backend TEXT DEFAULT 'LOCAL'")
+            if "object_key" not in ev_cols and len(ev_cols) > 0:
+                conn.execute("ALTER TABLE evidence_documents ADD COLUMN object_key TEXT")
 
             cur_aud = conn.execute("PRAGMA table_info(assessment_audit_history)")
             aud_cols = {row[1] for row in cur_aud.fetchall()}
@@ -215,16 +243,26 @@ class AssessmentLabelStore:
     ) -> Dict[str, Any]:
         """
         Save an uploaded evidence document with magic-byte validation, SHA-256 calculation,
-        and atomic metadata insertion. Starts in EVIDENCE_PENDING_REVIEW status.
+        cryptographically randomized storage keys, and atomic metadata insertion.
+        Starts in EVIDENCE_PENDING_REVIEW status.
         """
         mime_type, sha256_hash = validate_evidence_file_bytes(file_bytes, filename)
         evidence_id = f"evid-{uuid.uuid4().hex[:12]}"
         now = _utc_now_iso()
 
-        # Sanitize filename
+        # Sanitize display filename
         safe_name = os.path.basename(filename).replace(" ", "_")
-        target_path = self.evidence_dir / f"{evidence_id}_{safe_name}"
-        target_path.write_bytes(file_bytes)
+
+        # Persist through EvidenceStorageManager with random key and SHA-256 integrity
+        storage_receipt = self.storage_mgr.store_evidence_file(
+            evidence_id=evidence_id,
+            original_filename=filename,
+            file_bytes=file_bytes,
+            mime_type=mime_type,
+        )
+        target_path = storage_receipt["local_path"]
+        storage_backend = storage_receipt["storage_backend"]
+        object_key = storage_receipt["object_key"]
 
         initial_status = EvidenceVerificationStatus.EVIDENCE_PENDING_REVIEW.value
         doc_type_val = document_type.value if hasattr(document_type, "value") else str(document_type)
@@ -236,8 +274,8 @@ class AssessmentLabelStore:
                     evidence_id, filename, file_size_bytes, mime_type, sha256_checksum,
                     document_type, uploaded_by_user_id, uploaded_by_username, uploaded_at,
                     verification_status, verified_by_user_id, verified_at, verification_notes,
-                    storage_path
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?)
+                    storage_path, storage_backend, object_key
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?, ?, ?)
                 """,
                 (
                     evidence_id,
@@ -251,6 +289,8 @@ class AssessmentLabelStore:
                     now,
                     initial_status,
                     str(target_path),
+                    storage_backend,
+                    object_key,
                 ),
             )
             conn.commit()
@@ -266,6 +306,15 @@ class AssessmentLabelStore:
             if not row:
                 return None
             return dict(row)
+
+    @staticmethod
+    def sanitize_evidence_metadata(doc: Dict[str, Any]) -> Dict[str, Any]:
+        """Strip sensitive internal filesystem storage paths before returning to clients."""
+        sanitized = dict(doc)
+        sanitized.pop("storage_path", None)
+        sanitized.pop("local_path", None)
+        sanitized["is_available"] = True
+        return sanitized
 
     def list_evidence_documents(
         self,
@@ -286,6 +335,43 @@ class AssessmentLabelStore:
             rows = conn.execute(query, params).fetchall()
             return [dict(r) for r in rows]
 
+    def get_evidence_document_content(self, evidence_id: str) -> Tuple[bytes, str, str]:
+        """
+        Retrieve raw binary evidence content with cryptographic integrity validation.
+        Returns (bytes, mime_type, filename).
+        """
+        doc = self.get_evidence_document(evidence_id)
+        if not doc:
+            raise KeyError(f"Evidence document '{evidence_id}' not found.")
+
+        file_bytes = self.storage_mgr.retrieve_evidence_bytes(
+            evidence_id=evidence_id,
+            local_path=doc.get("storage_path"),
+            object_key=doc.get("object_key"),
+            expected_sha256=doc.get("sha256_checksum"),
+        )
+        return file_bytes, doc["mime_type"], doc["filename"]
+
+    def get_evidence_storage_status(self) -> Dict[str, Any]:
+        """Probe storage backend status."""
+        return self.storage_mgr.get_storage_status()
+
+    def get_evidence_verification_history(self, evidence_id: str) -> List[Dict[str, Any]]:
+        """Return chronological append-only audit trail for an evidence document's verification decisions."""
+        with self._get_conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT history_id, evidence_id, previous_status, new_status,
+                       reviewer_id, reviewer_role, timestamp, decision,
+                       verification_notes, sha256_checksum
+                FROM evidence_verification_history
+                WHERE evidence_id = ?
+                ORDER BY timestamp ASC
+                """,
+                (evidence_id,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
     def verify_evidence_document(
         self,
         evidence_id: str,
@@ -296,9 +382,14 @@ class AssessmentLabelStore:
         """
         Verify or reject an uploaded physical evidence document.
         Enforces:
-        1. Reviewer must have VERIFY_EVIDENCE or REVIEW_ASSESSMENT permission.
-        2. Uploader cannot verify their own document (conflict of interest prevention).
+        1. Reviewer must be an authenticated user session.
+        2. Reviewer must have VERIFY_EVIDENCE or REVIEW_ASSESSMENT permission.
+        3. Uploader cannot verify their own document (conflict of interest prevention).
+        4. Append-only audit record in evidence_verification_history.
         """
+        if not reviewer:
+            raise PermissionError("Authentication required: Reviewer credentials required to verify evidence.")
+
         if not (reviewer.has_permission(Permission.VERIFY_EVIDENCE) or reviewer.has_permission(Permission.REVIEW_ASSESSMENT)):
             raise PermissionError(f"Role '{reviewer.role.value}' does not have permission to verify evidence.")
 
@@ -326,6 +417,32 @@ class AssessmentLabelStore:
                 raise ValueError(f"Invalid verification action '{action}'. Must be APPROVE or REJECT.")
 
             now = _utc_now_iso()
+            history_id = f"evhist-{uuid.uuid4().hex[:12]}"
+            prev_status = doc["verification_status"]
+
+            # 1. Append immutable audit history record
+            conn.execute(
+                """
+                INSERT INTO evidence_verification_history (
+                    history_id, evidence_id, previous_status, new_status, reviewer_id,
+                    reviewer_role, timestamp, decision, verification_notes, sha256_checksum
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    history_id,
+                    evidence_id,
+                    prev_status,
+                    new_status,
+                    reviewer.user_id,
+                    reviewer.role.value,
+                    now,
+                    act_upper,
+                    notes,
+                    doc["sha256_checksum"],
+                ),
+            )
+
+            # 2. Update current evidence status
             conn.execute(
                 """
                 UPDATE evidence_documents
@@ -335,7 +452,7 @@ class AssessmentLabelStore:
                 (new_status, reviewer.user_id, now, notes, evidence_id),
             )
 
-            # Cascade verification status to all linked site assessments
+            # 3. Cascade verification status to all linked site assessments
             conn.execute(
                 """
                 UPDATE site_assessments
@@ -367,14 +484,17 @@ class AssessmentLabelStore:
             raise ValueError(f"Geospatial Validation Error: Segment '{sub.segment_id}' does not exist in NCT Delhi road dataset.")
 
         # 2. Server-side identity determination
-        if authenticated_user:
-            reviewer_id = authenticated_user.user_id
-            reviewer_role = authenticated_user.role.value
-            reviewer_org = authenticated_user.organization
-        else:
-            reviewer_id = sub.reviewer_id or "PWD_ENG_DEFAULT"
-            reviewer_role = sub.reviewer_role or ReviewerRole.FIELD_ASSESSOR.value
-            reviewer_org = "Municipal Field Cell"
+        if authenticated_user is None:
+            raise PermissionError(
+                "Authentication required: Assessment submission strictly requires an authenticated municipal officer session."
+            )
+        if not authenticated_user.has_permission(Permission.SUBMIT_ASSESSMENT):
+            raise PermissionError(
+                f"User '{authenticated_user.user_id}' lacks SUBMIT_ASSESSMENT permission."
+            )
+        reviewer_id = authenticated_user.user_id
+        reviewer_role = authenticated_user.role.value
+        reviewer_org = authenticated_user.organization
 
         # 3. Evidence document linkage & verification status check
         evidence_id = sub.evidence_id
@@ -530,8 +650,26 @@ class AssessmentLabelStore:
         3. Immutable audit history records justification and state changes.
         """
         now = _utc_now_iso()
-        reviewer_id = authenticated_reviewer.user_id if authenticated_reviewer else (action.reviewer_id or "MCD_REV_3012")
-        reviewer_role = authenticated_reviewer.role.value if authenticated_reviewer else ReviewerRole.AUTHORIZED_REVIEWER.value
+        if authenticated_reviewer is None:
+            raise PermissionError(
+                "Authentication required: Assessment review strictly requires an authenticated municipal reviewer session."
+            )
+        act_str = str(action.action.value if hasattr(action.action, "value") else action.action).upper()
+        if act_str == "CORRECT":
+            if not authenticated_reviewer.has_permission(Permission.CORRECT_ASSESSMENT):
+                raise PermissionError(
+                    f"Role '{authenticated_reviewer.role.value}' does not have permission to correct assessments."
+                )
+        else:
+            if not (
+                authenticated_reviewer.has_permission(Permission.REVIEW_ASSESSMENT)
+                or authenticated_reviewer.has_permission(Permission.CORRECT_ASSESSMENT)
+            ):
+                raise PermissionError(
+                    f"Role '{authenticated_reviewer.role.value}' does not have permission to review assessments."
+                )
+        reviewer_id = authenticated_reviewer.user_id
+        reviewer_role = authenticated_reviewer.role.value
 
         with self._get_conn() as conn:
             current = conn.execute(
@@ -546,12 +684,11 @@ class AssessmentLabelStore:
             original_assessor = current["reviewer_id"]
             evidence_id = current["evidence_id"]
 
-            # MANDATORY CONFLICT OF INTEREST CHECK: An assessor cannot approve their own assessment
-            act_str = str(action.action.value if hasattr(action.action, "value") else action.action).upper()
-            if act_str == "APPROVE" and reviewer_id == original_assessor:
+            # MANDATORY CONFLICT OF INTEREST CHECK: An assessor cannot approve or correct their own assessment
+            if act_str in ("APPROVE", "CORRECT") and reviewer_id == original_assessor:
                 raise ValueError(
                     f"Conflict of Interest Violation: Reviewer '{reviewer_id}' submitted this assessment "
-                    "and is strictly prohibited from self-approving it."
+                    "and is strictly prohibited from self-approving or self-correcting it."
                 )
 
             # Determine new state and status

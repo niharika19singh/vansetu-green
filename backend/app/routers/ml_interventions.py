@@ -15,6 +15,7 @@ Exposes all research-grade ML endpoints with RBAC authentication:
 """
 from __future__ import annotations
 
+import os
 from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from pydantic import BaseModel, Field
@@ -30,8 +31,9 @@ from ml.labels.schema import (
     SiteAssessmentSubmission,
     SuitabilityState,
 )
+from ml.labels.store import AssessmentLabelStore
 from ml.outcome.outcome_schema import DeploymentOutcomeObservation
-from ml.security.auth import AuthenticatedUser, Permission, require_permission
+from ml.security.auth import AuthenticatedUser, Permission, ReviewerRole, require_permission
 
 router = APIRouter(prefix="/api/ml", tags=["Intervention Intelligence ML Engine"])
 
@@ -91,22 +93,58 @@ async def upload_evidence_document(
     current_user: AuthenticatedUser = Depends(require_permission(Permission.SUBMIT_ASSESSMENT)),
 ) -> Dict[str, Any]:
     """
-    Upload a binary evidence document (PDF, PNG, JPEG <= 10MB).
-    Enforces magic bytes verification and SHA-256 integrity calculation.
+    Upload a binary evidence document (PDF, PNG, JPEG <= 10MB) via bounded chunked streaming.
+    Enforces magic bytes verification, path traversal prevention, and SHA-256 integrity calculation.
     """
     svc = get_intervention_ml_service()
+    MAX_UPLOAD_SIZE = 10 * 1024 * 1024  # 10 MB
+    CHUNK_SIZE = 64 * 1024  # 64 KB
+
+    chunks = []
+    total_bytes = 0
     try:
-        content = await file.read()
+        while True:
+            chunk = await file.read(CHUNK_SIZE)
+            if not chunk:
+                break
+            total_bytes += len(chunk)
+            if total_bytes > MAX_UPLOAD_SIZE:
+                await file.close()
+                raise HTTPException(
+                    status_code=getattr(status, "HTTP_413_CONTENT_TOO_LARGE", 413),
+                    detail="Payload Too Large: Evidence file exceeds the maximum 10 MB limit.",
+                )
+            chunks.append(chunk)
+    finally:
+        await file.close()
+
+    if total_bytes < 4:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Evidence document is empty or corrupted (minimum 4 bytes required).",
+        )
+
+    content = b"".join(chunks)
+
+    # Sanitize filename against path traversal and null bytes
+    raw_name = file.filename or "evidence_document.bin"
+    safe_filename = os.path.basename(raw_name).strip().replace("\x00", "")
+    if not safe_filename or safe_filename in (".", ".."):
+        safe_filename = "evidence_document.bin"
+
+    try:
         try:
             doc_enum = EvidenceDocumentType(document_type)
         except ValueError:
             doc_enum = EvidenceDocumentType.GPR_UTILITY_SURVEY
-        return svc.save_evidence_document(
+
+        saved = svc.save_evidence_document(
             file_bytes=content,
-            filename=file.filename or "evidence_document",
+            filename=safe_filename,
             document_type=doc_enum,
             user=current_user,
         )
+        return AssessmentLabelStore.sanitize_evidence_metadata(saved)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
@@ -125,12 +163,13 @@ async def verify_evidence_document(
     """
     svc = get_intervention_ml_service()
     try:
-        return svc.verify_evidence_document(
+        saved = svc.verify_evidence_document(
             evidence_id=evidence_id,
             action=body.action,
             reviewer=current_user,
             notes=body.verification_notes,
         )
+        return AssessmentLabelStore.sanitize_evidence_metadata(saved)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     except ValueError as exc:
@@ -139,25 +178,77 @@ async def verify_evidence_document(
         raise HTTPException(status_code=403, detail=str(exc))
 
 
-@router.get("/evidence/{evidence_id}")
-async def get_evidence_document(evidence_id: str) -> Dict[str, Any]:
-    """Retrieve metadata and verification status of an evidence document."""
+@router.get("/evidence/storage/status")
+async def get_evidence_storage_status(
+    current_user: AuthenticatedUser = Depends(require_permission(Permission.VIEW_EVIDENCE)),
+) -> Dict[str, Any]:
+    """Probe evidence object storage provider status (truthfully reports durability)."""
+    svc = get_intervention_ml_service()
+    return svc.get_evidence_storage_status()
+
+
+@router.get("/evidence/{evidence_id}/history")
+async def get_evidence_history(
+    evidence_id: str,
+    current_user: AuthenticatedUser = Depends(require_permission(Permission.VIEW_EVIDENCE)),
+) -> Dict[str, Any]:
+    """Retrieve immutable verification decision history for an evidence document."""
     svc = get_intervention_ml_service()
     doc = svc.get_evidence_document(evidence_id)
     if not doc:
         raise HTTPException(status_code=404, detail=f"Evidence document '{evidence_id}' not found.")
-    return doc
+
+    if current_user.role == ReviewerRole.FIELD_ASSESSOR and doc["uploaded_by_user_id"] != current_user.user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Field Assessors may only access evidence documents they submitted.",
+        )
+
+    history = svc.get_evidence_verification_history(evidence_id)
+    return {"evidence_id": evidence_id, "verification_history": history}
+
+
+@router.get("/evidence/{evidence_id}")
+async def get_evidence_document(
+    evidence_id: str,
+    current_user: AuthenticatedUser = Depends(require_permission(Permission.VIEW_EVIDENCE)),
+) -> Dict[str, Any]:
+    """
+    Retrieve sanitized metadata and verification status of an empirical evidence document.
+    Field assessors are strictly scoped to documents they submitted.
+    """
+    svc = get_intervention_ml_service()
+    doc = svc.get_evidence_document(evidence_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail=f"Evidence document '{evidence_id}' not found.")
+
+    if current_user.role == ReviewerRole.FIELD_ASSESSOR and doc["uploaded_by_user_id"] != current_user.user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Field Assessors may only access evidence documents they submitted.",
+        )
+
+    return AssessmentLabelStore.sanitize_evidence_metadata(doc)
 
 
 @router.get("/evidence")
 async def list_evidence_documents(
     user_id: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
+    current_user: AuthenticatedUser = Depends(require_permission(Permission.VIEW_EVIDENCE)),
 ) -> Dict[str, Any]:
-    """List uploaded evidence documents."""
+    """
+    List uploaded evidence documents with role-scoped filtering and sanitized metadata.
+    Field assessors can only list documents they submitted.
+    """
     svc = get_intervention_ml_service()
-    items = svc.list_evidence_documents(user_id=user_id, status=status)
-    return {"count": len(items), "evidence_documents": items}
+    effective_user_id = user_id
+    if current_user.role == ReviewerRole.FIELD_ASSESSOR:
+        effective_user_id = current_user.user_id
+
+    items = svc.list_evidence_documents(user_id=effective_user_id, status=status)
+    sanitized = [AssessmentLabelStore.sanitize_evidence_metadata(i) for i in items]
+    return {"count": len(sanitized), "evidence_documents": sanitized}
 
 
 @router.post("/site-assessments", status_code=status.HTTP_201_CREATED)

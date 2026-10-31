@@ -25,7 +25,14 @@ from shapely.geometry import Point, LineString
 
 from app.main import app
 from ml.validation import TrainingDataEligibilityValidator, ContaminatedDataError
-from ml.security.auth import AuthenticatedUser, Permission, ReviewerRole, get_auth_manager
+from ml.security.auth import (
+    AuthenticatedUser,
+    CredentialStore,
+    Permission,
+    ReviewerRole,
+    compute_token_hmac,
+    get_auth_manager,
+)
 from ml.sources import (
     CopernicusSentinel2Adapter,
     NasaModisAdapter,
@@ -52,6 +59,7 @@ from ml.labels.schema import (
     SuitabilityState,
 )
 from ml.labels.store import AssessmentLabelStore
+from ml.labels.storage import EvidenceStorageManager
 from ml.training.data_builder import TrainingDatasetBuilder, InsufficientLabelsError
 from ml.training.registry import ModelRegistry
 from ml.training.spaces_storage import SpacesArtifactStore
@@ -257,6 +265,20 @@ def test_label_store_crud_and_history():
 
     try:
         store = AssessmentLabelStore(db_path=Path(db_path))
+        assessor = AuthenticatedUser(
+            user_id="PWD_ENG_7104",
+            username="pwd.engineer",
+            full_name="Senior Municipal Engineer",
+            role=ReviewerRole.FIELD_ASSESSOR,
+            organization="Public Works Department",
+        )
+        reviewer = AuthenticatedUser(
+            user_id="CHIEF_ENG_01",
+            username="chief.reviewer",
+            full_name="Chief Municipal Reviewer",
+            role=ReviewerRole.AUTHORIZED_REVIEWER,
+            organization="Municipal Corporation of Delhi",
+        )
         submission = SiteAssessmentSubmission(
             segment_id="C-14-S001",
             corridor_id="C-14",
@@ -268,7 +290,7 @@ def test_label_store_crud_and_history():
             engineering_constraints=["Subsurface utility present at 1.8m"],
             reviewer_notes="Feasibility dependent on GPR clearance",
         )
-        saved = store.submit_assessment(submission)
+        saved = store.submit_assessment(submission, authenticated_user=assessor)
         assert saved["assessment_id"] is not None
         assert saved["segment_id"] == "C-14-S001"
 
@@ -285,7 +307,7 @@ def test_label_store_crud_and_history():
             action="APPROVE",
             reviewer_note="Verified against PWD GPR portal",
         )
-        updated = store.review_assessment(review_action)
+        updated = store.review_assessment(review_action, authenticated_reviewer=reviewer)
         assert updated["review_status"] == "APPROVED"
         assert len(updated["audit_history"]) >= 1
     finally:
@@ -436,7 +458,14 @@ def test_outcome_store_lifecycle():
             evidence_document_type="MUNICIPAL_WORK_ORDER",
             verification_status="EMPIRICAL_VERIFIED",
         )
-        saved = store.record_outcome_observation(obs)
+        recorder = AuthenticatedUser(
+            user_id="PWD_ENG_RECORDER_01",
+            username="pwd.recorder",
+            full_name="Outcome Field Officer",
+            role=ReviewerRole.FIELD_ASSESSOR,
+            organization="Public Works Department",
+        )
+        saved = store.record_outcome_observation(obs, authenticated_user=recorder)
         assert saved["deployment_id"] == "DEP-2026-DEL-001"
         assert saved["measured_value"] == 2.8
 
@@ -731,9 +760,18 @@ def test_evidence_document_magic_bytes_and_lifecycle(client):
     assert res_verify.json()["verification_status"] == EvidenceVerificationStatus.EVIDENCE_VERIFIED.value
 
     # 5. Retrieve verified document metadata
-    res_get = client.get(f"/api/ml/evidence/{ev_id}")
+    # Unauthenticated request is rejected with 401
+    res_unauth = client.get(f"/api/ml/evidence/{ev_id}")
+    assert res_unauth.status_code == 401
+
+    # Authenticated reviewer request succeeds with sanitized response
+    res_get = client.get(
+        f"/api/ml/evidence/{ev_id}",
+        headers={"Authorization": f"Bearer {reviewer_tok}"},
+    )
     assert res_get.status_code == 200
     assert res_get.json()["verified_by_user_id"] == "REVIEWER_DOC_02"
+    assert "storage_path" not in res_get.json()
 
 
 def test_row_safety_logic_guideline_width_never_forces_ineligible():
@@ -891,4 +929,353 @@ def test_label_store_disqualifies_unbacked_evidence_from_training(tmp_path):
     disk_path.write_bytes(b"tampered contents")
     eligible_tampered = store.get_training_eligible_labels()
     assert len(eligible_tampered) == 0
+
+
+# -------------------------------------------------------------------------
+# 10. Security & Storage Persistence Hardening Tests
+# -------------------------------------------------------------------------
+
+def test_evidence_metadata_endpoints_security_and_scoping(client):
+    """
+    Test that evidence endpoints strictly enforce VIEW_EVIDENCE permission,
+    role scoping (field assessors see only their own docs), and sanitize storage_path.
+    """
+    auth_mgr = get_auth_manager()
+    assessor1_tok, assessor1_user = auth_mgr.provision_test_user(
+        role=ReviewerRole.FIELD_ASSESSOR,
+        user_id="ASSESSOR_SEC_01",
+    )
+    assessor2_tok, assessor2_user = auth_mgr.provision_test_user(
+        role=ReviewerRole.FIELD_ASSESSOR,
+        user_id="ASSESSOR_SEC_02",
+    )
+    reviewer_tok, reviewer_user = auth_mgr.provision_test_user(
+        role=ReviewerRole.AUTHORIZED_REVIEWER,
+        user_id="REVIEWER_SEC_01",
+    )
+
+    # 1. Upload a document by Assessor 1
+    pdf_content = b"%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF"
+    upload_res = client.post(
+        "/api/ml/evidence/upload",
+        files={"file": ("assessor1_gpr.pdf", io.BytesIO(pdf_content), "application/pdf")},
+        data={"document_type": "GPR_UTILITY_SURVEY"},
+        headers={"Authorization": f"Bearer {assessor1_tok}"},
+    )
+    assert upload_res.status_code == 201
+    ev_id = upload_res.json()["evidence_id"]
+
+    # 2. Unauthenticated calls must return 401
+    assert client.get(f"/api/ml/evidence/{ev_id}").status_code == 401
+    assert client.get("/api/ml/evidence").status_code == 401
+    assert client.get(f"/api/ml/evidence/{ev_id}/history").status_code == 401
+
+    # 3. Field Assessor 2 cannot view Field Assessor 1's document (403 Forbidden)
+    res_other = client.get(
+        f"/api/ml/evidence/{ev_id}",
+        headers={"Authorization": f"Bearer {assessor2_tok}"},
+    )
+    assert res_other.status_code == 403
+    assert "Field Assessors may only access evidence documents they submitted" in res_other.json()["detail"]
+
+    # 4. Field Assessor 1 can view their own document with sanitized metadata
+    res_own = client.get(
+        f"/api/ml/evidence/{ev_id}",
+        headers={"Authorization": f"Bearer {assessor1_tok}"},
+    )
+    assert res_own.status_code == 200
+    doc_data = res_own.json()
+    assert doc_data["evidence_id"] == ev_id
+    assert "storage_path" not in doc_data
+    assert "local_path" not in doc_data
+    assert doc_data["is_available"] is True
+
+    # 5. Authorized Reviewer can view the document
+    res_rev = client.get(
+        f"/api/ml/evidence/{ev_id}",
+        headers={"Authorization": f"Bearer {reviewer_tok}"},
+    )
+    assert res_rev.status_code == 200
+    assert "storage_path" not in res_rev.json()
+
+    # 6. Listing scoping: Assessor 2 sees 0 documents
+    list_ass2 = client.get(
+        "/api/ml/evidence",
+        headers={"Authorization": f"Bearer {assessor2_tok}"},
+    )
+    assert list_ass2.status_code == 200
+    assert not any(d["evidence_id"] == ev_id for d in list_ass2.json()["evidence_documents"])
+
+    # 7. Listing scoping: Assessor 1 sees their uploaded document
+    list_ass1 = client.get(
+        "/api/ml/evidence",
+        headers={"Authorization": f"Bearer {assessor1_tok}"},
+    )
+    assert list_ass1.status_code == 200
+    assert any(d["evidence_id"] == ev_id for d in list_ass1.json()["evidence_documents"])
+    assert all("storage_path" not in d for d in list_ass1.json()["evidence_documents"])
+
+
+def test_upload_limits_and_chunked_streaming(client):
+    """
+    Test upload size boundaries (empty -> 400, >10MB -> 413) and path traversal neutralization.
+    """
+    auth_mgr = get_auth_manager()
+    assessor_tok, _ = auth_mgr.provision_test_user(
+        role=ReviewerRole.FIELD_ASSESSOR,
+        user_id="UPLOAD_TEST_ASSESSOR",
+    )
+
+    # 1. Empty file rejected with 400
+    res_empty = client.post(
+        "/api/ml/evidence/upload",
+        files={"file": ("empty.pdf", io.BytesIO(b""), "application/pdf")},
+        data={"document_type": "GPR_UTILITY_SURVEY"},
+        headers={"Authorization": f"Bearer {assessor_tok}"},
+    )
+    assert res_empty.status_code == 400
+
+    # 2. 3-byte file rejected with 400
+    res_short = client.post(
+        "/api/ml/evidence/upload",
+        files={"file": ("short.pdf", io.BytesIO(b"abc"), "application/pdf")},
+        data={"document_type": "GPR_UTILITY_SURVEY"},
+        headers={"Authorization": f"Bearer {assessor_tok}"},
+    )
+    assert res_short.status_code == 400
+
+    # 3. Oversized file (> 10MB) rejected with 413
+    oversized_bytes = b"%PDF-1.4" + (b"0" * (10 * 1024 * 1024 + 1024))
+    res_large = client.post(
+        "/api/ml/evidence/upload",
+        files={"file": ("huge.pdf", io.BytesIO(oversized_bytes), "application/pdf")},
+        data={"document_type": "GPR_UTILITY_SURVEY"},
+        headers={"Authorization": f"Bearer {assessor_tok}"},
+    )
+    assert res_large.status_code == 413
+    assert "Payload Too Large" in res_large.json()["detail"]
+
+    # 4. Path traversal filename is safely sanitized
+    traversal_pdf = b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF"
+    res_traversal = client.post(
+        "/api/ml/evidence/upload",
+        files={"file": ("../../../../etc/passwd.pdf", io.BytesIO(traversal_pdf), "application/pdf")},
+        data={"document_type": "GPR_UTILITY_SURVEY"},
+        headers={"Authorization": f"Bearer {assessor_tok}"},
+    )
+    assert res_traversal.status_code == 201
+    meta = res_traversal.json()
+    assert meta["filename"] == "passwd.pdf"
+    assert ".." not in meta["filename"]
+    assert "/" not in meta["filename"]
+
+
+def test_unauthenticated_identity_rejection(tmp_path):
+    """
+    Test that calling submit_assessment, review_assessment, or record_outcome_observation
+    without an authenticated user strictly raises PermissionError.
+    """
+    db_file = tmp_path / "strict_auth.sqlite"
+    label_store = AssessmentLabelStore(db_path=db_file, data_dir=tmp_path)
+    outcome_store = OutcomeObservationStore(db_path=db_file)
+
+    sub = SiteAssessmentSubmission(
+        segment_id="C-14-S001",
+        corridor_id="C-14",
+        intervention_archetype=InterventionArchetype.LINEAR_STREET_TREES,
+        suitability_state=SuitabilityState.CONDITIONAL,
+        evidence_reference="PWD/2026/001",
+    )
+
+    # 1. Unauthenticated submission raises PermissionError
+    with pytest.raises(PermissionError) as exc_info:
+        label_store.submit_assessment(sub, authenticated_user=None)
+    assert "strictly requires an authenticated municipal officer session" in str(exc_info.value)
+
+    # 2. Unauthenticated review raises PermissionError
+    review_act = AssessmentReviewAction(
+        assessment_id="assmnt-test1",
+        action=ReviewActionType.APPROVE,
+        reviewer_note="Attempted unauthenticated review",
+    )
+    with pytest.raises(PermissionError) as exc_rev:
+        label_store.review_assessment(review_act, authenticated_reviewer=None)
+    assert "strictly requires an authenticated municipal reviewer session" in str(exc_rev.value)
+
+    # 3. Unauthenticated outcome observation raises PermissionError
+    obs = DeploymentOutcomeObservation(
+        deployment_id="DEP-TEST-01",
+        segment_id="C-14-S001",
+        intervention_archetype="linear_street_trees",
+        installation_date="2025-01-01",
+        observation_date="2026-01-01",
+        is_post_intervention=True,
+        metric_type=OutcomeMetricType.LST_THERMAL_REDUCTION_CELSIUS,
+        measured_value=1.5,
+        measurement_unit="celsius",
+        measurement_method="SATELLITE_RASTER",
+        instrument_details="Terra/Aqua 1000m daytime LST",
+        verification_status="EMPIRICAL_VERIFIED",
+    )
+    with pytest.raises(PermissionError) as exc_obs:
+        outcome_store.record_outcome_observation(obs, authenticated_user=None)
+    assert "strictly requires an authenticated municipal user session" in str(exc_obs.value)
+
+
+def test_evidence_verification_audit_history_append_only(client):
+    """
+    Test that evidence document verification produces an append-only, immutable audit trail.
+    """
+    auth_mgr = get_auth_manager()
+    assessor_tok, assessor_user = auth_mgr.provision_test_user(
+        role=ReviewerRole.FIELD_ASSESSOR,
+        user_id="HIST_ASSESSOR_01",
+    )
+    reviewer1_tok, reviewer1_user = auth_mgr.provision_test_user(
+        role=ReviewerRole.AUTHORIZED_REVIEWER,
+        user_id="HIST_REVIEWER_01",
+    )
+    reviewer2_tok, reviewer2_user = auth_mgr.provision_test_user(
+        role=ReviewerRole.AUTHORIZED_REVIEWER,
+        user_id="HIST_REVIEWER_02",
+    )
+
+    # Upload document
+    pdf_content = b"%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF"
+    upload_res = client.post(
+        "/api/ml/evidence/upload",
+        files={"file": ("history_test.pdf", io.BytesIO(pdf_content), "application/pdf")},
+        data={"document_type": "GPR_UTILITY_SURVEY"},
+        headers={"Authorization": f"Bearer {assessor_tok}"},
+    )
+    assert upload_res.status_code == 201
+    ev_id = upload_res.json()["evidence_id"]
+
+    # 1. Reviewer 1 approves document
+    res_v1 = client.post(
+        f"/api/ml/evidence/{ev_id}/verify",
+        json={"action": "APPROVE", "verification_notes": "First round verification passed"},
+        headers={"Authorization": f"Bearer {reviewer1_tok}"},
+    )
+    assert res_v1.status_code == 200
+
+    # 2. Reviewer 2 subsequently rejects document based on further survey
+    res_v2 = client.post(
+        f"/api/ml/evidence/{ev_id}/verify",
+        json={"action": "REJECT", "verification_notes": "Subsurface utility conflict re-detected"},
+        headers={"Authorization": f"Bearer {reviewer2_tok}"},
+    )
+    assert res_v2.status_code == 200
+    assert res_v2.json()["verification_status"] == EvidenceVerificationStatus.EVIDENCE_REJECTED.value
+
+    # 3. Retrieve immutable history trail
+    res_hist = client.get(
+        f"/api/ml/evidence/{ev_id}/history",
+        headers={"Authorization": f"Bearer {reviewer1_tok}"},
+    )
+    assert res_hist.status_code == 200
+    history = res_hist.json()["verification_history"]
+    assert len(history) == 2
+
+    # Verify event 1
+    ev1 = history[0]
+    assert ev1["decision"] == "APPROVE"
+    assert ev1["reviewer_id"] == "HIST_REVIEWER_01"
+    assert ev1["new_status"] == EvidenceVerificationStatus.EVIDENCE_VERIFIED.value
+    assert ev1["previous_status"] == EvidenceVerificationStatus.EVIDENCE_PENDING_REVIEW.value
+
+    # Verify event 2
+    ev2 = history[1]
+    assert ev2["decision"] == "REJECT"
+    assert ev2["reviewer_id"] == "HIST_REVIEWER_02"
+    assert ev2["new_status"] == EvidenceVerificationStatus.EVIDENCE_REJECTED.value
+    assert ev2["previous_status"] == EvidenceVerificationStatus.EVIDENCE_VERIFIED.value
+
+
+def test_evidence_storage_manager_lifecycle(tmp_path):
+    """
+    Test EvidenceStorageManager: randomized object keys, private access, SHA-256 verification,
+    and truthful status reporting.
+    """
+    storage = EvidenceStorageManager(base_dir=tmp_path / "evidence")
+
+    # Status without Spaces credentials must report LOCAL_STORAGE_ONLY
+    status_report = storage.get_storage_status()
+    assert status_report["status"] == "LOCAL_STORAGE_ONLY"
+    assert status_report["durable_cloud_storage"] is False
+
+    # Store a test file
+    content = b"%PDF-1.4\nSample GPR utility clearance scan\n%%EOF"
+    stored = storage.store_evidence_file(
+        evidence_id="evid-test-001",
+        original_filename="../../../unsafe_name.pdf",
+        file_bytes=content,
+        mime_type="application/pdf",
+    )
+    assert stored["storage_backend"] == "LOCAL"
+    assert stored["is_durable"] is False
+    assert stored["object_key"].startswith("evidence/evid-test-001/")
+    assert stored["object_key"].endswith(".pdf")
+    assert "unsafe_name" not in stored["object_key"]
+    assert Path(stored["local_path"]).exists()
+
+    # Retrieve and verify checksum
+    retrieved = storage.retrieve_evidence_bytes(
+        evidence_id="evid-test-001",
+        local_path=stored["local_path"],
+        expected_sha256=stored["sha256_checksum"],
+    )
+    assert retrieved == content
+
+    # Corrupting file triggers ValueError
+    Path(stored["local_path"]).write_bytes(b"%PDF-1.4 CORRUPTED FILE CONTENT")
+    with pytest.raises(ValueError) as exc_tamper:
+        storage.retrieve_evidence_bytes(
+            evidence_id="evid-test-001",
+            local_path=stored["local_path"],
+            expected_sha256=stored["sha256_checksum"],
+        )
+    assert "integrity compromise" in str(exc_tamper.value)
+
+
+def test_token_keyed_hmac_and_transactional_rotation(tmp_path):
+    """
+    Test O(1) keyed HMAC token authentication and single-transaction rotation.
+    """
+    store = CredentialStore(db_path=tmp_path / "test_auth.sqlite", hmac_secret="test_secret_12345")
+    user = AuthenticatedUser(
+        user_id="ROT_USER_01",
+        username="rot.user",
+        full_name="Rotation Test Officer",
+        role=ReviewerRole.FIELD_ASSESSOR,
+        organization="Public Works Department",
+    )
+
+    # 1. Create token and authenticate via HMAC
+    token1 = store.create_token(user)
+    assert token1.startswith("vs_")
+    auth_user = store.authenticate(token1)
+    assert auth_user is not None
+    assert auth_user.user_id == "ROT_USER_01"
+
+    # 2. Fast O(1) indexed lookup: verify token_hmac column is present
+    with store._get_conn() as conn:
+        row = conn.execute("SELECT token_hmac, token_prefix FROM api_credentials WHERE user_id = ?", ("ROT_USER_01",)).fetchone()
+        assert row["token_hmac"] == compute_token_hmac(token1, "test_secret_12345")
+        assert row["token_prefix"] == token1[:7]
+
+    # 3. Transactional rotation: atomically revoke token1 and issue token2
+    rot_result = store.rotate_token(token1)
+    assert rot_result is not None
+    token2, rot_user = rot_result
+    assert token2 != token1
+    assert rot_user.user_id == "ROT_USER_01"
+
+    # Old token fails authentication immediately
+    assert store.authenticate(token1) is None
+
+    # New token succeeds
+    auth_user2 = store.authenticate(token2)
+    assert auth_user2 is not None
+    assert auth_user2.user_id == "ROT_USER_01"
 

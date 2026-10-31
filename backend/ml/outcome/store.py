@@ -85,13 +85,15 @@ class OutcomeObservationStore:
                 "Data Contamination Rejection: Synthetic outcome records cannot be stored in empirical outcome registry."
             )
 
-        recorder_id = obs.recorder_id or "unauthenticated_field_user"
-        if authenticated_user is not None:
-            if not authenticated_user.has_permission(Permission.SUBMIT_OUTCOME):
-                raise PermissionError(
-                    f"User '{authenticated_user.user_id}' lacks SUBMIT_OUTCOME permission."
-                )
-            recorder_id = authenticated_user.user_id
+        if authenticated_user is None:
+            raise PermissionError(
+                "Authentication required: Outcome observation recording strictly requires an authenticated municipal user session."
+            )
+        if not authenticated_user.has_permission(Permission.SUBMIT_OUTCOME):
+            raise PermissionError(
+                f"User '{authenticated_user.user_id}' lacks SUBMIT_OUTCOME permission."
+            )
+        recorder_id = authenticated_user.user_id
 
         # Verification requires a document reference
         v_status = obs.verification_status
