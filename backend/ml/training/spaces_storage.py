@@ -11,9 +11,16 @@ import os
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-import boto3
-from botocore.config import Config
-from botocore.exceptions import ClientError
+try:
+    import boto3
+    from botocore.config import Config
+    from botocore.exceptions import ClientError
+    HAS_BOTO3 = True
+except ImportError:
+    boto3 = None
+    Config = None
+    ClientError = Exception
+    HAS_BOTO3 = False
 
 
 class SpacesArtifactStore:
@@ -38,11 +45,13 @@ class SpacesArtifactStore:
         self.endpoint_url = (endpoint_url or os.getenv("DO_SPACES_ENDPOINT_URL", default_endpoint)).strip()
 
     def is_configured(self) -> bool:
-        """Returns True if Spaces credentials and bucket are present."""
-        return bool(self.key and self.secret and self.bucket)
+        """Returns True if Spaces credentials, bucket, and boto3 client are present."""
+        return bool(HAS_BOTO3 and self.key and self.secret and self.bucket)
 
     def _get_s3_client(self):
         """Construct a configured S3 client for DigitalOcean Spaces."""
+        if not HAS_BOTO3:
+            raise RuntimeError("boto3 is not installed; install boto3 to connect to DigitalOcean Spaces.")
         return boto3.client(
             "s3",
             region_name=self.region,
