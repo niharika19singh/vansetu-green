@@ -44,6 +44,10 @@ from app.routers import (
     spatial_memory,
     project_readiness,
     ml_interventions,
+    auth,
+    tenders,
+    corridor_cost,
+    health,
 )
 
 logging.basicConfig(
@@ -109,6 +113,10 @@ app.include_router(impact_monitoring.router)
 app.include_router(spatial_memory.router)
 app.include_router(project_readiness.router)
 app.include_router(ml_interventions.router)
+app.include_router(auth.router)
+app.include_router(tenders.router)
+app.include_router(corridor_cost.router)
+app.include_router(health.router)
 
 
 @app.get("/", tags=["System"])

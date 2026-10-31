@@ -8,12 +8,16 @@ const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:7860';
 
 async function requestJson(path, options = {}) {
   const url = `${API_BASE}${path}`;
+  const headers = {
+    'Content-Type': 'application/json',
+    ...(options.headers || {}),
+  };
+  if (options.token) {
+    headers['Authorization'] = `Bearer ${options.token}`;
+  }
   const response = await fetch(url, {
-    headers: {
-      'Content-Type': 'application/json',
-      ...(options.headers || {}),
-    },
     ...options,
+    headers,
   });
 
   if (!response.ok) {
@@ -333,6 +337,119 @@ export const api = {
     requestJson('/api/ml/model/rollback', {
       method: 'POST',
       headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: JSON.stringify(payload),
+    }),
+
+  // Phase 12: RBAC, Government Administration, Tender Allocation & Hospital Health
+  getCurrentUser: (token) =>
+    requestJson('/api/auth/me', { token }),
+  getPermissions: (token) =>
+    requestJson('/api/auth/permissions', { token }),
+  demoSwitchRole: (role) =>
+    requestJson(`/api/auth/demo-switch-role?role=${encodeURIComponent(role)}`, {
+      method: 'POST',
+    }),
+
+  // Tenders & Procurement Marketplace
+  listTenders: (params = {}, token) => {
+    const q = new URLSearchParams();
+    if (params.status) q.set('status', params.status);
+    if (params.corridor_id) q.set('corridor_id', params.corridor_id);
+    const qs = q.toString();
+    return requestJson(`/api/tenders${qs ? `?${qs}` : ''}`, { token });
+  },
+  createTender: (payload, token) =>
+    requestJson('/api/tenders', {
+      method: 'POST',
+      token,
+      body: JSON.stringify(payload),
+    }),
+  getTender: (tenderId, token) =>
+    requestJson(`/api/tenders/${encodeURIComponent(tenderId)}`, { token }),
+  submitTenderProposal: (tenderId, payload, token) =>
+    requestJson(`/api/tenders/${encodeURIComponent(tenderId)}/proposals`, {
+      method: 'POST',
+      token,
+      body: JSON.stringify(payload),
+    }),
+  awardTender: (tenderId, payload, token) =>
+    requestJson(`/api/tenders/${encodeURIComponent(tenderId)}/award`, {
+      method: 'POST',
+      token,
+      body: JSON.stringify(payload),
+    }),
+  getCorridorAvailability: (corridorId, token) =>
+    requestJson(`/api/corridors/${encodeURIComponent(corridorId)}/availability`, { token }),
+  listCorridorAssignments: (params = {}, token) => {
+    const q = new URLSearchParams();
+    if (params.corridor_id) q.set('corridor_id', params.corridor_id);
+    if (params.status) q.set('status', params.status);
+    const qs = q.toString();
+    return requestJson(`/api/admin/corridor-assignments${qs ? `?${qs}` : ''}`, { token });
+  },
+  directAllocateCorridor: (payload, token) =>
+    requestJson('/api/admin/corridor-assignments', {
+      method: 'POST',
+      token,
+      body: JSON.stringify(payload),
+    }),
+  listProfessionals: (token) =>
+    requestJson('/api/admin/professionals', { token }),
+  verifyProfessional: (payload, token) =>
+    requestJson('/api/admin/professionals/verify', {
+      method: 'POST',
+      token,
+      body: JSON.stringify(payload),
+    }),
+  listAuditLogs: (params = {}, token) => {
+    const q = new URLSearchParams();
+    if (params.corridor_id) q.set('corridor_id', params.corridor_id);
+    if (params.action) q.set('action', params.action);
+    if (params.limit) q.set('limit', String(params.limit));
+    const qs = q.toString();
+    return requestJson(`/api/admin/audit-logs${qs ? `?${qs}` : ''}`, { token });
+  },
+
+  // Corridor Cost Optimization & Government Budget Approval
+  getCorridorCostBaseline: (corridorId, token) =>
+    requestJson(`/api/corridors/${encodeURIComponent(corridorId)}/cost-optimisation`, { token }),
+  optimizeCorridorCost: (corridorId, payload, token) =>
+    requestJson(`/api/corridors/${encodeURIComponent(corridorId)}/cost-optimisation`, {
+      method: 'POST',
+      token,
+      body: JSON.stringify(payload),
+    }),
+  approveCorridorBudget: (corridorId, payload, token) =>
+    requestJson(`/api/corridors/${encodeURIComponent(corridorId)}/budget-approval`, {
+      method: 'POST',
+      token,
+      body: JSON.stringify(payload),
+    }),
+
+  // Hospital & Regional Heat Health Intelligence
+  getRegionalHealthIndicators: (params = {}, token) => {
+    const q = new URLSearchParams();
+    if (params.district) q.set('district', params.district);
+    if (params.year) q.set('year', String(params.year));
+    const qs = q.toString();
+    return requestJson(`/api/health/regional-indicators${qs ? `?${qs}` : ''}`, { token });
+  },
+  getCorridorHealthFactor: (district, token) =>
+    requestJson(`/api/health/corridors/${encodeURIComponent(district)}/health-factor`, { token }),
+  getAbhaStatus: () =>
+    requestJson('/api/health/abha-status'),
+  listHospitalSources: (token) =>
+    requestJson('/api/admin/health-data/sources', { token }),
+  createHospitalSource: (payload, token) =>
+    requestJson('/api/admin/health-data/sources', {
+      method: 'POST',
+      token,
+      body: JSON.stringify(payload),
+    }),
+  uploadHospitalDataset: (payload, token) =>
+    requestJson('/api/admin/health-data/uploads', {
+      method: 'POST',
+      token,
       body: JSON.stringify(payload),
     }),
 };

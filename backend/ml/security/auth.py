@@ -62,6 +62,13 @@ def get_token_hmac_secret() -> str:
 
 
 class ReviewerRole(str, Enum):
+    # Core Government-First Platform Roles
+    GOVERNMENT_ADMIN = "GOVERNMENT_ADMIN"
+    GOVERNMENT_ENGINEER = "GOVERNMENT_ENGINEER"
+    PRO_PROFESSIONAL = "PRO_PROFESSIONAL"
+    NORMAL_USER = "NORMAL_USER"
+
+    # Pre-existing ML Reviewer / Field Staff Roles (backward compatible)
     FIELD_ASSESSOR = "FIELD_ASSESSOR"
     AUTHORIZED_REVIEWER = "AUTHORIZED_REVIEWER"
     SENIOR_REVIEWER = "SENIOR_REVIEWER"
@@ -73,6 +80,7 @@ UserRole = ReviewerRole
 
 
 class Permission(str, Enum):
+    # Existing ML Review & Label Permissions
     SUBMIT_ASSESSMENT = "SUBMIT_ASSESSMENT"
     VIEW_ASSESSMENTS = "VIEW_ASSESSMENTS"
     REVIEW_ASSESSMENT = "REVIEW_ASSESSMENT"
@@ -88,16 +96,71 @@ class Permission(str, Enum):
     MANAGE_USERS = "MANAGE_USERS"
     MANAGE_REGISTRY = "MANAGE_REGISTRY"
 
+    # Government-First Platform Permissions
+    VIEW_PUBLIC_MAP = "VIEW_PUBLIC_MAP"
+    VIEW_CORRIDOR_INTELLIGENCE = "VIEW_CORRIDOR_INTELLIGENCE"
+    VIEW_SEGMENT_ANALYSIS = "VIEW_SEGMENT_ANALYSIS"
+    CUSTOMIZE_SCENARIOS = "CUSTOMIZE_SCENARIOS"
+    OPTIMIZE_PORTFOLIO = "OPTIMIZE_PORTFOLIO"
+    OPTIMIZE_CORRIDOR_COST = "OPTIMIZE_CORRIDOR_COST"
+    BROWSE_TENDERS = "BROWSE_TENDERS"
+    SUBMIT_PROPOSAL = "SUBMIT_PROPOSAL"
+    MANAGE_TENDERS = "MANAGE_TENDERS"
+    ASSIGN_TENDER = "ASSIGN_TENDER"
+    ALLOCATE_CORRIDOR = "ALLOCATE_CORRIDOR"
+    VIEW_ALL_ASSIGNMENTS = "VIEW_ALL_ASSIGNMENTS"
+    MANAGE_PROFESSIONALS = "MANAGE_PROFESSIONALS"
+    MANAGE_HOSPITAL_SOURCES = "MANAGE_HOSPITAL_SOURCES"
+    VIEW_REGIONAL_HEALTH = "VIEW_REGIONAL_HEALTH"
+    APPROVE_PROJECT_COSTS = "APPROVE_PROJECT_COSTS"
+    VIEW_GOVERNMENT_AUDIT = "VIEW_GOVERNMENT_AUDIT"
+
 
 # Authoritative role-permission mappings
 ROLE_PERMISSIONS: Dict[ReviewerRole, Set[Permission]] = {
+    ReviewerRole.GOVERNMENT_ADMIN: set(Permission),
+    ReviewerRole.GOVERNMENT_ENGINEER: set(Permission),
+    ReviewerRole.ADMINISTRATOR: set(Permission),
+    ReviewerRole.PRO_PROFESSIONAL: {
+        Permission.VIEW_PUBLIC_MAP,
+        Permission.VIEW_CORRIDOR_INTELLIGENCE,
+        Permission.VIEW_SEGMENT_ANALYSIS,
+        Permission.CUSTOMIZE_SCENARIOS,
+        Permission.OPTIMIZE_PORTFOLIO,
+        Permission.OPTIMIZE_CORRIDOR_COST,
+        Permission.BROWSE_TENDERS,
+        Permission.SUBMIT_PROPOSAL,
+        Permission.VIEW_REGIONAL_HEALTH,
+        Permission.SUBMIT_ASSESSMENT,
+        Permission.VIEW_ASSESSMENTS,
+        Permission.SUBMIT_OUTCOME,
+        Permission.VIEW_EVIDENCE,
+    },
     ReviewerRole.FIELD_ASSESSOR: {
+        Permission.VIEW_PUBLIC_MAP,
+        Permission.VIEW_CORRIDOR_INTELLIGENCE,
+        Permission.VIEW_SEGMENT_ANALYSIS,
+        Permission.CUSTOMIZE_SCENARIOS,
+        Permission.OPTIMIZE_PORTFOLIO,
+        Permission.OPTIMIZE_CORRIDOR_COST,
+        Permission.BROWSE_TENDERS,
+        Permission.SUBMIT_PROPOSAL,
+        Permission.VIEW_REGIONAL_HEALTH,
         Permission.SUBMIT_ASSESSMENT,
         Permission.VIEW_ASSESSMENTS,
         Permission.SUBMIT_OUTCOME,
         Permission.VIEW_EVIDENCE,
     },
     ReviewerRole.AUTHORIZED_REVIEWER: {
+        Permission.VIEW_PUBLIC_MAP,
+        Permission.VIEW_CORRIDOR_INTELLIGENCE,
+        Permission.VIEW_SEGMENT_ANALYSIS,
+        Permission.CUSTOMIZE_SCENARIOS,
+        Permission.OPTIMIZE_PORTFOLIO,
+        Permission.OPTIMIZE_CORRIDOR_COST,
+        Permission.BROWSE_TENDERS,
+        Permission.SUBMIT_PROPOSAL,
+        Permission.VIEW_REGIONAL_HEALTH,
         Permission.SUBMIT_ASSESSMENT,
         Permission.VIEW_ASSESSMENTS,
         Permission.REVIEW_ASSESSMENT,
@@ -107,6 +170,15 @@ ROLE_PERMISSIONS: Dict[ReviewerRole, Set[Permission]] = {
         Permission.VIEW_EVIDENCE,
     },
     ReviewerRole.SENIOR_REVIEWER: {
+        Permission.VIEW_PUBLIC_MAP,
+        Permission.VIEW_CORRIDOR_INTELLIGENCE,
+        Permission.VIEW_SEGMENT_ANALYSIS,
+        Permission.CUSTOMIZE_SCENARIOS,
+        Permission.OPTIMIZE_PORTFOLIO,
+        Permission.OPTIMIZE_CORRIDOR_COST,
+        Permission.BROWSE_TENDERS,
+        Permission.SUBMIT_PROPOSAL,
+        Permission.VIEW_REGIONAL_HEALTH,
         Permission.SUBMIT_ASSESSMENT,
         Permission.VIEW_ASSESSMENTS,
         Permission.REVIEW_ASSESSMENT,
@@ -118,8 +190,15 @@ ROLE_PERMISSIONS: Dict[ReviewerRole, Set[Permission]] = {
         Permission.SUBMIT_OUTCOME,
         Permission.VERIFY_EVIDENCE,
         Permission.VIEW_EVIDENCE,
+        Permission.VIEW_ALL_ASSIGNMENTS,
+        Permission.APPROVE_PROJECT_COSTS,
+        Permission.VIEW_GOVERNMENT_AUDIT,
     },
-    ReviewerRole.ADMINISTRATOR: set(Permission),
+    ReviewerRole.NORMAL_USER: {
+        Permission.VIEW_PUBLIC_MAP,
+        Permission.VIEW_CORRIDOR_INTELLIGENCE,
+        Permission.VIEW_REGIONAL_HEALTH,
+    },
 }
 
 
@@ -605,6 +684,41 @@ async def get_current_user(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=f"Rate limit exceeded: Maximum {mgr.rate_limit_max_requests} requests per minute allowed.",
         )
+
+    return user
+
+
+PUBLIC_ANONYMOUS_USER = AuthenticatedUser(
+    user_id="PUBLIC_ANON",
+    username="public.guest",
+    full_name="Public Visitor",
+    role=ReviewerRole.NORMAL_USER,
+    organization="General Public",
+)
+
+
+async def get_optional_current_user(
+    request: Request,
+    auth_header: Optional[HTTPAuthorizationCredentials] = Security(security_bearer),
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+) -> AuthenticatedUser:
+    """
+    FastAPI dependency that attempts authentication, defaulting gracefully
+    to PUBLIC_ANONYMOUS_USER (NORMAL_USER role) if no token is provided.
+    """
+    token: Optional[str] = None
+    if auth_header and auth_header.credentials:
+        token = auth_header.credentials
+    elif x_api_key:
+        token = x_api_key
+
+    if not token:
+        return PUBLIC_ANONYMOUS_USER
+
+    mgr = get_auth_manager()
+    user = mgr.authenticate_token(token)
+    if not user:
+        return PUBLIC_ANONYMOUS_USER
 
     return user
 
