@@ -17,6 +17,11 @@ import {
   Clock,
   Users,
   LayoutDashboard,
+  FolderKanban,
+  Sun,
+  Activity,
+  Compass,
+  ShieldCheck,
 } from 'lucide-react';
 import { api } from './api/client';
 import InteractiveMap from './components/InteractiveMap';
@@ -30,6 +35,14 @@ import AiPlanningAssistantView from './components/AiPlanningAssistantView';
 import MekoMemoryStudioView from './components/MekoMemoryStudioView';
 import TemporalInsightsView from './components/TemporalInsightsView';
 import EquityAndProvenanceView from './components/EquityAndProvenanceView';
+import CorridorEvidencePassportModal from './components/CorridorEvidencePassportModal';
+import SegmentSuitabilityView from './components/SegmentSuitabilityView';
+import ParetoPortfolioLabView from './components/ParetoPortfolioLabView';
+import ShadeContinuityView from './components/ShadeContinuityView';
+import SeasonalHeatIntelligenceView from './components/SeasonalHeatIntelligenceView';
+import ImpactMonitoringView from './components/ImpactMonitoringView';
+import SpatialMemoryMapView from './components/SpatialMemoryMapView';
+import ProjectReadinessView from './components/ProjectReadinessView';
 
 const NAV_VIEWS = [
   { id: 'overview', label: '1. Climate Overview', icon: LayoutDashboard },
@@ -42,6 +55,13 @@ const NAV_VIEWS = [
   { id: 'meko', label: '8. Institutional Memory (Meko)', icon: Brain },
   { id: 'temporal', label: '9. Temporal Insights (Tiger Data)', icon: Clock },
   { id: 'provenance', label: '10. Evidence & Data Provenance', icon: Users },
+  { id: 'suitability', label: '11. Right Tree, Right Place', icon: Compass },
+  { id: 'pareto', label: '12. Pareto Portfolio Lab', icon: Calculator },
+  { id: 'shade', label: '13. Pedestrian Shade Continuity', icon: Sun },
+  { id: 'seasonal', label: '14. Seasonal Heat Intelligence', icon: Thermometer },
+  { id: 'impact', label: '15. Impact Monitoring', icon: Activity },
+  { id: 'spatial_memory', label: '16. Spatial Memory Map', icon: Brain },
+  { id: 'readiness', label: '17. Project Readiness (WP 1-8)', icon: FolderKanban },
 ];
 
 export default function App() {
@@ -64,6 +84,8 @@ export default function App() {
 
   const [rightTab, setRightTab] = useState('analytics');
   const [provenanceModalOpen, setProvenanceModalOpen] = useState(false);
+  const [passportOpen, setPassportOpen] = useState(false);
+  const [passportCorridorId, setPassportCorridorId] = useState('C-14');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -228,6 +250,18 @@ export default function App() {
           >
             <Brain className="w-3.5 h-3.5" />
             <span>{mekoEnabled ? 'MEKO: ON' : 'MEKO: OFF'}</span>
+          </button>
+
+          <button
+            onClick={() => {
+              setPassportCorridorId(selectedCorridor?.code || selectedCorridor?.id || 'C-14');
+              setPassportOpen(true);
+            }}
+            className="px-3 py-1.5 rounded-lg bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-700 text-xs font-bold text-emerald-300 flex items-center gap-1.5 transition shadow"
+            title="Open Corridor Evidence Passport (v2.0)"
+          >
+            <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+            <span className="hidden sm:inline">Evidence Passport</span>
           </button>
 
           <button
@@ -406,6 +440,10 @@ export default function App() {
                       corridor={selectedCorridor}
                       sensitivityRow={activeSensitivityRow}
                       activeScenario={activeScenario}
+                      onOpenPassport={(cid) => {
+                        setPassportCorridorId(cid);
+                        setPassportOpen(true);
+                      }}
                     />
                   )}
 
@@ -464,7 +502,46 @@ export default function App() {
           </div>
         )}
 
-        {/* View 5: Intervention Optimizer (MILP) */}
+        {/* Feature 2: Right Tree, Right Place (Segment Suitability & Species) */}
+        {activeView === 'suitability' && (
+          <SegmentSuitabilityView selectedCorridor={selectedCorridor} />
+        )}
+
+        {/* Feature 4: Pedestrian Shade Continuity Analyser */}
+        {activeView === 'shade' && (
+          <ShadeContinuityView selectedCorridor={selectedCorridor} />
+        )}
+
+        {/* Feature 5: Seasonal Urban Heat Intelligence */}
+        {activeView === 'seasonal' && (
+          <SeasonalHeatIntelligenceView selectedCorridor={selectedCorridor} />
+        )}
+
+        {/* Feature 3: Pareto Portfolio Lab */}
+        {activeView === 'pareto' && (
+          <ParetoPortfolioLabView
+            onSelectPortfolioForImplementation={(portfolio) => {
+              setActiveView('readiness');
+            }}
+          />
+        )}
+
+        {/* Feature 8: Climate Project Implementation & Readiness Planner */}
+        {activeView === 'readiness' && (
+          <ProjectReadinessView
+            onNavigateToProcurement={() => setActiveView('procurement')}
+          />
+        )}
+
+        {/* Feature 6: Climate Intervention Impact Monitoring */}
+        {activeView === 'impact' && <ImpactMonitoringView />}
+
+        {/* Feature 7: Spatial Institutional Memory Map (Meko) */}
+        {activeView === 'spatial_memory' && (
+          <SpatialMemoryMapView selectedCorridor={selectedCorridor} />
+        )}
+
+        {/* Single-Objective MILP Optimizer */}
         {activeView === 'optimizer' && (
           <InterventionOptimizerView
             selectedCorridor={selectedCorridor}
@@ -519,6 +596,13 @@ export default function App() {
         onClose={() => setProvenanceModalOpen(false)}
         provenance={provenance}
         statsSummary={statsSummary}
+      />
+
+      {/* Corridor Evidence Passport Modal (Feature 1) */}
+      <CorridorEvidencePassportModal
+        open={passportOpen}
+        onClose={() => setPassportOpen(false)}
+        corridorId={passportCorridorId || selectedCorridor?.code || selectedCorridor?.id || 'C-14'}
       />
     </div>
   );

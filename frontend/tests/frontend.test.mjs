@@ -80,6 +80,14 @@ test('All HackCBS 9.0 specialized view components exist and wire to API client',
     'src/components/MekoMemoryStudioView.jsx',
     'src/components/TemporalInsightsView.jsx',
     'src/components/EquityAndProvenanceView.jsx',
+    'src/components/CorridorEvidencePassportModal.jsx',
+    'src/components/SegmentSuitabilityView.jsx',
+    'src/components/ParetoPortfolioLabView.jsx',
+    'src/components/ShadeContinuityView.jsx',
+    'src/components/SeasonalHeatIntelligenceView.jsx',
+    'src/components/ImpactMonitoringView.jsx',
+    'src/components/SpatialMemoryMapView.jsx',
+    'src/components/ProjectReadinessView.jsx',
   ];
   for (const rel of requiredComponents) {
     const fullPath = path.join(frontendRoot, rel);

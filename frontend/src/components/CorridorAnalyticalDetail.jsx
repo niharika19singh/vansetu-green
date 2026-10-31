@@ -39,6 +39,7 @@ export default function CorridorAnalyticalDetail({
   corridor,
   sensitivityRow,
   activeScenario,
+  onOpenPassport,
 }) {
   if (!corridor) {
     return (
@@ -94,6 +95,23 @@ export default function CorridorAnalyticalDetail({
 
   return (
     <div className="space-y-4 text-xs">
+      {/* Evidence Passport Action Banner */}
+      <div className="bg-emerald-950/30 border border-emerald-800/60 p-2.5 rounded-lg flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+          <div>
+            <div className="font-bold text-white text-[11px]">Corridor Evidence Passport (v2.0)</div>
+            <div className="text-[10px] text-slate-400">Verified satellite, sensor gaps &amp; 5 quality dimensions</div>
+          </div>
+        </div>
+        <button
+          onClick={() => onOpenPassport && onOpenPassport(corridor.code || corridor.id)}
+          className="px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] transition shadow"
+        >
+          View Passport
+        </button>
+      </div>
+
       {/* Tri-Vector Score Cards */}
       <div className="grid grid-cols-3 gap-2">
         <div className="bg-slate-950/90 border border-emerald-500/30 rounded-lg p-2.5">

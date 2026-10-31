@@ -176,4 +176,80 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
+
+  // Advanced Research-Backed Features (Features 1 - 8)
+  // Feature 1: Corridor Evidence Passport
+  getEvidencePassport: (corridorId) => requestJson(`/api/evidence/passport/${encodeURIComponent(corridorId)}`),
+  getEvidencePassportsSummary: () => requestJson('/api/evidence/passports'),
+
+  // Feature 2: Right Tree, Right Place (Segment Suitability & Species)
+  getSegmentSuitability: (corridorId) =>
+    requestJson(`/api/suitability/corridor/${encodeURIComponent(corridorId)}/segments`),
+  getSingleSegment: (segmentId) => requestJson(`/api/suitability/segment/${encodeURIComponent(segmentId)}`),
+  getTreeSpeciesCatalog: (params = {}) => {
+    const q = new URLSearchParams(params).toString();
+    return requestJson(`/api/suitability/species-catalog${q ? `?${q}` : ''}`);
+  },
+
+  // Feature 3: Pareto Portfolio Lab
+  runParetoOptimizer: (payload) =>
+    requestJson('/api/optimizer/pareto', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  getParetoPresets: () => requestJson('/api/optimizer/pareto/presets'),
+
+  // Feature 4: Pedestrian Shade Continuity Analyser
+  getShadeContinuity: (corridorId) =>
+    requestJson(`/api/shade-continuity/${encodeURIComponent(corridorId)}`),
+  getShadeNetworkGaps: () => requestJson('/api/shade-continuity/network-gaps'),
+
+  // Feature 5: Seasonal Urban Heat Intelligence
+  getSeasonalHeatProfile: (corridorId) =>
+    requestJson(`/api/seasonal/corridor/${encodeURIComponent(corridorId)}`),
+  getSeasonalHotspots: () => requestJson('/api/seasonal/hotspots'),
+  getSeasonalBaselines: () => requestJson('/api/seasonal/baselines'),
+
+  // Feature 6: Climate Intervention Impact Monitoring
+  getImpactRegistry: () => requestJson('/api/impact/registry'),
+  getImpactDeployment: (deploymentId) =>
+    requestJson(`/api/impact/deployment/${encodeURIComponent(deploymentId)}`),
+  createImpactDeployment: (payload) =>
+    requestJson('/api/impact/deployments', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  updateImpactStatus: (deploymentId, payload) =>
+    requestJson(`/api/impact/deployment/${encodeURIComponent(deploymentId)}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }),
+
+  // Feature 7: Spatial Institutional Memory Map
+  getSpatialMemoryPins: (params = {}) => {
+    const q = new URLSearchParams(params).toString();
+    return requestJson(`/api/meko/spatial/pins${q ? `?${q}` : ''}`);
+  },
+  executeSpatialMemoryAction: (payload) =>
+    requestJson('/api/meko/spatial/action', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  getSpatialMemoryCorridorComparison: (corridorId) =>
+    requestJson(`/api/meko/spatial/corridor/${encodeURIComponent(corridorId)}/comparison`),
+
+  // Feature 8: Climate Project Implementation & Readiness Planner
+  getReadinessProjects: () => requestJson('/api/readiness/projects'),
+  createReadinessProject: (payload) =>
+    requestJson('/api/readiness/projects/from-portfolio', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  getReadinessProjectPlan: (projectId) =>
+    requestJson(`/api/readiness/projects/${encodeURIComponent(projectId)}`),
+  advanceReadinessPackageGate: (packageId, payload) =>
+    requestJson(`/api/readiness/package/${encodeURIComponent(packageId)}/gate`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }),
 };
