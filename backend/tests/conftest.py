@@ -8,13 +8,23 @@ import os
 import secrets
 import pytest
 
+# Ensure test session has a valid HMAC secret from the very beginning of pytest collection
+if not os.getenv("VANSETU_TOKEN_HMAC_SECRET") or len(os.getenv("VANSETU_TOKEN_HMAC_SECRET", "").strip()) < 32:
+    os.environ["VANSETU_TOKEN_HMAC_SECRET"] = f"test_hmac_secret_delhi_2026_{secrets.token_hex(16)}"
 
-@pytest.fixture(autouse=True, scope="session")
-def setup_test_hmac_secret():
-    """Inject an ephemeral, cryptographically strong test HMAC secret (>= 32 chars)."""
+
+def pytest_configure(config):
+    """Pytest hook called before test collection begins."""
+    if not os.getenv("VANSETU_TOKEN_HMAC_SECRET") or len(os.getenv("VANSETU_TOKEN_HMAC_SECRET", "").strip()) < 32:
+        os.environ["VANSETU_TOKEN_HMAC_SECRET"] = f"test_hmac_secret_delhi_2026_{secrets.token_hex(16)}"
+
+
+@pytest.fixture(autouse=True)
+def ensure_test_hmac_secret(monkeypatch):
+    """Ensure every test has a valid secret even if a previous test modifies it with monkeypatch."""
     current = os.getenv("VANSETU_TOKEN_HMAC_SECRET")
     if not current or len(current.strip()) < 32:
-        # Generate an ephemeral 64-character hex test secret
-        ephemeral_secret = f"test_hmac_secret_delhi_2026_{secrets.token_hex(16)}"
-        os.environ["VANSETU_TOKEN_HMAC_SECRET"] = ephemeral_secret
-    yield
+        monkeypatch.setenv(
+            "VANSETU_TOKEN_HMAC_SECRET",
+            f"test_hmac_secret_delhi_2026_{secrets.token_hex(16)}",
+        )

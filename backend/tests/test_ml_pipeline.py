@@ -1342,45 +1342,42 @@ def test_site_assessment_listing_and_detail_security(client):
     """
     auth_mgr = get_auth_manager()
 
-    assessor1 = AuthenticatedUser(
+    tok1, _ = auth_mgr.provision_test_user(
+        role=ReviewerRole.FIELD_ASSESSOR,
         user_id="SEC_ASSESSOR_01",
         username="sec.assessor1",
         full_name="Security Test Assessor 1",
-        role=ReviewerRole.FIELD_ASSESSOR,
         organization="Public Works Department",
     )
-    assessor2 = AuthenticatedUser(
+    tok2, _ = auth_mgr.provision_test_user(
+        role=ReviewerRole.FIELD_ASSESSOR,
         user_id="SEC_ASSESSOR_02",
         username="sec.assessor2",
         full_name="Security Test Assessor 2",
-        role=ReviewerRole.FIELD_ASSESSOR,
         organization="Municipal Corporation of Delhi",
     )
-    reviewer = AuthenticatedUser(
+    tok_rev, _ = auth_mgr.provision_test_user(
+        role=ReviewerRole.AUTHORIZED_REVIEWER,
         user_id="SEC_REVIEWER_01",
         username="sec.reviewer1",
         full_name="Security Test Reviewer",
-        role=ReviewerRole.AUTHORIZED_REVIEWER,
         organization="Delhi Urban Shelter Improvement Board",
     )
-
-    tok1 = auth_mgr.create_token(assessor1)
-    tok2 = auth_mgr.create_token(assessor2)
-    tok_rev = auth_mgr.create_token(reviewer)
 
     # 1. Unauthenticated requests return 401
     assert client.get("/api/ml/site-assessments").status_code == 401
     assert client.get("/api/ml/site-assessments/non_existent_id").status_code == 401
 
-    # 2. Assessor 1 submits assessment
+    # 2. Assessor 1 submits assessment with valid schema
     payload = {
         "segment_id": "C-14-S005",
         "corridor_id": "C-14",
+        "intervention_archetype": "native_shade_trees_deep_soil",
         "suitability_state": "RECOMMENDED",
-        "field_observation_notes": "Adequate right of way confirmed by PWD engineer",
-        "underground_utilities_detected": False,
-        "observed_canopy_percentage": 14.5,
-        "is_simulated": False,
+        "evidence_reference": "PWD/ORDER/2026/GPR-VERIFY",
+        "evidence_document_type": "GPR_UTILITY_SURVEY",
+        "engineering_constraints": [],
+        "reviewer_notes": "Adequate right of way confirmed by PWD engineer",
     }
     submit_res = client.post(
         "/api/ml/site-assessments",

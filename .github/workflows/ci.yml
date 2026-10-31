@@ -43,6 +43,8 @@ jobs:
             backend/ml backend/app frontend/src
 
       - name: Run backend pytest suite
+        env:
+          VANSETU_TOKEN_HMAC_SECRET: test_hmac_secret_delhi_ci_pipeline_2026_super_secure
         run: |
           cd backend
           python -m pytest tests/ -v

@@ -544,12 +544,21 @@ class AuthManager:
         return True
 
 
-# Global auth manager instance
-_auth_manager = AuthManager()
+# Global auth manager instance (lazily initialized)
+_auth_manager: Optional[AuthManager] = None
 
 
 def get_auth_manager() -> AuthManager:
+    global _auth_manager
+    if _auth_manager is None:
+        _auth_manager = AuthManager()
     return _auth_manager
+
+
+def reset_auth_manager() -> None:
+    """Reset the global auth manager instance (useful for testing configuration changes)."""
+    global _auth_manager
+    _auth_manager = None
 
 
 security_bearer = HTTPBearer(auto_error=False)
