@@ -5,7 +5,7 @@
 **Active Working Branch:** `feature/vansetu-govt-rbac-tender-ui`  
 **Base Target Branch:** `feature/delhi-intervention-ml-pipeline`  
 **Pull Request:** PR #2 (`https://github.com/niharika19singh/vansetu-green/pull/2`) — *Status: Draft*  
-**Release Candidate Commit:** `2f12700` (followed by staging preparation commits)  
+**Release Candidate Commit:** `2a841cb` (preceded by `2f12700`, `d307b04`, `3f28229`)  
 **Report Generation Date:** 2026-11-01  
 **Verification Status:** 100% CI Green • 131 Backend Pytests Passed • 11 Frontend Integration Tests Passed • Production Bundle Clean
 
@@ -19,6 +19,7 @@
 | **Active Feature Branch** | `feature/vansetu-govt-rbac-tender-ui` | Isolated feature development branch |
 | **Base Target Branch** | `feature/delhi-intervention-ml-pipeline` | Destination branch for PR #2 |
 | **Pull Request** | [PR #2](https://github.com/niharika19singh/vansetu-green/pull/2) | Maintained strictly in **Draft** state |
+| **Latest Release Commit** | `2a841cb` | Verified green in GitHub Actions Run `41232578631` |
 | **Preceding Remediated Commits** | `3f28229` (ContraSys UI), `d307b04` (RBAC Hardening), `2f12700` (Audit CI Update) | All changes verified and merged into branch |
 | **Current Working Tree Status** | Clean (Zero untracked build artifacts, secrets, or temporary files) | Verified via `git status` |
 | **Kunal Optimization Branch** | `feature/kunal-frontend-optimization` (`799bc7a`) | **Decoupled**: Zero commits cherry-picked or merged |
@@ -250,10 +251,12 @@ All credentials and sensitive configuration parameters are managed via runtime s
 
 ## 9. Continuous Integration Links
 
-| Pipeline Job | Workflow File | Status | Duration | GitHub Actions Run Link |
-|---|---|---|---|---|
-| **Frontend Test & Production Build** | `.github/workflows/ci.yml` | **Success** | 44s | [Job 124624241244](https://github.com/niharika19singh/vansetu-green/actions/runs/41230737671/job/124624241244) |
-| **Backend Pytest & Scientific Validation** | `.github/workflows/ci.yml` | **Success** | 1m 37s | [Job 124624241466](https://github.com/niharika19singh/vansetu-green/actions/runs/41230737671/job/124624241466) |
+| Pipeline Run | Commit | Job | Status | Duration | GitHub Actions Link |
+|---|---|---|---|---|---|
+| **Run 41232578631** (Latest) | `2a841cb` | Frontend Test & Production Build | **Success** | 27s | [Job 124629653328](https://github.com/niharika19singh/vansetu-green/actions/runs/41232578631/job/124629653328) |
+| **Run 41232578631** (Latest) | `2a841cb` | Backend Pytest & Scientific Validation | **Success** | 1m 50s | [Job 124629653209](https://github.com/niharika19singh/vansetu-green/actions/runs/41232578631/job/124629653209) |
+| **Run 41230737671** (Preceding) | `d307b04` | Frontend Test & Production Build | **Success** | 44s | [Job 124624241244](https://github.com/niharika19singh/vansetu-green/actions/runs/41230737671/job/124624241244) |
+| **Run 41230737671** (Preceding) | `d307b04` | Backend Pytest & Scientific Validation | **Success** | 1m 37s | [Job 124624241466](https://github.com/niharika19singh/vansetu-green/actions/runs/41230737671/job/124624241466) |
 
 ---
 
