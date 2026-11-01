@@ -65,6 +65,45 @@ def test_get_report_stats():
 
 
 def test_update_tender_progress():
+    # Ensure seeded or active tender exists in the active SQLite service instance
+    from app.services.tender_service import get_tender_service
+    svc = get_tender_service()
+    try:
+        svc.get_tender("TND-2026-C14-01")
+    except KeyError:
+        with svc._get_conn() as conn:
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO tenders (
+                    tender_id, corridor_id, title, scope_of_work, estimated_cost_lakh,
+                    approved_budget_lakh, required_interventions_json, eligibility_requirements,
+                    opening_date, closing_date, status, issuing_authority,
+                    created_by_user_id, awarded_proposal_id, awarded_to_org, awarded_at,
+                    created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "TND-2026-C14-01",
+                    "C-14",
+                    "Ward 12 Urban Heat Resilience & Pedestrian Shade Infrastructure",
+                    "Design and execution of linear street tree planters, roadside bioswales, and reflective pavements.",
+                    20.0,
+                    18.5,
+                    '["linear_street_trees", "roadside_bioswales", "high_albedo_cool_pavements"]',
+                    "Registered landscape architect or urban planning consultancy.",
+                    "2026-09-01",
+                    "2026-09-30",
+                    "AWARDED",
+                    "Delhi Public Works Department (South Zone)",
+                    "PWD_CHIEF_ENG_001",
+                    "prop-c14-vriksh-01",
+                    "Studio Vriksh & Urban Resiliency Partners",
+                    "2026-09-30T10:00:00Z",
+                    "2026-09-30T10:00:00Z",
+                    "2026-09-30T10:00:00Z",
+                ),
+            )
+
     # Update progress on seeded tender TND-2026-C14-01
     payload = {
         "progress_pct": 55.0,

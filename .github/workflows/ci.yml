@@ -49,6 +49,9 @@ jobs:
       - name: Run backend pytest suite
         env:
           VANSETU_TOKEN_HMAC_SECRET: test_hmac_secret_delhi_ci_pipeline_2026_super_secure
+          VANSETU_ENV: development
+          VANSETU_ENABLE_DEMO_SEED_DATA: 'true'
+          VANSETU_ENABLE_DEMO_AUTH: 'true'
         run: |
           cd backend
           python -m pytest tests/ -v
