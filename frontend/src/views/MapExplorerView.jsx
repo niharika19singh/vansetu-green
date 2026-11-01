@@ -49,9 +49,10 @@ export default function MapExplorerView({
   const [drawerTab, setDrawerTab] = useState('summary'); // 'summary' | 'interventions'
   const [targetLocation, setTargetLocation] = useState(null);
 
-  const filteredCorridors = corridors.filter((c) => {
+  const filteredCorridors = (corridors || []).filter((c) => {
+    if (!c) return false;
     const matchesSearch =
-      c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (c.name && c.name.toLowerCase().includes(searchQuery.toLowerCase())) ||
       (c.code && c.code.toLowerCase().includes(searchQuery.toLowerCase())) ||
       (c.district && c.district.toLowerCase().includes(searchQuery.toLowerCase()));
     return matchesSearch;
@@ -78,23 +79,6 @@ export default function MapExplorerView({
             <Filter className="w-3.5 h-3.5" />
             <span>Corridors ({filteredCorridors.length})</span>
           </button>
-
-          {/* District Selector */}
-          <div className="hidden sm:flex items-center gap-1.5 text-xs text-slate-300">
-            <span className="text-[10px] uppercase font-mono text-[#9CB9A3]">District:</span>
-            <select
-              value={selectedDistrict}
-              onChange={(e) => onSelectDistrict(e.target.value)}
-              className="bg-[#12392B]/70 border border-white/10 rounded-lg px-2.5 py-1 text-xs text-white focus:outline-none focus:border-emerald-400 font-medium"
-            >
-              <option value="All Districts">All 11 Districts</option>
-              {districts.map((d) => (
-                <option key={d} value={d}>
-                  {d}
-                </option>
-              ))}
-            </select>
-          </div>
         </div>
 
         {/* Center / Right Quick Actions */}

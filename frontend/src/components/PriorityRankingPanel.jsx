@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Sliders,
   Search,
@@ -11,6 +11,8 @@ import {
   Trees,
   Wind,
   ShieldCheck,
+  ArrowUpDown,
+  Info,
 } from 'lucide-react';
 import {
   FeasibilityStatusBadge,
@@ -26,30 +28,72 @@ const SCENARIO_LIST = [
 ];
 
 export default function PriorityRankingPanel({
-  corridors,
-  districts,
-  selectedDistrict,
-  onSelectDistrict,
-  activeScenario,
-  onSelectScenario,
+  corridors = [],
+  districts = [],
+  selectedDistrict = 'All Districts',
+  onSelectDistrict = () => {},
+  activeScenario = 'baseline',
+  onSelectScenario = () => {},
   whatIfHeatWeight,
-  onChangeWhatIfHeatWeight,
+  onChangeWhatIfHeatWeight = () => {},
   selectedCorridor,
-  onSelectCorridor,
+  onSelectCorridor = () => {},
   mekoEnabled = true,
 }) {
   const [searchQuery, setSearchQuery] = useState('');
+  const [sortBy, setSortBy] = useState('score'); // 'score' | 'heat' | 'ndvi_deficit' | 'feasibility' | 'district' | 'length'
+  const [sortAsc, setSortAsc] = useState(false);
+  const [showFormulaInfo, setShowFormulaInfo] = useState(false);
 
-  const filteredCorridors = corridors.filter((c) => {
-    if (!searchQuery.trim()) return true;
-    const q = searchQuery.toLowerCase();
-    return (
-      c.name?.toLowerCase().includes(q) ||
-      c.district?.toLowerCase().includes(q) ||
-      c.highway?.toLowerCase().includes(q) ||
-      c.recommended_intervention?.toLowerCase().includes(q)
-    );
-  });
+  const filteredAndSortedCorridors = useMemo(() => {
+    const list = (corridors || []).filter((c) => {
+      if (!c) return false;
+      if (!searchQuery.trim()) return true;
+      const q = searchQuery.toLowerCase();
+      return (
+        (c.name && c.name.toLowerCase().includes(q)) ||
+        (c.code && c.code.toLowerCase().includes(q)) ||
+        (c.district && c.district.toLowerCase().includes(q)) ||
+        (c.highway && c.highway.toLowerCase().includes(q)) ||
+        (c.recommended_intervention && c.recommended_intervention.toLowerCase().includes(q))
+      );
+    });
+
+    list.sort((a, b) => {
+      let valA = 0;
+      let valB = 0;
+      switch (sortBy) {
+        case 'heat':
+          valA = a.lst_mean || 0;
+          valB = b.lst_mean || 0;
+          break;
+        case 'ndvi_deficit':
+          valA = 1.0 - (a.ndvi_mean || 0);
+          valB = 1.0 - (b.ndvi_mean || 0);
+          break;
+        case 'feasibility':
+          valA = a.feasibility_status === 'High Feasibility' ? 2 : 1;
+          valB = b.feasibility_status === 'High Feasibility' ? 2 : 1;
+          break;
+        case 'district':
+          return sortAsc
+            ? (a.district || '').localeCompare(b.district || '')
+            : (b.district || '').localeCompare(a.district || '');
+        case 'length':
+          valA = a.length_km || 0;
+          valB = b.length_km || 0;
+          break;
+        case 'score':
+        default:
+          valA = a.priority_score ?? a.score ?? 0;
+          valB = b.priority_score ?? b.score ?? 0;
+          break;
+      }
+      return sortAsc ? valA - valB : valB - valA;
+    });
+
+    return list;
+  }, [corridors, searchQuery, sortBy, sortAsc]);
 
   return (
     <div className="flex flex-col h-full bg-slate-900/95 border-r border-slate-800 select-none">
@@ -62,19 +106,42 @@ export default function PriorityRankingPanel({
               Corridor Prioritization Engine
             </h2>
             <p className="text-[11px] text-slate-400">
-              {filteredCorridors.length} walkable corridors ranked across NCT Delhi
+              {filteredAndSortedCorridors.length} walkable corridors ranked across NCT Delhi
             </p>
           </div>
-          {whatIfHeatWeight !== null && (
+          <div className="flex items-center gap-1.5">
             <button
-              onClick={() => onChangeWhatIfHeatWeight(null)}
-              className="text-[11px] px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-emerald-400 flex items-center gap-1 border border-slate-700"
-              title="Reset What-If slider to 6-factor scenario mode"
+              type="button"
+              onClick={() => setShowFormulaInfo(!showFormulaInfo)}
+              className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700"
+              title="Toggle Multi-Criteria Formula Explanation"
             >
-              <RotateCcw className="w-3 h-3" /> 6-Factor Mode
+              <Info className="w-3.5 h-3.5 text-cyan-400" />
             </button>
-          )}
+            {whatIfHeatWeight !== null && (
+              <button
+                onClick={() => onChangeWhatIfHeatWeight(null)}
+                className="text-[11px] px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-emerald-400 flex items-center gap-1 border border-slate-700"
+                title="Reset What-If slider to 6-factor scenario mode"
+              >
+                <RotateCcw className="w-3 h-3" /> 6-Factor Mode
+              </button>
+            )}
+          </div>
         </div>
+
+        {/* Multi-Criteria Formula Explanation Box */}
+        {showFormulaInfo && (
+          <div className="p-2.5 rounded-lg bg-emerald-950/40 border border-emerald-500/30 text-[10px] text-slate-300 space-y-1">
+            <div className="font-bold text-emerald-300">Analytical Ranking Formula:</div>
+            <div className="font-mono text-cyan-300">
+              Score = w_heat × Heat + (1 - w_heat) × (1 - NDVI)
+            </div>
+            <div className="text-slate-400">
+              Heat = (LST - 22°C) / 10°C | Deficit = 1.0 - NDVI | Normalized [0, 1]
+            </div>
+          </div>
+        )}
 
         {/* District & Search Controls */}
         <div className="grid grid-cols-2 gap-2">
@@ -102,9 +169,44 @@ export default function PriorityRankingPanel({
               aria-label="Search corridors"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search corridor..."
+              placeholder="Search code (C-14), name..."
               className="w-full bg-slate-950 border border-slate-700/80 rounded-lg pl-8 pr-2 py-1.5 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-emerald-500"
             />
+          </div>
+        </div>
+
+        {/* Sorting Controls */}
+        <div className="flex items-center justify-between gap-1.5 pt-0.5 text-[11px]">
+          <span className="text-slate-400 text-[10px] font-semibold shrink-0">Sort By:</span>
+          <div className="flex items-center gap-1 overflow-x-auto flex-1">
+            {[
+              { id: 'score', label: 'Priority' },
+              { id: 'heat', label: 'Heat (LST)' },
+              { id: 'ndvi_deficit', label: 'NDVI Deficit' },
+              { id: 'feasibility', label: 'Feasibility' },
+              { id: 'length', label: 'Length' },
+            ].map((opt) => (
+              <button
+                key={opt.id}
+                type="button"
+                onClick={() => {
+                  if (sortBy === opt.id) {
+                    setSortAsc(!sortAsc);
+                  } else {
+                    setSortBy(opt.id);
+                    setSortAsc(false);
+                  }
+                }}
+                className={`px-2 py-1 rounded text-[10px] font-medium transition border whitespace-nowrap ${
+                  sortBy === opt.id
+                    ? 'bg-emerald-600/30 border-emerald-500 text-emerald-300 font-bold'
+                    : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
+                }`}
+              >
+                {opt.label}
+                {sortBy === opt.id && (sortAsc ? ' ↑' : ' ↓')}
+              </button>
+            ))}
           </div>
         </div>
 
@@ -180,7 +282,7 @@ export default function PriorityRankingPanel({
         role="listbox"
         aria-label="Ranked urban corridors"
       >
-        {filteredCorridors.map((corr) => {
+        {filteredAndSortedCorridors.map((corr) => {
           const isSelected = selectedCorridor?.id === corr.id;
           const rankDelta = corr.rank_delta || 0;
           const feasStatus = deriveCorridorFeasibilityStatus(corr, mekoEnabled);

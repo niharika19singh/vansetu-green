@@ -17,20 +17,21 @@ const MIN_CHARS = 2;
 // Curated Delhi Landmarks & Transit Nodes (instant offline fallback index)
 export const DELHI_LANDMARKS = [
   { name: 'Connaught Place (Rajiv Chowk)', shortName: 'Connaught Place', lat: 28.6315, lon: 77.2167, district: 'Central Delhi' },
+  { name: 'Rajiv Chowk Metro & Central Business District', shortName: 'Rajiv Chowk', lat: 28.6328, lon: 77.2195, district: 'Central Delhi' },
   { name: 'India Gate & Central Vista', shortName: 'India Gate', lat: 28.6129, lon: 77.2295, district: 'New Delhi' },
-  { name: 'Chandni Chowk & Old Delhi', shortName: 'Chandni Chowk', lat: 28.6506, lon: 77.2303, district: 'North Delhi' },
-  { name: 'Rohini Sector-16 Sub-City', shortName: 'Rohini Sector 16', lat: 28.7325, lon: 77.1199, district: 'North West Delhi' },
-  { name: 'Dwarka Sector-21 Transit Hub', shortName: 'Dwarka Sector 21', lat: 28.5524, lon: 77.0583, district: 'South West Delhi' },
-  { name: 'Saket & Select Citywalk Corridor', shortName: 'Saket', lat: 28.5245, lon: 77.2167, district: 'South Delhi' },
+  { name: 'Chandni Chowk & Old Delhi Heritage Corridor', shortName: 'Chandni Chowk', lat: 28.6506, lon: 77.2303, district: 'North Delhi' },
+  { name: 'Kashmere Gate ISBT & Heritage Hub', shortName: 'Kashmere Gate', lat: 28.6675, lon: 77.2285, district: 'North Delhi' },
+  { name: 'Anand Vihar ISBT & Terminal', shortName: 'Anand Vihar', lat: 28.6469, lon: 77.3164, district: 'East Delhi' },
+  { name: 'Saket District Centre & Select Citywalk', shortName: 'Saket', lat: 28.5245, lon: 77.2167, district: 'South Delhi' },
+  { name: 'Dwarka Sub-City & Sector 21 Transit Hub', shortName: 'Dwarka', lat: 28.5524, lon: 77.0583, district: 'South West Delhi' },
+  { name: 'Rohini Sub-City & District Centre', shortName: 'Rohini', lat: 28.7325, lon: 77.1199, district: 'North West Delhi' },
   { name: 'Lajpat Nagar Central Market', shortName: 'Lajpat Nagar', lat: 28.5700, lon: 77.2400, district: 'South East Delhi' },
   { name: 'Karol Bagh Market Avenue', shortName: 'Karol Bagh', lat: 28.6514, lon: 77.1907, district: 'Central Delhi' },
-  { name: 'Anand Vihar ISBT & Terminal', shortName: 'Anand Vihar', lat: 28.6469, lon: 77.3164, district: 'East Delhi' },
   { name: 'Mayur Vihar Phase-1 Corridor', shortName: 'Mayur Vihar', lat: 28.6075, lon: 77.2986, district: 'East Delhi' },
   { name: 'AIIMS & Safdarjung Hospital Zone', shortName: 'AIIMS Delhi', lat: 28.5672, lon: 77.2100, district: 'South Delhi' },
   { name: 'IIT Delhi & Hauz Khas Enclave', shortName: 'Hauz Khas', lat: 28.5450, lon: 77.1926, district: 'South Delhi' },
   { name: 'Janakpuri District Centre', shortName: 'Janakpuri', lat: 28.6289, lon: 77.0818, district: 'West Delhi' },
   { name: 'Pitampura TV Tower Corridor', shortName: 'Pitampura', lat: 28.6989, lon: 77.1384, district: 'North West Delhi' },
-  { name: 'Kashmere Gate ISBT & Heritage Hub', shortName: 'Kashmere Gate', lat: 28.6675, lon: 77.2285, district: 'North Delhi' },
 ];
 
 export default function LocationSearch({ onLocationFound, onSelectLocation }) {
@@ -185,6 +186,9 @@ export default function LocationSearch({ onLocationFound, onSelectLocation }) {
     setQuery('');
     setSuggestions([]);
     setShowDropdown(false);
+    if (handleSelect) {
+      handleSelect(null);
+    }
   };
 
   return (

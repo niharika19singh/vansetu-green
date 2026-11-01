@@ -386,18 +386,28 @@ const RASTER_LAYERS = [
 // =========================================================================
 
 export function parseGeometryToLatLngs(geometry) {
-  if (!geometry || !geometry.coordinates) return [];
+  if (!geometry || !geometry.coordinates || !Array.isArray(geometry.coordinates)) return [];
   const { type, coordinates } = geometry;
   if (type === 'MultiLineString') {
-    return coordinates.map((line) => line.map(([lng, lat]) => [lat, lng]));
+    return coordinates
+      .filter((line) => Array.isArray(line))
+      .map((line) =>
+        line
+          .filter((pt) => Array.isArray(pt) && pt.length >= 2 && typeof pt[0] === 'number')
+          .map(([lng, lat]) => [lat, lng])
+      );
   }
   // LineString: [[lng, lat], ...]
   if (Array.isArray(coordinates[0]) && typeof coordinates[0][0] === 'number') {
-    return coordinates.map(([lng, lat]) => [lat, lng]);
+    return coordinates
+      .filter((pt) => Array.isArray(pt) && pt.length >= 2 && typeof pt[0] === 'number')
+      .map(([lng, lat]) => [lat, lng]);
   }
   // Nested LineString array: [[[lng, lat], ...]]
   if (Array.isArray(coordinates[0]) && Array.isArray(coordinates[0][0])) {
-    return coordinates[0].map(([lng, lat]) => [lat, lng]);
+    return coordinates[0]
+      .filter((pt) => Array.isArray(pt) && pt.length >= 2 && typeof pt[0] === 'number')
+      .map(([lng, lat]) => [lat, lng]);
   }
   return [];
 }
@@ -478,6 +488,7 @@ function MapViewportController({ selectedCorridor, fitTrigger, resetTrigger, tar
   // Initialize custom Leaflet stacking panes to ensure selected corridor
   // and floating label always sit high above all rasters and unselected vectors
   useEffect(() => {
+    if (!map || !map._container || map._destroyed) return;
     if (!map.getPane('selectedCorridorCasingPane')) {
       const casing = map.createPane('selectedCorridorCasingPane');
       casing.style.zIndex = '610';
@@ -495,14 +506,18 @@ function MapViewportController({ selectedCorridor, fitTrigger, resetTrigger, tar
   }, [map]);
 
   useEffect(() => {
+    if (!map || !map._container || map._destroyed) return;
     const timer = setTimeout(() => {
-      map.invalidateSize();
+      if (map && map._container && !map._destroyed) {
+        map.invalidateSize();
+      }
     }, 150);
     return () => clearTimeout(timer);
   }, [map]);
 
   // Fit to selected corridor (explicit button trigger)
   useEffect(() => {
+    if (!map || !map._container || map._destroyed) return;
     if (fitTrigger > 0 && selectedCorridor) {
       const latLngs = parseGeometryToLatLngs(selectedCorridor.geometry);
       const flat = getFlatLatLngs(latLngs);
@@ -521,6 +536,7 @@ function MapViewportController({ selectedCorridor, fitTrigger, resetTrigger, tar
 
   // Fly to target location from LocationSearch
   useEffect(() => {
+    if (!map || !map._container || map._destroyed) return;
     if (targetLocation && targetLocation.lat && targetLocation.lon) {
       map.flyTo([targetLocation.lat, targetLocation.lon], 14, { duration: 1.0 });
     }
@@ -528,6 +544,7 @@ function MapViewportController({ selectedCorridor, fitTrigger, resetTrigger, tar
 
   // Reset view to Delhi NCT overview
   useEffect(() => {
+    if (!map || !map._container || map._destroyed) return;
     if (resetTrigger > 0) {
       map.flyTo(DELHI_CENTER, 11, { duration: 0.9 });
     }
@@ -535,6 +552,7 @@ function MapViewportController({ selectedCorridor, fitTrigger, resetTrigger, tar
 
   // Auto-pan and fit bounds when selectedCorridor changes
   useEffect(() => {
+    if (!map || !map._container || map._destroyed) return;
     if (!selectedCorridor) return;
     if (prevCorridorIdRef.current === selectedCorridor.id) return;
     prevCorridorIdRef.current = selectedCorridor.id;
@@ -644,7 +662,7 @@ export const OVERLAY_DEFINITIONS = [
     color: '#22c55e',
     source: 'Curated Delhi Urban Forests & Parks GeoJSON',
     endpoint: 'DELHI_PARKS_BASELINE',
-    defaultEnabled: true,
+    defaultEnabled: false,
   },
   {
     id: 'osmResidential',
@@ -658,19 +676,19 @@ export const OVERLAY_DEFINITIONS = [
 ];
 
 export default function InteractiveMap({
-  corridors,
-  selectedCorridor,
-  onSelectCorridor,
-  selectedDistrict,
-  onSelectDistrict,
-  aqiStations,
-  rasterZones,
-  targetLocation,
+  corridors = [],
+  selectedCorridor = null,
+  onSelectCorridor = () => {},
+  selectedDistrict = 'All Districts',
+  onSelectDistrict = () => {},
+  aqiStations = [],
+  rasterZones = null,
+  targetLocation = null,
 }) {
   const [basemap, setBasemap] = useState('dark');
   const [rasterOpacity, setRasterOpacity] = useState(0.72);
 
-  // 9 Canonical Spatial Overlays State (Default matches genuine active state)
+  // 9 Canonical Spatial Overlays State (Default matches genuine active state; polygon baselines disabled by default to keep map free of squares/rectangles)
   const [activeLayers, setActiveLayers] = useState({
     lst: false,
     ndvi: false,
@@ -679,15 +697,15 @@ export default function InteractiveMap({
     roads: false,
     aqi: true,
     osmRoads: true,
-    osmParks: true,
+    osmParks: false,
     osmResidential: false,
   });
 
   // Right-Side Dismissible Overlay Panel State (Visible by default)
   const [isOverlaysPanelOpen, setIsOverlaysPanelOpen] = useState(true);
 
-  // Additional Administrative Context Layers
-  const [showDistricts, setShowDistricts] = useState(true);
+  // Additional Administrative Context Layers (Disabled by default to eliminate squares/rectangles and dashed boxes)
+  const [showDistricts, setShowDistricts] = useState(false);
   const [showRasterZones, setShowRasterZones] = useState(false);
   const [roadNetworkData, setRoadNetworkData] = useState(null);
 
@@ -924,8 +942,8 @@ export default function InteractiveMap({
 
         {/* 10. Walkable Urban Corridors - Unselected Network */}
         {activeLayers.corridors &&
-          corridors
-            .filter((corr) => corr.id !== selectedCorridor?.id)
+          (Array.isArray(corridors) ? corridors : [])
+            .filter((corr) => corr && corr.id !== selectedCorridor?.id)
             .map((corr) => {
               const latLngs = parseGeometryToLatLngs(corr.geometry);
               if (!latLngs.length) return null;
@@ -1083,9 +1101,11 @@ export default function InteractiveMap({
 
         {/* 11. CPCB Air Quality Monitoring Stations */}
         {activeLayers.aqi &&
-          aqiStations.map((st) => {
+          (Array.isArray(aqiStations) ? aqiStations : []).map((st) => {
+            if (!st) return null;
             const [lng, lat] = st.geometry?.coordinates || [0, 0];
             const p = st.properties || {};
+            if (!lat || !lng) return null;
             return (
               <CircleMarker
                 key={p.id}
@@ -1211,32 +1231,36 @@ export default function InteractiveMap({
           </CircleMarker>
         )}
 
-        {/* 13. Location Search Pin Marker */}
+        {/* 13. Prominent Location Search Pin Marker with Pulse Beacon & Label */}
         {targetLocation && targetLocation.lat && targetLocation.lon && (
-          <CircleMarker
-            center={[targetLocation.lat, targetLocation.lon]}
-            radius={9}
-            pathOptions={{
-              color: '#10b981',
-              weight: 3,
-              fillColor: '#34d399',
-              fillOpacity: 0.9,
-            }}
-          >
-            <Popup position={[targetLocation.lat, targetLocation.lon]}>
-              <div className="text-xs p-1">
-                <div className="font-bold text-slate-900">{targetLocation.name}</div>
-                <div className="text-slate-600 text-[10px]">
-                  {targetLocation.lat.toFixed(4)}°N, {targetLocation.lon.toFixed(4)}°E
+          <Marker
+            position={[targetLocation.lat, targetLocation.lon]}
+            icon={L.divIcon({
+              className: 'vansetu-search-location-pin',
+              html: `
+                <div class="relative flex items-center justify-center -translate-x-1/2 -translate-y-full">
+                  <span class="absolute w-8 h-8 rounded-full bg-cyan-400/40 animate-ping"></span>
+                  <span class="absolute w-4 h-4 rounded-full bg-cyan-500/60"></span>
+                  <div class="relative flex items-center justify-center w-7 h-7 rounded-full bg-[#071C16] border-2 border-[#00f5d4] shadow-[0_0_12px_#00f5d4] text-xs">
+                    📍
+                  </div>
                 </div>
+              `,
+              iconSize: [28, 28],
+              iconAnchor: [14, 28],
+            })}
+          >
+            <Tooltip permanent direction="top" offset={[0, -28]}>
+              <div className="font-bold text-xs text-slate-900 px-1 py-0.5">
+                {targetLocation.name}
               </div>
-            </Popup>
-          </CircleMarker>
+            </Tooltip>
+          </Marker>
         )}
       </MapContainer>
 
-      {/* Top-Left Selected District Pill & Clear Action */}
-      {selectedDistrict && selectedDistrict !== 'All Districts' && (
+      {/* Top-Left Selected District Pill (Only shown if user explicitly enables administrative districts layer) */}
+      {selectedDistrict && selectedDistrict !== 'All Districts' && showDistricts && (
         <div
           data-testid="district-filter-pill"
           className="absolute top-3 left-12 z-[400] bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-xl px-3 py-1.5 shadow-xl flex items-center gap-2 text-xs text-white"
@@ -1353,7 +1377,7 @@ export default function InteractiveMap({
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-1 text-[9px]">
-                {currentRasterMeta.stops.map((st, idx) => (
+                {Array.isArray(currentRasterMeta?.stops) && currentRasterMeta.stops.map((st, idx) => (
                   <div key={idx} className="flex items-center gap-1 text-slate-300">
                     <span
                       className="w-2 h-2 rounded-sm shrink-0 border border-slate-700"
