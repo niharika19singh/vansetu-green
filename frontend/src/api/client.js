@@ -596,6 +596,23 @@ export const api = {
     const p = status ? `?status=${encodeURIComponent(status)}` : '';
     return requestJson(`/api/community-data${p}`);
   },
+  moderateCommunityObservation: (submissionId, { status, adminNotes, assignedDivision }, token) => {
+    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+    return requestJson(`/api/community-data/${encodeURIComponent(submissionId)}/status`, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify({
+        status,
+        admin_notes: adminNotes || '',
+        assigned_division: assignedDivision || '',
+      }),
+    });
+  },
+  reportPublicIssue: (data) =>
+    requestJson('/api/public/report-issue', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
   submitHealthDataLegacy: (data) =>
     requestJson('/api/health-data', {
       method: 'POST',
@@ -1088,6 +1105,20 @@ export const api = {
   getProvenanceHealth: () => requestJson('/api/provenance/health'),
   getProvenanceAudit: () => requestJson('/api/provenance/audit'),
   exportProvenanceManifest: () => requestJson('/api/provenance/export'),
+
+  // Government Engineer Infrastructure & Feasibility Endpoints
+  getCorridorEngineering: (corridorId, token) => {
+    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+    return requestJson(`/api/corridors/${encodeURIComponent(corridorId)}/engineering`, { headers });
+  },
+  submitCorridorEngineeringSurvey: (corridorId, surveyData, token) => {
+    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+    return requestJson(`/api/corridors/${encodeURIComponent(corridorId)}/engineering/survey`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(surveyData),
+    });
+  },
 
   // Feature 2: Right Tree, Right Place (Segment Suitability & Species)
   getSegmentSuitability: async (corridorId) => {
@@ -1747,6 +1778,7 @@ export const api = {
   demoSwitchRole: (role) =>
     requestJson(`/api/auth/demo-switch-role?role=${encodeURIComponent(role)}`, {
       method: 'POST',
+      body: JSON.stringify({ role }),
     }),
 
   // Tenders & Procurement Marketplace

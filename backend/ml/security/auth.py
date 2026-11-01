@@ -115,6 +115,19 @@ class Permission(str, Enum):
     APPROVE_PROJECT_COSTS = "APPROVE_PROJECT_COSTS"
     VIEW_GOVERNMENT_AUDIT = "VIEW_GOVERNMENT_AUDIT"
 
+    # Engineering & Field Feasibility Permissions
+    SUBMIT_FIELD_SURVEY = "SUBMIT_FIELD_SURVEY"
+    VALIDATE_FEASIBILITY = "VALIDATE_FEASIBILITY"
+    INSPECT_INFRASTRUCTURE = "INSPECT_INFRASTRUCTURE"
+    VERIFY_ROW = "VERIFY_ROW"
+    ESTIMATE_COSTS = "ESTIMATE_COSTS"
+
+    # Community Governance & Public Participation Permissions
+    GOVERN_COMMUNITY = "GOVERN_COMMUNITY"
+    SUBMIT_COMMUNITY_INPUT = "SUBMIT_COMMUNITY_INPUT"
+    VIEW_COMMUNITY_INPUT = "VIEW_COMMUNITY_INPUT"
+    VIEW_PUBLIC_HEALTH = "VIEW_PUBLIC_HEALTH"
+
 
 # Authoritative role-permission mappings
 ROLE_PERMISSIONS: Dict[ReviewerRole, Set[Permission]] = {
@@ -139,6 +152,9 @@ ROLE_PERMISSIONS: Dict[ReviewerRole, Set[Permission]] = {
         Permission.MANAGE_REGISTRY,
         Permission.VERIFY_EVIDENCE,
         Permission.VIEW_EVIDENCE,
+        Permission.GOVERN_COMMUNITY,
+        Permission.VIEW_COMMUNITY_INPUT,
+        Permission.VIEW_PUBLIC_HEALTH,
     },
     ReviewerRole.GOVERNMENT_ENGINEER: {
         Permission.VIEW_PUBLIC_MAP,
@@ -151,6 +167,14 @@ ROLE_PERMISSIONS: Dict[ReviewerRole, Set[Permission]] = {
         Permission.VIEW_ALL_ASSIGNMENTS,
         Permission.VIEW_REGIONAL_HEALTH,
         Permission.VIEW_EVIDENCE,
+        Permission.SUBMIT_FIELD_SURVEY,
+        Permission.VALIDATE_FEASIBILITY,
+        Permission.INSPECT_INFRASTRUCTURE,
+        Permission.VERIFY_ROW,
+        Permission.ESTIMATE_COSTS,
+        Permission.VIEW_COMMUNITY_INPUT,
+        Permission.SUBMIT_ASSESSMENT,
+        Permission.REVIEW_ASSESSMENT,
     },
     ReviewerRole.ADMINISTRATOR: set(Permission),
     ReviewerRole.PRO_PROFESSIONAL: {
@@ -211,6 +235,9 @@ ROLE_PERMISSIONS: Dict[ReviewerRole, Set[Permission]] = {
         Permission.VIEW_CORRIDOR_INTELLIGENCE,
         Permission.VIEW_REGIONAL_HEALTH,
         Permission.VIEW_EVIDENCE,
+        Permission.VIEW_PUBLIC_HEALTH,
+        Permission.SUBMIT_COMMUNITY_INPUT,
+        Permission.VIEW_COMMUNITY_INPUT,
     },
 }
 

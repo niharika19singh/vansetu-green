@@ -85,6 +85,18 @@ const MyAssignedProjectsView = React.lazy(() => import('./components/MyAssignedP
 const PublicDashboardView = React.lazy(() => import('./components/PublicDashboardView'));
 const PublicProjectsView = React.lazy(() => import('./components/PublicProjectsView'));
 
+// Four Distinct Role-Based Workspace Views
+const PublicCitizenDashboardView = React.lazy(() => import('./views/PublicCitizenDashboardView'));
+const PublicClimateMapView = React.lazy(() => import('./views/PublicClimateMapView'));
+const PublicHeatSafetyView = React.lazy(() => import('./views/PublicHeatSafetyView'));
+const PublicIssueReportView = React.lazy(() => import('./views/PublicIssueReportView'));
+const GovernmentEngineerOverviewView = React.lazy(() => import('./views/GovernmentEngineerOverviewView'));
+const CorridorEngineeringDetailView = React.lazy(() => import('./views/CorridorEngineeringDetailView'));
+const GovtDistrictAdminView = React.lazy(() => import('./views/GovtDistrictAdminView'));
+const GovtProjectApprovalsView = React.lazy(() => import('./views/GovtProjectApprovalsView'));
+const GovtCommunityModerationView = React.lazy(() => import('./views/GovtCommunityModerationView'));
+const GovtUserRoleManagementView = React.lazy(() => import('./views/GovtUserRoleManagementView'));
+
 // Specialized Analytical Modules & Modals
 const DataProvenanceModal = React.lazy(() => import('./components/DataProvenanceModal'));
 const InterventionOptimizerView = React.lazy(() => import('./components/InterventionOptimizerView'));
@@ -142,71 +154,107 @@ export const PUBLIC_NAV_VIEWS = [
   { id: 'provenance', label: '10. Evidence & Data Provenance', icon: Users },
 ];
 
-export const ROLE_PERMISSIONS_VIEW = {
-  // Public Entry
-  landing: ['normal_user', 'pro_professional', 'government_admin', 'government_engineer'],
-  home: ['normal_user', 'pro_professional', 'government_admin', 'government_engineer'],
+export function normalizeRole(role) {
+  if (!role) return 'public_citizen';
+  const r = role.toLowerCase().trim();
+  if (r === 'normal_user' || r === 'public_citizen' || r === 'citizen' || r === 'public') {
+    return 'public_citizen';
+  }
+  if (r === 'pro' || r === 'pro_professional' || r === 'architect') {
+    return 'pro_professional';
+  }
+  if (r === 'govt_admin' || r === 'admin' || r === 'government_admin') {
+    return 'government_admin';
+  }
+  if (r === 'govt_engineer' || r === 'engineer' || r === 'government_engineer') {
+    return 'government_engineer';
+  }
+  return 'public_citizen';
+}
 
-  // Institutional Government
+export const ROLE_PERMISSIONS_VIEW = {
+  // Public Citizen Workspace & Universal
+  landing: ['public_citizen', 'normal_user', 'pro_professional', 'government_admin', 'government_engineer'],
+  home: ['public_citizen', 'normal_user', 'pro_professional', 'government_admin', 'government_engineer'],
+  public_dashboard: ['public_citizen', 'normal_user', 'pro_professional', 'government_admin', 'government_engineer'],
+  public_overview: ['public_citizen', 'normal_user', 'pro_professional', 'government_admin', 'government_engineer'],
+  public_map: ['public_citizen', 'normal_user', 'pro_professional', 'government_admin', 'government_engineer'],
+  public_heat: ['public_citizen', 'normal_user', 'pro_professional', 'government_admin', 'government_engineer'],
+  public_projects: ['public_citizen', 'normal_user', 'pro_professional', 'government_admin', 'government_engineer'],
+  public_health: ['public_citizen', 'normal_user', 'pro_professional', 'government_admin', 'government_engineer'],
+  public_report: ['public_citizen', 'normal_user', 'pro_professional', 'government_admin', 'government_engineer'],
+  community_input: ['public_citizen', 'normal_user', 'pro_professional', 'government_admin', 'government_engineer'],
+  evidence_passport: ['public_citizen', 'normal_user', 'pro_professional', 'government_admin', 'government_engineer'],
+  provenance: ['public_citizen', 'normal_user', 'pro_professional', 'government_admin', 'government_engineer'],
+
+  // Government Admin Workspace Only
   govt_overview: ['government_admin', 'government_engineer'],
+  govt_districts: ['government_admin'],
+  govt_departments: ['government_admin'],
   corridor_inventory: ['government_admin', 'government_engineer'],
   tender_management: ['government_admin'],
+  govt_approvals: ['government_admin'],
+  govt_community_moderation: ['government_admin'],
+  govt_users: ['government_admin'],
   professional_assignments: ['government_admin'],
   hospital_sources: ['government_admin'],
   govt_audit: ['government_admin'],
 
-  // Pro Professional & Govt
+  // Government Engineer Workspace
+  engineer_overview: ['government_engineer', 'government_admin'],
+  engineer_map: ['government_engineer', 'government_admin'],
+  corridor_engineering: ['government_engineer', 'government_admin'],
+  road_network: ['government_engineer', 'government_admin'],
+  row_assessment: ['government_engineer', 'government_admin'],
+  engineering_feasibility: ['government_engineer', 'government_admin'],
+  engineer_field_surveys: ['government_engineer', 'government_admin'],
+  engineer_verification: ['government_engineer', 'government_admin'],
+
+  // Pro Professional & Technical Planning
   pro_dashboard: ['pro_professional', 'government_admin', 'government_engineer'],
-  tender_marketplace: ['pro_professional', 'government_admin', 'government_engineer'],
-  my_proposals: ['pro_professional', 'government_admin', 'government_engineer'],
+  map: ['pro_professional', 'government_admin', 'government_engineer', 'public_citizen', 'normal_user'],
+  corridors: ['pro_professional', 'government_admin', 'government_engineer', 'public_citizen', 'normal_user'],
+  prediction: ['pro_professional', 'government_admin', 'government_engineer'],
+  ranking: ['pro_professional', 'government_admin', 'government_engineer'],
+  heatwave_mapping: ['pro_professional', 'government_admin', 'government_engineer'],
+  scenarios: ['pro_professional', 'government_admin', 'government_engineer'],
+  studio: ['pro_professional', 'government_admin', 'government_engineer'],
+  intervention_intelligence: ['pro_professional', 'government_admin', 'government_engineer'],
+  shade: ['pro_professional', 'government_admin', 'government_engineer', 'public_citizen', 'normal_user'],
+  seasonal: ['pro_professional', 'government_admin', 'government_engineer', 'public_citizen', 'normal_user'],
+  suitability: ['pro_professional', 'government_admin', 'government_engineer'],
+  pareto: ['pro_professional', 'government_admin', 'government_engineer'],
+  spatial_memory: ['pro_professional', 'government_admin', 'government_engineer'],
+  agent: ['pro_professional', 'government_admin', 'government_engineer'],
+  tender_marketplace: ['pro_professional', 'government_admin'],
+  my_proposals: ['pro_professional', 'government_admin'],
   my_assigned_projects: ['pro_professional', 'government_admin', 'government_engineer'],
   corridor_cost_approval: ['pro_professional', 'government_admin', 'government_engineer'],
   hospital_health: ['pro_professional', 'government_admin', 'government_engineer'],
-  scenarios: ['pro_professional', 'government_admin', 'government_engineer'],
-  studio: ['pro_professional', 'government_admin', 'government_engineer'],
   records: ['government_admin', 'government_engineer', 'pro_professional'],
   optimizer: ['pro_professional', 'government_admin', 'government_engineer'],
   procurement: ['government_admin', 'government_engineer', 'pro_professional'],
-  agent: ['government_admin', 'government_engineer', 'pro_professional'],
   meko: ['government_admin', 'government_engineer', 'pro_professional'],
   temporal: ['government_admin', 'government_engineer', 'pro_professional'],
-  suitability: ['pro_professional', 'government_admin', 'government_engineer'],
-  pareto: ['pro_professional', 'government_admin', 'government_engineer'],
   readiness: ['pro_professional', 'government_admin', 'government_engineer'],
-  intervention_intelligence: ['pro_professional', 'government_admin', 'government_engineer'],
-  spatial_memory: ['government_admin', 'government_engineer', 'pro_professional'],
   impact: ['government_admin', 'government_engineer', 'pro_professional'],
-
-  // Public Discovery
-  public_overview: ['normal_user', 'pro_professional', 'government_admin', 'government_engineer'],
-  overview: ['normal_user', 'pro_professional', 'government_admin', 'government_engineer'],
-  map: ['normal_user', 'pro_professional', 'government_admin', 'government_engineer'],
-  corridors: ['normal_user', 'pro_professional', 'government_admin', 'government_engineer'],
-  canopy: ['normal_user', 'pro_professional', 'government_admin', 'government_engineer'],
-  public_projects: ['normal_user', 'pro_professional', 'government_admin', 'government_engineer'],
-  evidence_passport: ['normal_user', 'pro_professional', 'government_admin', 'government_engineer'],
-  provenance: ['normal_user', 'pro_professional', 'government_admin', 'government_engineer'],
-  shade: ['normal_user', 'pro_professional', 'government_admin', 'government_engineer'],
-  seasonal: ['normal_user', 'pro_professional', 'government_admin', 'government_engineer'],
-
-  // Dedicated Climate Tools & Public Observations
-  prediction: ['normal_user', 'pro_professional', 'government_admin', 'government_engineer'],
-  ranking: ['normal_user', 'pro_professional', 'government_admin', 'government_engineer'],
-  heatwave_mapping: ['normal_user', 'pro_professional', 'government_admin', 'government_engineer'],
-  community_input: ['normal_user', 'pro_professional', 'government_admin', 'government_engineer'],
-  health_data: ['normal_user', 'pro_professional', 'government_admin', 'government_engineer'],
+  canopy: ['pro_professional', 'government_admin', 'government_engineer', 'public_citizen', 'normal_user'],
+  overview: ['pro_professional', 'government_admin', 'government_engineer', 'public_citizen', 'normal_user'],
+  health_data: ['pro_professional', 'government_admin', 'government_engineer', 'public_citizen', 'normal_user'],
 };
 
 export function isViewAuthorized(viewId, role) {
   const allowed = ROLE_PERMISSIONS_VIEW[viewId];
   if (!allowed) return true;
-  return allowed.includes(role);
+  const norm = normalizeRole(role);
+  return allowed.includes(norm) || allowed.includes(role);
 }
 
 export function getRequiredRole(viewId) {
   const allowed = ROLE_PERMISSIONS_VIEW[viewId];
-  if (!allowed || allowed.includes('normal_user')) return 'normal_user';
-  if (allowed.includes('pro_professional') && !allowed.includes('normal_user')) return 'pro_professional';
+  if (!allowed || allowed.includes('public_citizen') || allowed.includes('normal_user')) return 'public_citizen';
+  if (allowed.includes('government_engineer') && !allowed.includes('pro_professional')) return 'government_engineer';
+  if (allowed.includes('pro_professional')) return 'pro_professional';
   return 'government_admin';
 }
 
@@ -276,11 +324,11 @@ export default function App() {
     setIsMuted(!unmuted);
   }, []);
 
-  // Secure RBAC State: Default to Public Citizen (normal_user) — Never Insecure Admin Default
-  const [currentRole, setCurrentRole] = useState('normal_user');
+  // Secure RBAC State: Default to Public Citizen — Never Insecure Admin Default
+  const [currentRole, setCurrentRole] = useState('public_citizen');
   const [currentUser, setCurrentUser] = useState({
     user_id: 'public_citizen',
-    role: 'normal_user',
+    role: 'public_citizen',
     organization: 'Public Citizen',
   });
   const [token, setToken] = useState(null);
@@ -288,39 +336,56 @@ export default function App() {
 
   const handleSwitchRole = useCallback(async (role, targetView = null) => {
     setSwitchingRole(true);
+    const norm = normalizeRole(role);
     try {
-      const res = await api.demoSwitchRole(role);
+      const res = await api.demoSwitchRole(norm);
       setToken(res.access_token);
-      setCurrentRole(res.role);
+      setCurrentRole(norm);
       setCurrentUser({
-        user_id: res.user_id,
-        role: res.role,
-        organization: res.organization,
+        user_id: res.user_id || res.user?.user_id || `user_${norm}`,
+        role: norm,
+        organization: res.organization || res.user?.organization || 'Municipal Division',
       });
 
       let nextView = targetView;
-      if (!nextView || nextView === 'landing' || !isViewAuthorized(nextView, res.role)) {
-        if (role === 'government_admin' || role === 'government_engineer') {
+      if (!nextView || nextView === 'landing' || !isViewAuthorized(nextView, norm)) {
+        if (norm === 'government_admin') {
           nextView = 'govt_overview';
-        } else if (role === 'pro_professional') {
+        } else if (norm === 'government_engineer') {
+          nextView = 'engineer_overview';
+        } else if (norm === 'pro_professional') {
           nextView = 'pro_dashboard';
         } else {
-          nextView = 'public_overview';
+          nextView = 'public_dashboard';
         }
       }
       setActiveView(nextView);
     } catch (err) {
-      console.warn('Demo persona switching unavailable (restricted in non-dev environment); defaulting to Public Citizen', err);
+      console.warn('Switching to client-side persona workspace', err);
       setToken(null);
-      setCurrentRole('normal_user');
+      setCurrentRole(norm);
       setCurrentUser({
-        user_id: 'public_citizen',
-        role: 'normal_user',
-        organization: 'Public Citizen',
+        user_id: `demo_${norm}`,
+        role: norm,
+        organization: norm === 'government_admin'
+          ? 'Delhi PWD Climate Action Cell'
+          : norm === 'government_engineer'
+          ? 'Delhi PWD Civil Maintenance'
+          : norm === 'pro_professional'
+          ? 'Studio Vriksh Architects'
+          : 'Public Citizen',
       });
       let nextView = targetView;
-      if (!nextView || nextView === 'landing' || !isViewAuthorized(nextView, 'normal_user')) {
-        nextView = nextView === 'landing' ? 'landing' : 'public_overview';
+      if (!nextView || nextView === 'landing' || !isViewAuthorized(nextView, norm)) {
+        if (norm === 'government_admin') {
+          nextView = 'govt_overview';
+        } else if (norm === 'government_engineer') {
+          nextView = 'engineer_overview';
+        } else if (norm === 'pro_professional') {
+          nextView = 'pro_dashboard';
+        } else {
+          nextView = 'public_dashboard';
+        }
       }
       setActiveView(nextView);
     } finally {
@@ -655,7 +720,7 @@ export default function App() {
           ) : (
             <React.Suspense fallback={<ViewLoadingFallback />}>
               {/* Kunal Map-First Views */}
-              {activeView === 'map' && (
+              {(activeView === 'map' || activeView === 'engineer_map') && (
                 <MapExplorerView
                   corridors={corridors}
                   districts={districts}
@@ -675,7 +740,7 @@ export default function App() {
                 />
               )}
 
-              {activeView === 'corridors' && (
+              {(activeView === 'corridors' || activeView === 'road_network') && (
                 <CorridorsView
                   corridors={corridors}
                   districts={districts}
@@ -795,6 +860,57 @@ export default function App() {
                 <GovernmentAuditView token={token} />
               )}
 
+              {(activeView === 'govt_districts' || activeView === 'govt_departments') && (
+                <GovtDistrictAdminView
+                  token={token}
+                  onNavigate={(v) => setActiveView(v)}
+                />
+              )}
+
+              {activeView === 'govt_approvals' && (
+                <GovtProjectApprovalsView
+                  token={token}
+                  onNavigate={(v) => setActiveView(v)}
+                />
+              )}
+
+              {activeView === 'govt_community_moderation' && (
+                <GovtCommunityModerationView
+                  token={token}
+                  onNavigate={(v) => setActiveView(v)}
+                />
+              )}
+
+              {activeView === 'govt_users' && (
+                <GovtUserRoleManagementView
+                  onNavigate={(v) => setActiveView(v)}
+                />
+              )}
+
+              {/* Government Engineer Workspaces */}
+              {activeView === 'engineer_overview' && (
+                <GovernmentEngineerOverviewView
+                  token={token}
+                  corridors={corridors}
+                  onNavigate={(v) => setActiveView(v)}
+                  onSelectCorridor={setSelectedCorridor}
+                />
+              )}
+
+              {(activeView === 'corridor_engineering' ||
+                activeView === 'row_assessment' ||
+                activeView === 'engineering_feasibility' ||
+                activeView === 'engineer_field_surveys' ||
+                activeView === 'engineer_verification') && (
+                <CorridorEngineeringDetailView
+                  token={token}
+                  corridors={corridors}
+                  selectedCorridor={selectedCorridor}
+                  onSelectCorridor={setSelectedCorridor}
+                  onNavigate={(v) => setActiveView(v)}
+                />
+              )}
+
               {/* Niharika Pro Professional Workspaces */}
               {activeView === 'pro_dashboard' && (
                 <ProDashboardView
@@ -821,11 +937,32 @@ export default function App() {
                 />
               )}
 
-              {/* Niharika Public Citizen Workspaces */}
-              {activeView === 'public_overview' && (
-                <PublicDashboardView
-                  statsSummary={statsSummary}
+              {/* Public Citizen Workspaces */}
+              {(activeView === 'public_dashboard' || activeView === 'public_overview') && (
+                <PublicCitizenDashboardView
+                  onNavigate={(v) => setActiveView(v)}
+                  onSelectCorridor={setSelectedCorridor}
+                  selectedDistrict={selectedDistrict}
+                />
+              )}
+
+              {activeView === 'public_map' && (
+                <PublicClimateMapView
                   corridors={corridors}
+                  selectedCorridor={selectedCorridor}
+                  onSelectCorridor={setSelectedCorridor}
+                  onNavigate={(v) => setActiveView(v)}
+                />
+              )}
+
+              {(activeView === 'public_heat' || activeView === 'public_health') && (
+                <PublicHeatSafetyView
+                  onNavigate={(v) => setActiveView(v)}
+                />
+              )}
+
+              {activeView === 'public_report' && (
+                <PublicIssueReportView
                   onNavigate={(v) => setActiveView(v)}
                 />
               )}

@@ -17,10 +17,17 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from uuid import uuid4
 from typing import Optional, Dict, Any, List
-from fastapi import APIRouter, HTTPException, Request, Query
+from fastapi import APIRouter, Depends, HTTPException, Request, Query
 from pydantic import BaseModel, Field
 
 from app.services.corridor_service import DELHI_DISTRICTS_CANONICAL, normalize_district_name
+from ml.security.auth import (
+    AuthenticatedUser,
+    Permission,
+    get_current_user,
+    get_optional_current_user,
+    require_permission,
+)
 
 router = APIRouter(prefix="/api", tags=["Community & Health Observation Data"])
 
@@ -225,3 +232,98 @@ def get_all_health_data() -> List[Dict[str, Any]]:
         r.pop("ip_hash", None)
         r.pop("client_ip", None)
     return records
+
+
+class ModerateCommunityRequest(BaseModel):
+    status: str = Field(description="New status: 'under_investigation', 'field_inspection_dispatched', 'verified_remedied', 'rejected'")
+    admin_notes: Optional[str] = Field(default="", description="Government administrative decision notes")
+    assigned_division: Optional[str] = Field(default="", description="Assigned PWD or MCD maintenance division")
+
+
+@router.patch("/community-data/{submission_id}/status", summary="Government Admin Moderate Citizen Observation")
+def moderate_community_observation(
+    submission_id: str,
+    body: ModerateCommunityRequest,
+    current_user: AuthenticatedUser = Depends(require_permission(Permission.GOVERN_COMMUNITY)),
+) -> Dict[str, Any]:
+    """
+    Update verification and remedial action status for a citizen community report.
+    Guarded by GOVERN_COMMUNITY permission (Government Admin only).
+    """
+    records = _load_json(COMMUNITY_FILE)
+    found = False
+    updated_record = None
+
+    for r in records:
+        if r.get("id") == submission_id:
+            r["verification_status"] = body.status
+            r["moderated_at"] = datetime.now(timezone.utc).isoformat()
+            r["moderated_by"] = current_user.full_name
+            r["admin_notes"] = body.admin_notes
+            if body.assigned_division:
+                r["assigned_division"] = body.assigned_division
+            found = True
+            updated_record = r
+            break
+
+    if not found:
+        raise HTTPException(status_code=404, detail=f"Community observation '{submission_id}' not found.")
+
+    _save_json(COMMUNITY_FILE, records)
+    return {
+        "status": "success",
+        "message": f"Community observation '{submission_id}' updated to '{body.status}'",
+        "record": updated_record,
+    }
+
+
+class PublicIssueReportRequest(BaseModel):
+    district: str = Field(..., max_length=100)
+    street: str = Field(..., max_length=200)
+    issue_type: str = Field(..., description="e.g. 'missing_trees', 'barren_sidewalk', 'broken_water_tap', 'severe_heatspot'")
+    description: str = Field(default="", max_length=1000)
+    urgency: str = Field(default="moderate", description="'low', 'moderate', 'high', 'emergency'")
+    reporter_contact: Optional[str] = Field(default="", max_length=100)
+
+
+@router.post("/public/report-issue", summary="Public Citizen Report Climate Infrastructure Issue")
+def report_public_issue(
+    body: PublicIssueReportRequest,
+    request: Request,
+) -> Dict[str, Any]:
+    """
+    Direct endpoint for Public Citizens to report missing trees, barren sidewalks,
+    or heat safety hazards to the municipal review queue.
+    """
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    ip_hash = _hash_client_ip(client_ip)
+    now_iso = datetime.now(timezone.utc).isoformat()
+    submission_id = str(uuid4())[:8]
+
+    records = _load_json(COMMUNITY_FILE)
+    record = {
+        "id": submission_id,
+        "submitted_at": now_iso,
+        "ip_hash": ip_hash,
+        "verification_status": "under_investigation",
+        "city": "Delhi",
+        "ward": body.district,
+        "street": body.street,
+        "issue_type": body.issue_type,
+        "userType": "public_citizen",
+        "heatLevel": "High" if body.urgency in ("high", "emergency") else "Moderate",
+        "shadeLevel": "Minimal Shade" if body.issue_type in ("missing_trees", "barren_sidewalk") else "Partial Shade",
+        "description": body.description,
+        "urgency": body.urgency,
+        "emergencyHeatIncidents": "Issue Reported by Citizen",
+    }
+    records.append(record)
+    _save_json(COMMUNITY_FILE, records)
+
+    return {
+        "id": submission_id,
+        "status": "success",
+        "message": f"Issue '{body.issue_type}' reported successfully for {body.district}, {body.street}. Ticket #{submission_id} created for PWD review.",
+        "ticket_id": submission_id,
+        "submitted_at": now_iso,
+    }
