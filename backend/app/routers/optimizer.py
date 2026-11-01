@@ -30,6 +30,10 @@ class OptimizerRunRequest(BaseModel):
     climate_priority: str = Field(default="heat_resilience")
     equity_weight: float = Field(default=0.25, ge=0.0, le=1.0)
     meko_enabled: bool = Field(default=True)
+    include_demo_scenarios: bool = Field(
+        default=False,
+        description="Explicit demo-only toggle to simulate synthetic demonstration scenarios (e.g., Survey-014). Normal runs must set to False."
+    )
     site_restrictions: Optional[List[SiteRestrictionInput]] = None
 
 
@@ -75,9 +79,17 @@ async def run_budget_optimizer(req: OptimizerRunRequest) -> Dict[str, Any]:
         all_c = get_all_corridors()
         corridors = all_c[:3]
 
-    restrictions: List[Dict[str, Any]] = []
+    applied_restrictions: List[Dict[str, Any]] = []
+    demo_scenarios_active = False
+
     if req.site_restrictions:
-        restrictions.extend(r.model_dump() for r in req.site_restrictions)
+        for r in req.site_restrictions:
+            d = r.model_dump()
+            d["source_datapack"] = "user_input"
+            d["verification_status"] = "MANUAL_INPUT"
+            d["is_synthetic_demo"] = False
+            d["memory_id"] = None
+            applied_restrictions.append(d)
 
     if req.meko_enabled:
         meko = get_meko_service()
@@ -87,29 +99,68 @@ async def run_budget_optimizer(req: OptimizerRunRequest) -> Dict[str, Any]:
                 datapack_ids=["vansetu-project-memory", "vansetu-climate-knowledge"],
                 corridor_id=corr["id"],
                 ward_id=corr.get("ward_id"),
-                only_verified=True,
+                only_verified=False,
             )
             for mem in recalled:
+                ver_status = mem.get("verification_status")
                 sp = mem.get("structured_payload") or {}
+                is_demo = (
+                    bool(sp.get("is_synthetic_demo"))
+                    or ver_status == "SYNTHETIC_DEMONSTRATION_SCENARIO"
+                    or (mem.get("memory_id") in ("mem-survey-014", "mem-decision-c14-01", "mem-survey-001", "mem-draft-022"))
+                )
+
+                # P0 Requirement: Normal optimization must apply only genuinely human_verified memories.
+                # Synthetic demonstration scenarios must NEVER be applied in normal runs.
+                if is_demo and not req.include_demo_scenarios:
+                    continue
+                if not is_demo and ver_status != "human_verified":
+                    continue
+
                 r_ints = sp.get("restricted_interventions") or []
                 txt_lower = (mem.get("content") or mem.get("content_text") or "").lower()
                 if r_ints or "underground utility" in txt_lower or "66kv" in txt_lower or "tree-pit" in txt_lower:
-                    restrictions.append(
+                    if is_demo:
+                        demo_scenarios_active = True
+                    applied_restrictions.append(
                         {
                             "corridor_id": corr["id"],
                             "excluded_interventions": list(r_ints) if r_ints else ["linear_street_trees", "roadside_bioswales"],
                             "reason": mem.get("content") or mem.get("content_text") or "",
                             "evidence_reference": mem.get("evidence_reference"),
+                            "verification_status": ver_status,
+                            "is_synthetic_demo": is_demo,
+                            "source_datapack": mem.get("datapack_logical", "vansetu-project-memory"),
+                            "memory_id": mem.get("memory_id"),
                         }
                     )
+
+    # Format restrictions for the MILP solver
+    solver_restrictions = [
+        {
+            "corridor_id": r["corridor_id"],
+            "excluded_interventions": r["excluded_interventions"],
+            "reason": r["reason"],
+            "evidence_reference": r.get("evidence_reference"),
+        }
+        for r in applied_restrictions
+    ]
 
     result = optimize_corridor_portfolio(
         corridors=corridors,
         budget_lakh=req.budget_lakh,
         climate_priority=req.climate_priority,
-        site_restrictions=restrictions,
+        site_restrictions=solver_restrictions,
         equity_weight=req.equity_weight,
     )
     result["meko_enabled"] = req.meko_enabled
-    result["applied_site_restrictions"] = restrictions
+    result["include_demo_scenarios"] = req.include_demo_scenarios
+    result["demo_scenarios_active"] = demo_scenarios_active
+    result["applied_site_restrictions"] = applied_restrictions
+    if demo_scenarios_active:
+        result["demo_scenario_warning"] = (
+            "DEMONSTRATION SCENARIO ACTIVE: Recommendations are being shaped by unverified synthetic demonstration fixtures "
+            "(e.g., Survey-014 underground utility conflict). In genuine operations without verified municipal surveys, "
+            "standard feasibility applies."
+        )
     return result

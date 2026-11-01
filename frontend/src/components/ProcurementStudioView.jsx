@@ -2,12 +2,14 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   ShoppingBag,
   FileText,
-  CheckCircle2,
   HelpCircle,
-  Layers,
-  IndianRupee,
+  ShieldAlert,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { api } from '../api/client';
+import { FeasibilityStatusBadge } from './ui/ScientificBadges';
+import { formatCurrencyLakh } from '../utils/numericFormat';
 
 export default function ProcurementStudioView({
   selectedCorridor,
@@ -19,7 +21,15 @@ export default function ProcurementStudioView({
   const [corridorCode, setCorridorCode] = useState(selectedCorridor?.code || 'C-14');
   const [budgetLakh, setBudgetLakh] = useState(8.0);
   const [rfpDoc, setRfpDoc] = useState(null);
+  const [expandedSkus, setExpandedSkus] = useState({});
   const [loading, setLoading] = useState(false);
+
+  const toggleSkuDetails = (skuId) => {
+    setExpandedSkus((prev) => ({
+      ...prev,
+      [skuId]: !prev[skuId],
+    }));
+  };
 
   const loadProcurement = useCallback(async () => {
     setLoading(true);
@@ -51,13 +61,16 @@ export default function ProcurementStudioView({
       {/* Header */}
       <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-4 flex flex-wrap items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2">
-            <ShoppingBag className="w-5 h-5 text-emerald-400" />
+          <div className="flex items-center gap-2 flex-wrap">
+            <ShoppingBag className="w-5 h-5 text-emerald-400" aria-hidden="true" />
             <h2 className="text-base font-bold text-white">
               VanSetu Climate Technology Procurement Studio
             </h2>
             <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
               IOMETE Challenge: Make Complex Tech Easy to Buy
+            </span>
+            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30">
+              Illustrative Reference Pricing (CPWD DSR 2023)
             </span>
           </div>
           <p className="text-xs text-slate-400 mt-1">
@@ -67,8 +80,9 @@ export default function ProcurementStudioView({
 
         <div className="flex items-center gap-2 text-xs">
           <button
+            type="button"
             onClick={() => onToggleMeko(!mekoEnabled)}
-            className={`px-3 py-1.5 rounded-lg font-bold transition ${
+            className={`px-3 py-1.5 rounded-lg font-bold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 ${
               mekoEnabled
                 ? 'bg-emerald-600 text-white'
                 : 'bg-slate-800 text-slate-300'
@@ -80,8 +94,11 @@ export default function ProcurementStudioView({
       </div>
 
       {/* Category Filter Strip */}
-      <div className="flex flex-wrap items-center gap-2 text-xs">
+      <div className="flex flex-wrap items-center gap-2 text-xs" role="tablist" aria-label="Procurement Equipment Categories">
         <button
+          type="button"
+          role="tab"
+          aria-selected={selectedCategory === ''}
           onClick={() => setSelectedCategory('')}
           className={`px-3 py-1.5 rounded-lg font-medium border transition ${
             selectedCategory === ''
@@ -93,6 +110,9 @@ export default function ProcurementStudioView({
         </button>
         {(catalog?.categories || []).map((cat) => (
           <button
+            type="button"
+            role="tab"
+            aria-selected={selectedCategory === cat.id}
             key={cat.id}
             onClick={() => setSelectedCategory(cat.id)}
             className={`px-3 py-1.5 rounded-lg font-medium border transition ${
@@ -106,121 +126,171 @@ export default function ProcurementStudioView({
         ))}
       </div>
 
-      {/* Pricing Integrity Notice */}
-      <div className="bg-slate-900/70 border border-slate-800 rounded-lg px-3.5 py-2 text-[11px] text-slate-300 flex items-center justify-between">
-        <span>
-          <strong className="text-emerald-400">Pricing Classification: </strong>
-          {catalog?.pricing_disclaimer}
-        </span>
+      {/* Pricing Integrity & Vendor Claim Honesty Notice */}
+      <div className="bg-slate-900/70 border border-amber-500/30 rounded-lg px-3.5 py-2.5 text-[11px] text-slate-300 flex items-start gap-2.5">
+        <ShieldAlert className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" aria-hidden="true" />
+        <div>
+          <strong className="text-amber-300">
+            Pricing &amp; Vendor Verification Notice (Illustrative Reference Pricing):{' '}
+          </strong>
+          {catalog?.pricing_disclaimer ||
+            'All unit rates are illustrative reference estimates anchored to CPWD Delhi Schedule of Rates (DSR 2023). Vendor cooling or sensor accuracy claims must be independently verified via NABL/ISO calibration certificates prior to contract award.'}
+        </div>
       </div>
 
-      {/* Equipment Comparison Grid */}
+      {/* Equipment Comparison Grid with Progressive Disclosure */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-        {(catalog?.items || []).map((item) => (
-          <div
-            key={item.sku_id}
-            className="bg-slate-900/90 border border-slate-800 rounded-xl p-4 flex flex-col justify-between space-y-3 text-xs"
-          >
-            <div className="space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
-                  {item.category_label}
-                </span>
-                <span className="text-[10px] font-mono text-slate-400">
-                  {item.sku_id}
-                </span>
-              </div>
-              <h3 className="text-sm font-bold text-white">{item.product_tier}</h3>
-              <p className="text-slate-300 text-[11px] bg-slate-950 p-2.5 rounded border border-slate-800">
-                <strong className="text-emerald-400">Plain-Language Fit: </strong>
-                {item.plain_english_summary}
-              </p>
+        {(catalog?.items || []).map((item) => {
+          const isExpanded = Boolean(expandedSkus[item.sku_id]);
+          return (
+            <div
+              key={item.sku_id}
+              className="bg-slate-900/90 border border-slate-800 rounded-xl p-4 flex flex-col justify-between space-y-3 text-xs"
+            >
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                    {item.category_label}
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                      Illustrative Ref Price
+                    </span>
+                    <span className="text-[10px] font-mono text-slate-400">
+                      {item.sku_id}
+                    </span>
+                  </div>
+                </div>
 
-              {/* Cost Strip */}
-              <div className="grid grid-cols-3 gap-2 bg-slate-950 p-2 rounded border border-slate-800 font-mono text-[11px]">
-                <div>
-                  <span className="text-slate-400 block">CapEx (Ref)</span>
-                  <span className="text-emerald-400 font-bold">
-                    ₹{(item.capex_inr / 100000).toFixed(2)}L
-                  </span>
+                <h3 className="text-sm font-bold text-white">{item.product_tier}</h3>
+
+                {/* Plain-Language Fit First */}
+                <p className="text-slate-200 text-[11px] bg-slate-950 p-2.5 rounded border border-emerald-500/30 leading-relaxed">
+                  <strong className="text-emerald-400">Plain-Language Buyer Guide: </strong>
+                  {item.plain_english_summary}
+                </p>
+
+                {/* Cost Strip */}
+                <div className="grid grid-cols-3 gap-2 bg-slate-950 p-2 rounded border border-slate-800 font-mono text-[11px]">
+                  <div>
+                    <span className="text-slate-400 block">CapEx (Ref)</span>
+                    <span className="text-emerald-400 font-bold">
+                      {formatCurrencyLakh(item.capex_inr != null ? item.capex_inr / 100000 : null, 2)}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block">Annual OpEx</span>
+                    <span className="text-amber-300 font-bold">
+                      {item.annual_opex_inr != null ? `${formatCurrencyLakh(item.annual_opex_inr / 100000, 2)}/yr` : '—'}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block">5-Yr Lifecycle</span>
+                    <span className="text-cyan-300 font-bold">
+                      {formatCurrencyLakh(item.lifecycle_5yr_inr != null ? item.lifecycle_5yr_inr / 100000 : null, 2)}
+                    </span>
+                  </div>
                 </div>
-                <div>
-                  <span className="text-slate-400 block">Annual OpEx</span>
-                  <span className="text-amber-300 font-bold">
-                    ₹{(item.annual_opex_inr / 100000).toFixed(2)}L/yr
-                  </span>
-                </div>
-                <div>
-                  <span className="text-slate-400 block">5-Yr Lifecycle</span>
-                  <span className="text-cyan-300 font-bold">
-                    ₹{(item.lifecycle_5yr_inr / 100000).toFixed(2)}L
-                  </span>
+
+                {/* Expandable Technical Specifications (Progressive Disclosure) */}
+                <div className="border border-slate-800 rounded-lg bg-slate-950/60 overflow-hidden">
+                  <button
+                    type="button"
+                    aria-expanded={isExpanded}
+                    onClick={() => toggleSkuDetails(item.sku_id)}
+                    className="w-full px-3 py-2 text-left text-[11px] font-semibold text-sky-300 hover:bg-slate-900 flex items-center justify-between transition"
+                  >
+                    <span>
+                      {isExpanded
+                        ? 'Hide Technical Specifications & SLA Details'
+                        : 'Show Technical Specs, Compatibility & SLA Details'}
+                    </span>
+                    {isExpanded ? (
+                      <ChevronUp className="w-3.5 h-3.5" aria-hidden="true" />
+                    ) : (
+                      <ChevronDown className="w-3.5 h-3.5" aria-hidden="true" />
+                    )}
+                  </button>
+
+                  {isExpanded && (
+                    <div className="px-3 pb-3 pt-1 space-y-1.5 text-[11px] text-slate-300 border-t border-slate-800/80">
+                      <div>
+                        <strong className="text-slate-400">Site Compatibility: </strong>
+                        {item.compatibility}
+                      </div>
+                      <div>
+                        <strong className="text-slate-400">Civil Installation: </strong>
+                        {item.installation_requirements}
+                      </div>
+                      <div>
+                        <strong className="text-slate-400">Maintenance &amp; SLA: </strong>
+                        {item.maintenance_requirements} ({item.warranty_support})
+                      </div>
+                      <div>
+                        <strong className="text-slate-400">Data Interoperability: </strong>
+                        {item.interoperability}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
-              <div className="space-y-1 text-[11px] text-slate-300">
-                <div>
-                  <strong className="text-slate-400">Compatibility: </strong>
-                  {item.compatibility}
+              {/* Vendor Questions */}
+              <div className="pt-2 border-t border-slate-800 space-y-1">
+                <div className="text-[11px] font-bold text-amber-300 flex items-center gap-1">
+                  <HelpCircle className="w-3.5 h-3.5" aria-hidden="true" />
+                  Questions to Ask Vendors Before Buying:
                 </div>
-                <div>
-                  <strong className="text-slate-400">Installation: </strong>
-                  {item.installation_requirements}
-                </div>
-                <div>
-                  <strong className="text-slate-400">Maintenance &amp; SLA: </strong>
-                  {item.maintenance_requirements} ({item.warranty_support})
-                </div>
-                <div>
-                  <strong className="text-slate-400">Interoperability: </strong>
-                  {item.interoperability}
-                </div>
+                <ul className="list-disc list-inside text-[11px] text-slate-400 space-y-0.5">
+                  {(item.vendor_questions || []).map((q, i) => (
+                    <li key={i}>{q}</li>
+                  ))}
+                </ul>
               </div>
             </div>
-
-            {/* Vendor Questions */}
-            <div className="pt-2 border-t border-slate-800 space-y-1">
-              <div className="text-[11px] font-bold text-amber-300 flex items-center gap-1">
-                <HelpCircle className="w-3.5 h-3.5" />
-                Questions to Ask Vendors Before Buying:
-              </div>
-              <ul className="list-disc list-inside text-[11px] text-slate-400 space-y-0.5">
-                {(item.vendor_questions || []).map((q, i) => (
-                  <li key={i}>{q}</li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* Draft Municipal RFP Specification Generator */}
       {rfpDoc && (
         <div className="bg-slate-900/95 border border-emerald-500/40 rounded-xl p-4 space-y-3 text-xs">
           <div className="flex items-center justify-between flex-wrap gap-2">
-            <div className="flex items-center gap-2">
-              <FileText className="w-5 h-5 text-emerald-400" />
+            <div className="flex items-center gap-2 flex-wrap">
+              <FileText className="w-5 h-5 text-emerald-400" aria-hidden="true" />
               <div>
-                <h3 className="text-sm font-bold text-white">
-                  Generated Draft Municipal RFP Specification — {rfpDoc.rfp_reference_number}
-                </h3>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="text-sm font-bold text-white">
+                    Generated Draft Municipal RFP Specification — {rfpDoc.rfp_reference_number}
+                  </h3>
+                  <FeasibilityStatusBadge
+                    status={mekoEnabled && corridorCode.toUpperCase() === 'C-14' ? 'CONSTRAINT_IDENTIFIED' : 'FIELD_VERIFICATION_REQUIRED'}
+                    compact
+                  />
+                </div>
                 <p className="text-[11px] text-slate-400">
                   {rfpDoc.project_title} • {rfpDoc.pricing_classification}
                 </p>
               </div>
             </div>
             <div className="flex items-center gap-2">
+              <label htmlFor="rfp-corridor-input" className="sr-only">
+                Corridor Code for RFP
+              </label>
               <input
+                id="rfp-corridor-input"
                 type="text"
                 value={corridorCode}
                 onChange={(e) => setCorridorCode(e.target.value)}
                 className="w-20 bg-slate-950 border border-slate-700 rounded px-2 py-1 font-mono text-white"
               />
               <button
+                type="button"
                 onClick={loadProcurement}
+                disabled={loading}
                 className="px-3 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-semibold"
               >
-                Regenerate RFP
+                {loading ? 'Generating...' : 'Regenerate RFP'}
               </button>
             </div>
           </div>
@@ -231,10 +301,16 @@ export default function ProcurementStudioView({
                 Section 1 &amp; 2: Baseline &amp; Meko Constraints
               </div>
               <p className="text-[11px] text-slate-300">
-                Corridor: {rfpDoc.section_1_environmental_baseline?.corridor_name} ({rfpDoc.section_1_environmental_baseline?.corridor_code}) • LST: {rfpDoc.section_1_environmental_baseline?.observed_lst_celsius}°C • NDVI: {rfpDoc.section_1_environmental_baseline?.observed_ndvi}
+                Corridor: {rfpDoc.section_1_environmental_baseline?.corridor_name} (
+                {rfpDoc.section_1_environmental_baseline?.corridor_code}) • Surface LST:{' '}
+                {rfpDoc.section_1_environmental_baseline?.observed_lst_celsius}°C • NDVI:{' '}
+                {rfpDoc.section_1_environmental_baseline?.observed_ndvi}
               </p>
               <p className="text-[11px] text-amber-300 mt-1">
-                {(rfpDoc.section_2_institutional_memory_constraints?.mandatory_engineering_exclusions || [])[0]}
+                {
+                  (rfpDoc.section_2_institutional_memory_constraints
+                    ?.mandatory_engineering_exclusions || [])[0]
+                }
               </p>
             </div>
 
@@ -243,13 +319,18 @@ export default function ProcurementStudioView({
                 Section 3: Selected Bill of Quantities (MILP)
               </div>
               <div className="space-y-1 font-mono text-[11px]">
-                {(rfpDoc.section_3_selected_intervention_bill_of_quantities?.selected_interventions || []).map((s, idx) => (
+                {(
+                  rfpDoc.section_3_selected_intervention_bill_of_quantities
+                    ?.selected_interventions || []
+                ).map((s, idx) => (
                   <div key={idx} className="text-slate-200">
-                    • {s.intervention_name}: ₹{s.capex_lakh_inr}L CapEx
+                    • {s.intervention_name}: ₹{s.capex_lakh_inr}L CapEx (Ref)
                   </div>
                 ))}
                 <div className="text-emerald-300 font-bold pt-1">
-                  Total CapEx: ₹{rfpDoc.section_3_selected_intervention_bill_of_quantities?.total_capex_lakh_inr}L / ₹{budgetLakh}L Budget
+                  Total CapEx: ₹
+                  {rfpDoc.section_3_selected_intervention_bill_of_quantities?.total_capex_lakh_inr}
+                  L / ₹{budgetLakh}L Budget
                 </div>
               </div>
             </div>
@@ -259,9 +340,11 @@ export default function ProcurementStudioView({
                 Section 5: Mandatory Vendor Compliance Checks
               </div>
               <ul className="list-disc list-inside text-[11px] text-slate-300 space-y-0.5">
-                {(rfpDoc.section_5_mandatory_vendor_compliance_questions || []).slice(0, 3).map((q, i) => (
-                  <li key={i}>{q}</li>
-                ))}
+                {(rfpDoc.section_5_mandatory_vendor_compliance_questions || [])
+                  .slice(0, 3)
+                  .map((q, i) => (
+                    <li key={i}>{q}</li>
+                  ))}
               </ul>
             </div>
           </div>

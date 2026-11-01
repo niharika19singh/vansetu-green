@@ -1,0 +1,80 @@
+# DigitalOcean App Platform Specification for VanSetu — Staging Environment
+# Target Branch: feature/vansetu-govt-rbac-tender-ui
+# Purpose: Isolated staging deployment for government-first RBAC, tender allocation & climate intelligence
+name: vansetu-staging-api
+region: blr
+
+services:
+  - name: vansetu-staging-backend
+    github:
+      repo: niharika19singh/vansetu-green
+      branch: feature/vansetu-govt-rbac-tender-ui
+      deploy_on_push: true
+    source_dir: /backend
+    dockerfile_path: backend/Dockerfile
+    http_port: 7860
+    instance_count: 1
+    instance_size_slug: professional-xs
+    health_check:
+      http_path: /api/health
+      initial_delay_seconds: 25
+      period_seconds: 30
+      timeout_seconds: 10
+    routes:
+      - path: /api
+    envs:
+      - key: PORT
+        value: "7860"
+      - key: VANSETU_ENV
+        value: "staging"
+      - key: VANSETU_ENABLE_DEMO_AUTH
+        value: "false"
+      - key: VANSETU_ENABLE_DEMO_SEED_DATA
+        value: "false"
+      - key: VANSETU_ABDM_SANDBOX_ENABLED
+        value: "false"
+      - key: VANSETU_TOKEN_HMAC_SECRET
+        scope: RUN_TIME
+        type: SECRET
+      - key: MEKO_MCP_URL
+        value: "https://mcp.mekodata.ai/mcp"
+      - key: MEKO_API_KEY
+        scope: RUN_TIME
+        type: SECRET
+      - key: GEMINI_API_KEY
+        scope: RUN_TIME
+        type: SECRET
+      - key: GEMINI_MODEL
+        value: "gemini-3.8-flash"
+      - key: TIGER_DATA_URL
+        scope: RUN_TIME
+        type: SECRET
+      - key: DO_SPACES_ENDPOINT
+        value: "https://blr1.digitaloceanspaces.com"
+      - key: DO_SPACES_REGION
+        value: "blr1"
+      - key: DO_SPACES_BUCKET
+        value: "vansetu-geospatial-rasters"
+      - key: DO_SPACES_KEY
+        scope: RUN_TIME
+        type: SECRET
+      - key: DO_SPACES_SECRET
+        scope: RUN_TIME
+        type: SECRET
+
+static_sites:
+  - name: vansetu-staging-frontend
+    github:
+      repo: niharika19singh/vansetu-green
+      branch: feature/vansetu-govt-rbac-tender-ui
+      deploy_on_push: true
+    source_dir: /frontend
+    build_command: npm ci && npm run build
+    output_dir: dist
+    catchall_document: index.html
+    routes:
+      - path: /
+    envs:
+      - key: VITE_API_URL
+        scope: BUILD_TIME
+        value: "${APP_URL}"

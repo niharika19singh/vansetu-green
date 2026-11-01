@@ -194,6 +194,12 @@ DISTRICT_VULNERABILITY_INDEX: Dict[str, Dict[str, Any]] = {
     "New Delhi": {"index": 0.38, "density_tier": "Low (Institutional Lutyens Zone)", "source": "Census of India / Delhi Economic Survey"},
 }
 
+# Automatically support both full and canonical short district names
+for _k, _v in list(DISTRICT_VULNERABILITY_INDEX.items()):
+    if _k.endswith(" Delhi") and _k != "New Delhi":
+        DISTRICT_VULNERABILITY_INDEX[_k[:-6].strip()] = _v
+
+
 
 def _is_valid_number(val: Any) -> bool:
     """Return True if val is a finite float/int (not None, not NaN, not Inf)."""

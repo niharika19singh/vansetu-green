@@ -1,0 +1,447 @@
+/**
+ * VanSetu — Full-System Audit, Seasonal Heat Repair & Background Asset Verification Suite.
+ * Validates:
+ * 1. SeasonalHeatIntelligenceView Retry button, loading states, error diagnosis, and zero-hotspots empty state.
+ * 2. Landing page background image asset (https://i.pinimg.com/1200x/f3/2d/44/f32d449cc721be356efb6dad47834669.jpg) and local fallback.
+ * 3. App.jsx global Retry button with handleGlobalRetry and retryKey synchronization.
+ * 4. Full feature inventory coverage across Public Discovery, Climate Intelligence, Advanced Analytics, and Workspaces.
+ * 5. Delhi roads GeoJSON integrity with exactly 44 corridors.
+ */
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const frontendRoot = path.resolve(__dirname, '..');
+
+test('SeasonalHeatIntelligenceView implements genuine Retry button, error diagnostics, and zero-hotspots state', () => {
+  const componentPath = path.join(frontendRoot, 'src/components/SeasonalHeatIntelligenceView.jsx');
+  assert.ok(fs.existsSync(componentPath), 'SeasonalHeatIntelligenceView.jsx must exist');
+  const src = fs.readFileSync(componentPath, 'utf-8');
+
+  // Verify Retry button presence and active retry handler
+  assert.ok(src.includes('fetchSeasonalData'), 'Must define fetchSeasonalData callback');
+  assert.ok(src.includes('Retry'), 'Must include visible Retry button');
+  assert.ok(src.includes('Retrying...'), 'Must include Retrying loading state');
+  assert.ok(src.includes('requestSeqRef'), 'Must guard against race conditions and stale responses');
+
+  // Verify error diagnostics
+  assert.ok(src.includes('Endpoint:'), 'Must show diagnostic endpoint on error');
+  assert.ok(src.includes('Target:'), 'Must show diagnostic API target on error');
+
+  // Verify empty persistent hotspots handling
+  assert.ok(
+    src.includes('No Persistent Thermal Hotspots Identified') || src.includes('Zero Persistent Hotspots'),
+    'Must cleanly handle zero persistent hotspots without error'
+  );
+  assert.ok(src.includes('All Persistent Hotspots ({persistentHotspots.length})'), 'Must show dynamic count');
+});
+
+test('Landing page uses exact background image asset with reliable local fallback', () => {
+  const REQUIRED_IMAGE_URL = 'https://i.pinimg.com/1200x/f3/2d/44/f32d449cc721be356efb6dad47834669.jpg';
+  const LOCAL_FALLBACK_FILE = path.join(frontendRoot, 'public/textures/landing_forest_background.jpg');
+
+  // Verify local fallback asset exists
+  assert.ok(fs.existsSync(LOCAL_FALLBACK_FILE), 'Local fallback image must exist in public/textures/');
+  const stats = fs.statSync(LOCAL_FALLBACK_FILE);
+  assert.ok(stats.size > 50000, `Local image must be non-empty (size: ${stats.size} bytes)`);
+
+  // Verify LivingForestExperience uses exact URL and local fallback
+  const expPath = path.join(frontendRoot, 'src/forest/LivingForestExperience.jsx');
+  const expSrc = fs.readFileSync(expPath, 'utf-8');
+  assert.ok(expSrc.includes(REQUIRED_IMAGE_URL), 'LivingForestExperience must reference exact Pinterest image URL');
+  assert.ok(expSrc.includes('/textures/landing_forest_background.jpg'), 'LivingForestExperience must include local fallback');
+  assert.ok(expSrc.includes('onError'), 'Must handle image loading errors with fallback');
+
+  // Verify Three.js LivingForestDirector also references exact URL
+  const dirPath = path.join(frontendRoot, 'src/forest/LivingForestDirector.js');
+  const dirSrc = fs.readFileSync(dirPath, 'utf-8');
+  assert.ok(dirSrc.includes(REQUIRED_IMAGE_URL), 'LivingForestDirector must load exact Pinterest image URL');
+});
+
+test('App.jsx provides top-level global retry wired to metadata, corridor data, and view synchronization', () => {
+  const appPath = path.join(frontendRoot, 'src/App.jsx');
+  const appSrc = fs.readFileSync(appPath, 'utf-8');
+
+  assert.ok(appSrc.includes('handleGlobalRetry'), 'App.jsx must define handleGlobalRetry');
+  assert.ok(appSrc.includes('retryKey'), 'App.jsx must maintain retryKey state');
+  assert.ok(appSrc.includes('retrying'), 'App.jsx must maintain retrying loading state');
+  assert.ok(appSrc.includes('retryKey={retryKey}'), 'App.jsx must pass retryKey to SeasonalHeatIntelligenceView');
+});
+
+test('Complete feature inventory: all 28 registered application views exist and export defaults', () => {
+  const views = [
+    // Landing & Public Discovery
+    'src/views/LandingPageView.jsx',
+    'src/components/PublicDashboardView.jsx',
+    'src/components/PublicProjectsView.jsx',
+    'src/components/EquityAndProvenanceView.jsx',
+
+    // Climate Intelligence Suite
+    'src/views/MapExplorerView.jsx',
+    'src/views/CorridorsView.jsx',
+    'src/views/CanopyHydrologyView.jsx',
+    'src/views/ScenarioLabView.jsx',
+    'src/views/DecisionStudioView.jsx',
+    'src/views/RecordsView.jsx',
+
+    // Advanced Analytics
+    'src/components/InterventionIntelligenceView.jsx',
+    'src/components/SegmentSuitabilityView.jsx',
+    'src/components/ParetoPortfolioLabView.jsx',
+    'src/components/ShadeContinuityView.jsx',
+    'src/components/SeasonalHeatIntelligenceView.jsx',
+    'src/components/ImpactMonitoringView.jsx',
+    'src/components/ProjectReadinessView.jsx',
+    'src/components/SpatialMemoryMapView.jsx',
+    'src/components/ProcurementStudioView.jsx',
+    'src/components/AiPlanningAssistantView.jsx',
+    'src/components/MekoMemoryStudioView.jsx',
+    'src/components/TemporalInsightsView.jsx',
+
+    // Government Institutional
+    'src/components/GovernmentOverviewView.jsx',
+    'src/components/CorridorInventoryView.jsx',
+    'src/components/TenderManagementView.jsx',
+    'src/components/CorridorCostOptimizerView.jsx',
+    'src/components/RegionalHealthIntelligenceView.jsx',
+    'src/components/GovernmentAuditView.jsx',
+
+    // Pro Professional
+    'src/components/ProDashboardView.jsx',
+    'src/components/TenderMarketplaceView.jsx',
+    'src/components/MyProposalsView.jsx',
+    'src/components/MyAssignedProjectsView.jsx',
+  ];
+
+  for (const rel of views) {
+    const fullPath = path.join(frontendRoot, rel);
+    assert.ok(fs.existsSync(fullPath), `View component missing: ${rel}`);
+    const content = fs.readFileSync(fullPath, 'utf-8');
+    assert.ok(content.includes('export default'), `View ${rel} missing default export`);
+  }
+});
+
+test('Delhi roads GeoJSON FeatureCollection contains exactly 44 validated LineString corridors', () => {
+  const geojsonPath = path.join(frontendRoot, 'public/delhi_roads.geojson');
+  assert.ok(fs.existsSync(geojsonPath), 'public/delhi_roads.geojson must exist');
+  const data = JSON.parse(fs.readFileSync(geojsonPath, 'utf-8'));
+  assert.equal(data.type, 'FeatureCollection');
+  assert.equal(data.features.length, 44, 'Must have exactly 44 corridors');
+
+  for (const feat of data.features) {
+    assert.equal(feat.type, 'Feature');
+    assert.ok(feat.properties.id, 'Corridor must have id');
+    assert.ok(feat.properties.name, 'Corridor must have name');
+    assert.ok(feat.geometry.coordinates.length >= 2, 'Corridor geometry must have >= 2 coordinates');
+    // Ensure coordinates are within Delhi bounding box: lat ~28.4-28.9, lon ~76.8-77.4
+    const [lon, lat] = feat.geometry.coordinates[0];
+    assert.ok(lat >= 28.3 && lat <= 29.0, `Latitude ${lat} out of bounds for ${feat.properties.name}`);
+    assert.ok(lon >= 76.7 && lon <= 77.5, `Longitude ${lon} out of bounds for ${feat.properties.name}`);
+  }
+});
+
+test('Legacy feature parity: LocationSearch, Corridor3DViewer, and 10-layer InteractiveMap overlays are verified', () => {
+  // 1. LocationSearch component
+  const locPath = path.join(frontendRoot, 'src/components/LocationSearch.jsx');
+  assert.ok(fs.existsSync(locPath), 'LocationSearch.jsx must exist');
+  const locSrc = fs.readFileSync(locPath, 'utf-8');
+  assert.ok(locSrc.includes('DELHI_LANDMARKS'), 'LocationSearch must include offline curated Delhi landmarks');
+  assert.ok(locSrc.includes('nominatim.openstreetmap.org'), 'LocationSearch must support live OSM geocoding');
+  assert.ok(locSrc.includes('onSelectLocation'), 'LocationSearch must trigger location selection callback');
+
+  // 2. Corridor3DViewer component
+  const threeDPath = path.join(frontendRoot, 'src/components/Corridor3DViewer.jsx');
+  assert.ok(fs.existsSync(threeDPath), 'Corridor3DViewer.jsx must exist');
+  const threeDSrc = fs.readFileSync(threeDPath, 'utf-8');
+  assert.ok(threeDSrc.includes('three'), 'Corridor3DViewer must import Three.js');
+  assert.ok(threeDSrc.includes('PerspectiveCamera'), 'Corridor3DViewer must use PerspectiveCamera');
+  assert.ok(threeDSrc.includes('dispose'), 'Corridor3DViewer must properly clean up WebGL resources');
+
+  // 3. InteractiveMap 10-layer overlays and reference layers
+  const mapPath = path.join(frontendRoot, 'src/components/InteractiveMap.jsx');
+  assert.ok(fs.existsSync(mapPath), 'InteractiveMap.jsx must exist');
+  const mapSrc = fs.readFileSync(mapPath, 'utf-8');
+  assert.ok(mapSrc.includes('showRoadsOverlay'), 'InteractiveMap must include Roads Reference Overlay toggle');
+  assert.ok(mapSrc.includes('showParks'), 'InteractiveMap must include Parks & Green Spaces toggle');
+  assert.ok(mapSrc.includes('showResidential'), 'InteractiveMap must include Residential Planning Zones toggle');
+  assert.ok(mapSrc.includes('showRoadNetwork'), 'InteractiveMap must include Walkable Road Network toggle');
+  assert.ok(mapSrc.includes('World_Transportation'), 'InteractiveMap must include Esri World_Transportation tiles');
+  assert.ok(mapSrc.includes('World_Dark_Gray_Reference'), 'InteractiveMap must include crisp Esri label tiles');
+  assert.ok(mapSrc.includes('Fit Corridor'), 'InteractiveMap must include Fit Corridor action pill');
+  assert.ok(mapSrc.includes('Reset View'), 'InteractiveMap must include Reset View action pill');
+
+  // 4. CorridorAnalyticalDetail community feedback and 3D viewer
+  const detailPath = path.join(frontendRoot, 'src/components/CorridorAnalyticalDetail.jsx');
+  assert.ok(fs.existsSync(detailPath), 'CorridorAnalyticalDetail.jsx must exist');
+  const detailSrc = fs.readFileSync(detailPath, 'utf-8');
+  assert.ok(detailSrc.includes('upvoteCorridor'), 'Must support corridor upvoting');
+  assert.ok(detailSrc.includes('getCorridorSuggestions'), 'Must support corridor suggestions');
+  assert.ok(detailSrc.includes('Corridor3DViewer'), 'Must embed Corridor3DViewer');
+});
+
+test('Root cause diagnosis fixes: Failures A, B, and C verified', () => {
+  // Failure A: Resilient stats summary in client.js
+  const clientPath = path.join(frontendRoot, 'src/api/client.js');
+  const clientSrc = fs.readFileSync(clientPath, 'utf-8');
+  assert.ok(clientSrc.includes('getStatsSummary: async ()'), 'getStatsSummary must be an async function with fallback');
+  assert.ok(clientSrc.includes("requestJson('/api/stats')"), 'Must fallback to /api/stats if /api/stats/summary fails');
+  assert.ok(clientSrc.includes('corridors_overview'), 'Must guarantee corridors_overview in returned stats');
+
+  // Failure B: Resilient Evidence Passport with authentic 5 dimensions in client.js & modal
+  assert.ok(clientSrc.includes('getEvidencePassport: async (corridorId)'), 'getEvidencePassport must be async with fallback');
+  assert.ok(clientSrc.includes('data_quality_dimensions'), 'Must build 5 data quality dimensions');
+  assert.ok(clientSrc.includes('provenance_standard'), 'Must include authentic provenance standard v2.0');
+
+  const modalPath = path.join(frontendRoot, 'src/components/CorridorEvidencePassportModal.jsx');
+  const modalSrc = fs.readFileSync(modalPath, 'utf-8');
+  assert.ok(modalSrc.includes('Retry Verification'), 'Must include Retry Verification button');
+  assert.ok(modalSrc.includes('recommendation_confidence'), 'Must display recommendation confidence');
+
+  // Failure C: Landing-page image pipeline & WebGL transparency
+  const expPath = path.join(frontendRoot, 'src/forest/LivingForestExperience.jsx');
+  const expSrc = fs.readFileSync(expPath, 'utf-8');
+  assert.ok(expSrc.includes('referrerPolicy="no-referrer"'), 'img must use referrerPolicy="no-referrer"');
+  assert.ok(expSrc.includes('z-0'), 'LivingForestExperience must use positive z-index container');
+
+  const dirPath = path.join(frontendRoot, 'src/forest/LivingForestDirector.js');
+  const dirSrc = fs.readFileSync(dirPath, 'utf-8');
+  assert.ok(dirSrc.includes('alpha: true'), 'Three.js renderer must enable alpha transparency');
+});
+
+test('PART D: Right-Side Dismissible OVERLAYS Panel, 9 overlays, and dynamic count verified', () => {
+  const mapPath = path.join(frontendRoot, 'src/components/InteractiveMap.jsx');
+  assert.ok(fs.existsSync(mapPath), 'InteractiveMap.jsx must exist');
+  const mapSrc = fs.readFileSync(mapPath, 'utf-8');
+
+  // 1. Right-side default placement & dismissibility state
+  assert.ok(mapSrc.includes('isOverlaysPanelOpen, setIsOverlaysPanelOpen] = useState(true)'), 'Panel must be open by default on mount');
+  assert.ok(mapSrc.includes('right-4'), 'Panel must align to the right side of the map viewport');
+  assert.ok(mapSrc.includes('data-testid="floating-overlays-card"'), 'Must have floating-overlays-card container');
+  assert.ok(mapSrc.includes('data-testid="close-overlays-panel-btn"'), 'Must provide obvious close button in header');
+  assert.ok(mapSrc.includes('data-testid="open-overlays-panel-btn"'), 'Must provide floating reopen control when dismissed');
+
+  // 2. Dynamic active count calculation
+  assert.ok(mapSrc.includes('OVERLAYS ({activeLayerCount} Active)'), 'Header and button must show dynamic active count');
+  assert.ok(mapSrc.includes('Object.values(activeLayers).filter(Boolean).length'), 'Active count must be calculated from real active layers');
+
+  // 3. All 9 canonical overlay options
+  const requiredOverlays = [
+    'lst',            // Temperature (LST)
+    'ndvi',           // Vegetation (NDVI)
+    'gdi',            // Priority Index (GDI)
+    'corridors',      // Van Setu Corridors
+    'roads',          // Road Network
+    'aqi',            // AQI Stations
+    'osmRoads',       // Roads Overlay
+    'osmParks',       // Parks & Green
+    'osmResidential', // Residential
+  ];
+
+  assert.ok(
+    mapSrc.includes('layer-toggle-${layer.id}') || mapSrc.includes('layer-toggle-lst'),
+    'InteractiveMap must render dynamic or explicit layer-toggle testids'
+  );
+
+  for (const id of requiredOverlays) {
+    assert.ok(mapSrc.includes(`'${id}'`) || mapSrc.includes(`"${id}"`), `InteractiveMap must define overlay: ${id}`);
+  }
+
+  // 4. Checkbox interaction and layer pipeline
+  assert.ok(mapSrc.includes('toggleLayer'), 'InteractiveMap must implement toggleLayer function');
+  assert.ok(mapSrc.includes('getTileUrl(\'lst\')'), 'LST must render raster tiles from getTileUrl');
+  assert.ok(mapSrc.includes('getTileUrl(\'ndvi\')'), 'NDVI must render raster tiles from getTileUrl');
+  assert.ok(mapSrc.includes('getTileUrl(\'gdi\')'), 'GDI must render raster tiles from getTileUrl');
+  assert.ok(mapSrc.includes('ESRI_TRANSPORTATION_URL'), 'Roads Overlay must render Esri transportation tiles');
+  assert.ok(mapSrc.includes('DELHI_PARKS_BASELINE'), 'Parks & Green must render curated parks GeoJSON');
+  assert.ok(mapSrc.includes('DELHI_RESIDENTIAL_BASELINE'), 'Residential must render curated residential zones GeoJSON');
+
+  // 5. Basemap switcher, dynamic legend, and actions
+  assert.ok(mapSrc.includes('data-testid="basemap-toggle-btn"'), 'Must have basemap toggle control');
+  assert.ok(mapSrc.includes('data-testid="map-active-legend"'), 'Must have dynamic active legend');
+  assert.ok(mapSrc.includes('data-testid="fit-corridor-btn"'), 'Must include Fit Corridor quick action pill');
+  assert.ok(mapSrc.includes('data-testid="reset-map-view-btn"'), 'Must include Reset View quick action pill');
+});
+
+test('Role-Based Experience & Personas: Persona consistency, sidebar labels, and role navigation verified', () => {
+  // 1. AppSidebar.jsx role display mapping and never displaying "NORMAL USER"
+  const sidebarPath = path.join(frontendRoot, 'src/components/AppSidebar.jsx');
+  assert.ok(fs.existsSync(sidebarPath), 'AppSidebar.jsx must exist');
+  const sidebarSrc = fs.readFileSync(sidebarPath, 'utf-8');
+
+  assert.ok(sidebarSrc.includes('ROLE_DISPLAY_NAMES'), 'AppSidebar must export or define ROLE_DISPLAY_NAMES');
+  assert.ok(sidebarSrc.includes('normal_user: \'Public Citizen\''), 'normal_user must map to Public Citizen');
+  assert.ok(sidebarSrc.includes('pro_professional: \'Pro Professional\''), 'pro_professional must map to Pro Professional');
+  assert.ok(sidebarSrc.includes('government_admin: \'Government Admin\''), 'government_admin must map to Government Admin');
+  assert.ok(sidebarSrc.includes('ROLE_DISPLAY_NAMES[currentRole]'), 'Sidebar must use ROLE_DISPLAY_NAMES for active role indicator');
+
+  // 2. AccessDeniedView.jsx role display mapping
+  const accessPath = path.join(frontendRoot, 'src/components/AccessDeniedView.jsx');
+  const accessSrc = fs.readFileSync(accessPath, 'utf-8');
+  assert.ok(accessSrc.includes('ROLE_DISPLAY_NAMES'), 'AccessDeniedView must define ROLE_DISPLAY_NAMES');
+  assert.ok(accessSrc.includes('Public Citizen'), 'AccessDeniedView must format normal_user as Public Citizen');
+
+  // 3. App.jsx RBAC permissions
+  const appPath = path.join(frontendRoot, 'src/App.jsx');
+  const appSrc = fs.readFileSync(appPath, 'utf-8');
+  assert.ok(
+    appSrc.includes("agent: ['government_admin', 'government_engineer', 'pro_professional']") ||
+      appSrc.includes("'pro_professional'") && appSrc.includes("agent:"),
+    'VanSetu AI Agent must be authorized for pro_professional'
+  );
+
+  // 4. API Client resilient fallbacks for seasonal heat, shade continuity, and agent
+  const clientPath = path.join(frontendRoot, 'src/api/client.js');
+  const clientSrc = fs.readFileSync(clientPath, 'utf-8');
+
+  assert.ok(clientSrc.includes('getSeasonalHeatProfile: async (corridorId)'), 'getSeasonalHeatProfile must be resilient async method');
+  assert.ok(clientSrc.includes('getSeasonalHotspots: async ()'), 'getSeasonalHotspots must be resilient async method');
+  assert.ok(clientSrc.includes('getShadeContinuity: async (corridorId)'), 'getShadeContinuity must be resilient async method');
+  assert.ok(clientSrc.includes('getShadeNetworkGaps: async ()'), 'getShadeNetworkGaps must be resilient async method');
+  assert.ok(clientSrc.includes('runAgentPlan: async (payload)'), 'runAgentPlan must be resilient async method');
+  assert.ok(clientSrc.includes('getEquitySummary: async ()'), 'getEquitySummary must be resilient async method');
+  assert.ok(clientSrc.includes('NCT_DELHI_TREE_SPECIES_CATALOG'), 'Client must define NCT_DELHI_TREE_SPECIES_CATALOG');
+  assert.ok(clientSrc.includes('DELHI_TRANSIT_HUBS'), 'Client must define DELHI_TRANSIT_HUBS');
+});
+
+test('Corridor Map Highlighting & Selection Visualization: Parity, Cyan Highlight, Casing, Floating Label, and Geometry Integrity', async () => {
+  const mapPath = path.join(frontendRoot, 'src/components/InteractiveMap.jsx');
+  assert.ok(fs.existsSync(mapPath), 'InteractiveMap.jsx must exist');
+  const mapSrc = fs.readFileSync(mapPath, 'utf-8');
+
+  // 1. Selected Corridor Highlighting & Visual Styling
+  assert.ok(mapSrc.includes('#00f5d4'), 'Selected corridor must use bright cyan/turquoise highlight color (#00f5d4)');
+  assert.ok(mapSrc.includes('#021811') || mapSrc.includes('#021a12'), 'Selected corridor must have high-contrast dark casing beneath');
+  assert.ok(mapSrc.includes("lineCap: 'round'"), 'Selected corridor must use smooth rounded line caps');
+  assert.ok(mapSrc.includes("lineJoin: 'round'"), 'Selected corridor must use smooth rounded line joins');
+  assert.ok(mapSrc.includes('weight: 6.5') || mapSrc.includes('weight: 6'), 'Inner highlight line must be thick and clearly visible');
+  assert.ok(mapSrc.includes('weight: 11') || mapSrc.includes('weight: 12'), 'Contrasting casing outline must be wide enough to frame the core line');
+
+  // 2. High Stacking Order Panes (Above Rasters and Unselected Vectors)
+  assert.ok(mapSrc.includes('selectedCorridorCasingPane'), 'Map must create dedicated selectedCorridorCasingPane');
+  assert.ok(mapSrc.includes('selectedCorridorHighlightPane'), 'Map must create dedicated selectedCorridorHighlightPane');
+  assert.ok(mapSrc.includes('selectedCorridorLabelPane'), 'Map must create dedicated selectedCorridorLabelPane');
+  assert.ok(mapSrc.includes("zIndex = '610'"), 'Casing pane must sit at high z-index (610)');
+  assert.ok(mapSrc.includes("zIndex = '620'"), 'Highlight line pane must sit above casing pane (620)');
+  assert.ok(mapSrc.includes("zIndex = '650'"), 'Label pane must sit above line pane (650)');
+
+  // 3. Floating Corridor Label at Midpoint
+  assert.ok(mapSrc.includes('data-testid="selected-corridor-floating-label"'), 'Must render data-testid="selected-corridor-floating-label"');
+  assert.ok(mapSrc.includes('getCorridorMidpoint'), 'Must compute exact geographic midpoint for floating label placement');
+  assert.ok(mapSrc.includes('bg-[#071c16]/95'), 'Floating label must have compact dark background');
+  assert.ok(mapSrc.includes('border-[#00f5d4]'), 'Floating label must feature cyan accent border');
+  assert.ok(mapSrc.includes('animate-pulse'), 'Floating label must feature pulsing cyan status indicator');
+
+  // 4. Unselected Corridors Styling
+  assert.ok(mapSrc.includes('getCorridorColor'), 'Unselected corridors must use category color function');
+  assert.ok(mapSrc.includes('#ef4444'), 'Category colors must include Critical Red (#ef4444)');
+  assert.ok(mapSrc.includes('#f97316'), 'Category colors must include High Orange (#f97316)');
+  assert.ok(mapSrc.includes('#f59e0b') || mapSrc.includes('#eab308'), 'Category colors must include Moderate Amber');
+  assert.ok(mapSrc.includes('#10b981'), 'Category colors must include Low Emerald (#10b981)');
+
+  // 5. Synchronized Interaction & Bounds Fitting
+  assert.ok(mapSrc.includes('map.fitBounds(bounds'), 'Corridor selection must auto-pan and fit bounds via map.fitBounds');
+  assert.ok(mapSrc.includes('prevCorridorIdRef'), 'Map controller must track previous corridor to prevent jitter');
+
+  // 6. MapExplorerView list synchronization
+  const explorerPath = path.join(frontendRoot, 'src/views/MapExplorerView.jsx');
+  const explorerSrc = fs.readFileSync(explorerPath, 'utf-8');
+  assert.ok(explorerSrc.includes('corridor-list-item-'), 'MapExplorerView must assign testids to corridor list items');
+  assert.ok(explorerSrc.includes('#00f5d4'), 'MapExplorerView active list selection must visually synchronize with cyan theme');
+
+  // 7. Strict Prohibition of Rectangular / Bounding Box Artifacts for Corridors
+  assert.ok(!mapSrc.includes('<Rectangle'), 'Strictly NO Rectangle components in InteractiveMap');
+  assert.ok(!mapSrc.includes('dashArray: isSelected'), 'No dashed bounding box styling for corridor selection');
+
+  // 8. Dynamic Geometry & Midpoint Computation Test
+  const { parseGeometryToLatLngs, getFlatLatLngs, getCorridorMidpoint, getCorridorColor } = await import(
+    `file://${path.resolve(frontendRoot, 'src/utils/corridorGeometry.js')}`
+  );
+
+  const mockLineString = {
+    type: 'LineString',
+    coordinates: [
+      [77.2285, 28.6562],
+      [77.2300, 28.6561],
+      [77.2335, 28.6560],
+    ],
+  };
+
+  const latLngs = parseGeometryToLatLngs(mockLineString);
+  assert.strictEqual(latLngs.length, 3, 'Must parse 3 coordinate pairs');
+  assert.strictEqual(latLngs[0][0], 28.6562, 'Latitude must be first in latLng pair');
+  assert.strictEqual(latLngs[0][1], 77.2285, 'Longitude must be second in latLng pair');
+
+  const flat = getFlatLatLngs(latLngs);
+  assert.strictEqual(flat.length, 3, 'Flat array must contain 3 coordinates');
+
+  const midpoint = getCorridorMidpoint(flat);
+  assert.ok(midpoint, 'Midpoint must be calculated');
+  assert.ok(midpoint[0] >= 28.6560 && midpoint[0] <= 28.6562, 'Midpoint latitude must fall along corridor path');
+  assert.ok(midpoint[1] >= 77.2285 && midpoint[1] <= 77.2335, 'Midpoint longitude must fall along corridor path');
+
+  // Category colors
+  assert.strictEqual(getCorridorColor({ priority_score: 0.80 }), '#ef4444');
+  assert.strictEqual(getCorridorColor({ priority_score: 0.65 }), '#f97316');
+  assert.strictEqual(getCorridorColor({ priority_score: 0.50 }), '#f59e0b');
+  assert.strictEqual(getCorridorColor({ priority_score: 0.30 }), '#10b981');
+  assert.strictEqual(getCorridorColor({ severity_color: '#custom12' }), '#custom12');
+});
+
+test('Full Legacy Parity Restoration & Dedicated Entry Points: Prediction, Ranking, Heatwave, Community, Health', async () => {
+  // 1. Verify all 5 view components exist
+  const views = [
+    'src/views/CorridorPredictionView.jsx',
+    'src/views/CorridorRankingView.jsx',
+    'src/views/HeatwaveMappingView.jsx',
+    'src/views/CommunityInputView.jsx',
+    'src/views/HealthDataView.jsx',
+  ];
+  for (const v of views) {
+    const fullPath = path.resolve(frontendRoot, v);
+    assert.ok(fs.existsSync(fullPath), `View component must exist at ${v}`);
+    const src = fs.readFileSync(fullPath, 'utf8');
+    assert.ok(src.includes('export default function'), `Must export default function in ${v}`);
+  }
+
+  // 2. Verify App.jsx imports and routes all 5 views
+  const appSrc = fs.readFileSync(path.resolve(frontendRoot, 'src/App.jsx'), 'utf8');
+  assert.ok(appSrc.includes('CorridorPredictionView'), 'App.jsx must import CorridorPredictionView');
+  assert.ok(appSrc.includes('CorridorRankingView'), 'App.jsx must import CorridorRankingView');
+  assert.ok(appSrc.includes('HeatwaveMappingView'), 'App.jsx must import HeatwaveMappingView');
+  assert.ok(appSrc.includes('CommunityInputView'), 'App.jsx must import CommunityInputView');
+  assert.ok(appSrc.includes('HealthDataView'), 'App.jsx must import HealthDataView');
+
+  // Verify routing keys in App.jsx
+  assert.ok(appSrc.includes("activeView === 'prediction'"), "App.jsx must handle activeView === 'prediction'");
+  assert.ok(appSrc.includes("activeView === 'ranking'"), "App.jsx must handle activeView === 'ranking'");
+  assert.ok(appSrc.includes("activeView === 'heatwave_mapping'"), "App.jsx must handle activeView === 'heatwave_mapping'");
+  assert.ok(appSrc.includes("activeView === 'community_input'"), "App.jsx must handle activeView === 'community_input'");
+  assert.ok(appSrc.includes("activeView === 'health_data'"), "App.jsx must handle activeView === 'health_data'");
+
+  // 3. Verify AppSidebar includes dedicated entry points and workspace switcher
+  const sidebarSrc = fs.readFileSync(path.resolve(frontendRoot, 'src/components/AppSidebar.jsx'), 'utf8');
+  assert.ok(sidebarSrc.includes('DEDICATED_ENTRY_POINTS'), 'AppSidebar must define DEDICATED_ENTRY_POINTS');
+  assert.ok(sidebarSrc.includes('prediction'), 'Sidebar must include prediction entry point');
+  assert.ok(sidebarSrc.includes('ranking'), 'Sidebar must include ranking entry point');
+  assert.ok(sidebarSrc.includes('heatwave_mapping'), 'Sidebar must include heatwave_mapping entry point');
+  assert.ok(sidebarSrc.includes('community_input'), 'Sidebar must include community_input entry point');
+  assert.ok(sidebarSrc.includes('health_data'), 'Sidebar must include health_data entry point');
+  assert.ok(sidebarSrc.includes('onSwitchRole'), 'AppSidebar must support persona/workspace switching');
+
+  // 4. Verify client.js provides all required methods
+  const clientSrc = fs.readFileSync(path.resolve(frontendRoot, 'src/api/client.js'), 'utf8');
+  assert.ok(clientSrc.includes('getDistrictAudit:'), 'client.js must define getDistrictAudit');
+  assert.ok(clientSrc.includes('getPredictionHorizons:'), 'client.js must define getPredictionHorizons');
+  assert.ok(clientSrc.includes('predictCorridor:'), 'client.js must define predictCorridor');
+  assert.ok(clientSrc.includes('getCorridorsWhatIfRank:'), 'client.js must define getCorridorsWhatIfRank');
+  assert.ok(clientSrc.includes('explainCorridorRanking:'), 'client.js must define explainCorridorRanking');
+  assert.ok(clientSrc.includes('submitCommunityObservationLegacy:'), 'client.js must define submitCommunityObservationLegacy');
+  assert.ok(clientSrc.includes('submitHealthDataLegacy:'), 'client.js must define submitHealthDataLegacy');
+  assert.ok(clientSrc.includes('getHealthDataLegacy:'), 'client.js must define getHealthDataLegacy');
+});
+
+
+

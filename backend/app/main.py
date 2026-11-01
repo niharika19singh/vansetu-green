@@ -35,6 +35,23 @@ from app.routers import (
     tiger_data,
     social_equity,
     procurement,
+    evidence_passport,
+    segment_suitability,
+    pareto_optimizer,
+    shade_continuity,
+    seasonal_heat,
+    impact_monitoring,
+    spatial_memory,
+    project_readiness,
+    ml_interventions,
+    auth,
+    tenders,
+    corridor_cost,
+    health,
+    prediction,
+    community,
+    provenance,
+    government_reports,
 )
 
 logging.basicConfig(
@@ -70,10 +87,26 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+ALLOWED_ORIGINS = [
+    "http://localhost:5173",
+    "http://localhost:3000",
+    "http://localhost:8080",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:8080",
+    "http://localhost:7860",
+    "http://127.0.0.1:7860",
+    "https://vansetu-green-staging.vercel.app",
+    "https://vansetu.vercel.app",
+    "https://vansetu-slk1.vercel.app",
+    "https://van-setu-final.vercel.app",
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_origin_regex=r"https://.*\.vercel\.app",
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -91,6 +124,23 @@ app.include_router(gemini_agent.router)
 app.include_router(tiger_data.router)
 app.include_router(social_equity.router)
 app.include_router(procurement.router)
+app.include_router(evidence_passport.router)
+app.include_router(segment_suitability.router)
+app.include_router(pareto_optimizer.router)
+app.include_router(shade_continuity.router)
+app.include_router(seasonal_heat.router)
+app.include_router(impact_monitoring.router)
+app.include_router(spatial_memory.router)
+app.include_router(project_readiness.router)
+app.include_router(ml_interventions.router)
+app.include_router(auth.router)
+app.include_router(tenders.router)
+app.include_router(corridor_cost.router)
+app.include_router(health.router)
+app.include_router(prediction.router)
+app.include_router(community.router)
+app.include_router(provenance.router)
+app.include_router(government_reports.router)
 
 
 @app.get("/", tags=["System"])
@@ -131,6 +181,19 @@ def root():
             "social_equity_summary": "/api/equity/summary",
             "procurement_catalog": "/api/procurement/catalog",
             "procurement_generate_rfp": "/api/procurement/generate-rfp",
+            "evidence_passport": "/api/evidence/passport/C-14",
+            "evidence_passports_summary": "/api/evidence/passports",
+            "segment_suitability": "/api/suitability/corridor/C-14/segments",
+            "tree_species_catalog": "/api/suitability/species-catalog",
+            "pareto_optimizer": "/api/optimizer/pareto",
+            "pareto_presets": "/api/optimizer/pareto/presets",
+            "shade_continuity": "/api/shade-continuity/C-14",
+            "shade_network_gaps": "/api/shade-continuity/network-gaps",
+            "seasonal_heat_profile": "/api/seasonal/corridor/C-14",
+            "seasonal_hotspots": "/api/seasonal/hotspots",
+            "impact_registry": "/api/impact/registry",
+            "spatial_memory_pins": "/api/meko/spatial/pins",
+            "project_readiness_projects": "/api/readiness/projects",
         },
     }
 
