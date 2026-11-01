@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import L from 'leaflet';
 import {
   MapContainer,
   TileLayer,
@@ -88,7 +89,7 @@ const RASTER_LAYERS = [
   },
 ];
 
-function MapViewportController({ selectedCorridor }) {
+function MapViewportController({ selectedCorridor, isDrawerExpanded, isFilterOpen }) {
   const map = useMap();
 
   useEffect(() => {
@@ -99,11 +100,39 @@ function MapViewportController({ selectedCorridor }) {
   }, [map]);
 
   useEffect(() => {
-    if (selectedCorridor && selectedCorridor.centroid) {
+    if (!selectedCorridor) return;
+
+    const coords = selectedCorridor.geometry?.coordinates;
+    if (coords && coords.length > 0) {
+      try {
+        const latLngs = coords.map(([lng, lat]) => [lat, lng]);
+        const bounds = L.latLngBounds(latLngs);
+        if (bounds.isValid()) {
+          const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+          const rightPad = isMobile ? 16 : (isDrawerExpanded ? 420 : 360);
+          const leftPad = isMobile ? 16 : (isFilterOpen ? 330 : 40);
+          const bottomPad = isMobile ? (isDrawerExpanded ? 380 : 160) : 40;
+          const topPad = 60;
+
+          map.fitBounds(bounds, {
+            paddingTopLeft: [leftPad, topPad],
+            paddingBottomRight: [rightPad, bottomPad],
+            maxZoom: 14,
+            animate: true,
+            duration: 0.8,
+          });
+          return;
+        }
+      } catch (e) {
+        console.warn('Bounds fitting fallback to centroid:', e);
+      }
+    }
+
+    if (selectedCorridor.centroid) {
       const [lat, lng] = selectedCorridor.centroid;
       map.flyTo([lat, lng], Math.max(map.getZoom(), 13), { duration: 0.8 });
     }
-  }, [selectedCorridor, map]);
+  }, [selectedCorridor, isDrawerExpanded, isFilterOpen, map]);
 
   return null;
 }
@@ -132,6 +161,8 @@ export default function InteractiveMap({
   onSelectDistrict,
   aqiStations,
   rasterZones,
+  isDrawerExpanded = false,
+  isFilterOpen = false,
 }) {
   const [basemap, setBasemap] = useState('dark');
   const [activeRaster, setActiveRaster] = useState('gdi');
@@ -154,7 +185,7 @@ export default function InteractiveMap({
         maxZoom={17}
         className="w-full h-full z-0"
       >
-        <MapViewportController selectedCorridor={selectedCorridor} />
+        <MapViewportController selectedCorridor={selectedCorridor} isDrawerExpanded={isDrawerExpanded} isFilterOpen={isFilterOpen} />
         <PointClickInspector
           enabled={inspectMode}
           onPointInspected={(data) => setInspectedPoint(data)}
@@ -237,26 +268,26 @@ export default function InteractiveMap({
             const coords = corr.geometry?.coordinates || [];
             if (!coords.length) return null;
             const latLngs = coords.map(([lng, lat]) => [lat, lng]);
-            const isSelected = selectedCorridor?.id === corr.id;
 
             return (
               <React.Fragment key={corr.id}>
-                {isSelected && (
-                  <Polyline
-                    positions={latLngs}
-                    pathOptions={{
-                      color: '#34d399',
-                      weight: 11,
-                      opacity: 0.45,
-                    }}
-                  />
-                )}
+                {/* Non-interactive subtle dark casing beneath corridor lines (+3px stroke width) */}
                 <Polyline
                   positions={latLngs}
                   pathOptions={{
-                    color: isSelected ? '#10b981' : corr.severity_color || '#f97316',
-                    weight: isSelected ? 6 : 4,
-                    opacity: isSelected ? 1.0 : 0.88,
+                    color: '#07120e',
+                    weight: 6.5,
+                    opacity: 0.85,
+                  }}
+                  interactive={false}
+                />
+                {/* Core corridor line preserving authentic severity color */}
+                <Polyline
+                  positions={latLngs}
+                  pathOptions={{
+                    color: corr.severity_color || '#f97316',
+                    weight: 3.5,
+                    opacity: 0.95,
                   }}
                   eventHandlers={{
                     click: (e) => {
@@ -283,6 +314,42 @@ export default function InteractiveMap({
               </React.Fragment>
             );
           })}
+
+        {/* Dedicated Selected Corridor Highlight Layer (Rendered cleanly on top) */}
+        {selectedCorridor && selectedCorridor.geometry?.coordinates?.length > 0 && (
+          <React.Fragment key={`selected-halo-${selectedCorridor.id}`}>
+            {/* Distinguishable cyan selection halo */}
+            <Polyline
+              positions={selectedCorridor.geometry.coordinates.map(([lng, lat]) => [lat, lng])}
+              pathOptions={{
+                color: '#38bdf8',
+                weight: 13,
+                opacity: 0.55,
+              }}
+              interactive={false}
+            />
+            {/* Inner crisp dark casing */}
+            <Polyline
+              positions={selectedCorridor.geometry.coordinates.map(([lng, lat]) => [lat, lng])}
+              pathOptions={{
+                color: '#020617',
+                weight: 7.5,
+                opacity: 0.95,
+              }}
+              interactive={false}
+            />
+            {/* Preserved authentic severity stroke */}
+            <Polyline
+              positions={selectedCorridor.geometry.coordinates.map(([lng, lat]) => [lat, lng])}
+              pathOptions={{
+                color: selectedCorridor.severity_color || '#f97316',
+                weight: 4.5,
+                opacity: 1.0,
+              }}
+              interactive={false}
+            />
+          </React.Fragment>
+        )}
 
         {/* CPCB Air Quality Monitoring Stations */}
         {showAqiStations &&

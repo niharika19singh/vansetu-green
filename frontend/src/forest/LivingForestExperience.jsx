@@ -37,6 +37,7 @@ export default function LivingForestExperience({
         src="/textures/forest_reference.jpg"
         alt="Living Forest and Pond"
         className="absolute inset-0 w-full h-full object-cover -z-30 opacity-90 transition-opacity duration-1000"
+        style={{ objectPosition: '40% 55%' }}
       />
 
       {/* WebGL 3D Water & Forest Shader Canvas */}

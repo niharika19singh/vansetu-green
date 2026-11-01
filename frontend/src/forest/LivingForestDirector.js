@@ -1,7 +1,7 @@
 /**
  * LivingForestDirector.js — Three.js Scene Engine for The Living Forest.
- * Manages the photorealistic forest backdrop, continuous fluid water surface,
- * falling dew droplet physics, and subtle sunlight particle drift.
+ * Manages the photorealistic forest backdrop, aspect-correct cover UV mapping,
+ * continuous fluid water surface, perspective-correct ripples, and performance optimizations.
  */
 import * as THREE from 'three';
 import { ForestWaterVertexShader, ForestWaterFragmentShader } from './shaders/forestWaterShader';
@@ -15,6 +15,13 @@ export class LivingForestDirector {
     this.clock = new THREE.Clock();
     this.mouse = new THREE.Vector2(0.5, 0.5);
     this.targetMouse = new THREE.Vector2(0.5, 0.5);
+
+    this.isPaused = false;
+    this.isVisible = true;
+    this.prefersReducedMotion =
+      typeof window !== 'undefined' &&
+      window.matchMedia &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
     // Active ripple pool (max 8)
     this.ripples = [];
@@ -36,26 +43,60 @@ export class LivingForestDirector {
     this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 10);
     this.camera.position.set(0, 0, 1);
 
-    // Renderer
+    // Renderer Performance Optimizations (Improvement 4):
+    // 1. antialias: false (fullscreen 2D quad needs zero polygon edge multisampling)
+    // 2. Cap DPR at 1.5 for decorative hero canvas to slash fill-rate on Retina displays
+    // 3. Removed dead ACES tone mapping overhead for custom unlit shader
     this.renderer = new THREE.WebGLRenderer({
       canvas: this.canvas,
-      antialias: true,
+      antialias: false,
       alpha: false,
       powerPreference: 'high-performance',
     });
     this.renderer.setSize(width, height);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.02;
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
 
     // Load Forest Reference Texture
     this.textureLoader = new THREE.TextureLoader();
     this.initForestScene();
     this.initParticles();
     this.initEvents();
+    this.initVisibilityObserver();
 
     this.animate = this.animate.bind(this);
-    this.animationFrameId = requestAnimationFrame(this.animate);
+
+    // If user prefers reduced motion, render a single still frame and halt loop
+    if (this.prefersReducedMotion) {
+      this.renderer.render(this.scene, this.camera);
+    } else {
+      this.animationFrameId = requestAnimationFrame(this.animate);
+    }
+  }
+
+  getFocalPoint() {
+    const isMobile = (window.innerWidth || 1920) <= 768;
+    // Focal point (x: 0.38 centers leaves & droplets on mobile; 0.44 on desktop; y: 0.45 preserves waterline)
+    return new THREE.Vector2(isMobile ? 0.38 : 0.44, 0.45);
+  }
+
+  getCoverCoord(screenX, screenY) {
+    const w = window.innerWidth || 1920;
+    const h = window.innerHeight || 1080;
+    const screenAspect = w / Math.max(h, 1);
+    const texAspect = 1024 / 573;
+    const focal = this.getFocalPoint();
+
+    let scaleX = 1.0;
+    let scaleY = 1.0;
+    if (screenAspect > texAspect) {
+      scaleY = texAspect / screenAspect;
+    } else {
+      scaleX = screenAspect / texAspect;
+    }
+
+    const coverX = (screenX - focal.x) * scaleX + focal.x;
+    const coverY = (screenY - focal.y) * scaleY + focal.y;
+    return { x: coverX, y: coverY };
   }
 
   initForestScene() {
@@ -67,6 +108,9 @@ export class LivingForestDirector {
         tex.magFilter = THREE.LinearFilter;
         tex.wrapS = THREE.ClampToEdgeWrapping;
         tex.wrapT = THREE.ClampToEdgeWrapping;
+        if (this.prefersReducedMotion) {
+          this.renderer.render(this.scene, this.camera);
+        }
       }
     );
 
@@ -80,6 +124,8 @@ export class LivingForestDirector {
         uForestTex: { value: forestTex },
         uTime: { value: 0 },
         uResolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) },
+        uTexResolution: { value: new THREE.Vector2(1024, 573) },
+        uFocalPoint: { value: this.getFocalPoint() },
         uMouse: { value: new THREE.Vector2(0.5, 0.5) },
         uRipples: { value: this.ripples },
         uWaterLevel: { value: 0.415 },
@@ -93,13 +139,12 @@ export class LivingForestDirector {
   }
 
   initParticles() {
-    // Subtle morning sunlight motes drifting through light rays
-    const particleCount = 35;
+    // Morning sunlight motes drifting through light rays
+    const particleCount = 28;
     const geometry = new THREE.BufferGeometry();
     const positions = new Float32Array(particleCount * 3);
 
     for (let i = 0; i < particleCount; i++) {
-      // Clustered in middle-upper right where morning sunlight streams through
       positions[i * 3] = (Math.random() - 0.2) * 1.5;
       positions[i * 3 + 1] = (Math.random() - 0.15) * 1.3;
       positions[i * 3 + 2] = 0.5;
@@ -109,9 +154,9 @@ export class LivingForestDirector {
 
     const material = new THREE.PointsMaterial({
       color: 0xfef08a,
-      size: 0.012,
+      size: 0.011,
       transparent: true,
-      opacity: 0.28,
+      opacity: 0.24,
       blending: THREE.AdditiveBlending,
     });
 
@@ -120,10 +165,10 @@ export class LivingForestDirector {
   }
 
   spawnDroplet() {
-    // Spawn droplet from upper foliage (UV coordinates: x ~ 0.30-0.85, y ~ 0.65-0.88)
-    const uvX = 0.30 + Math.random() * 0.55;
-    const uvY = 0.68 + Math.random() * 0.20;
-    const targetWaterY = 0.32 + Math.random() * 0.10; // Land naturally in the pond
+    // Spawn droplet in photograph UV space
+    const uvX = 0.32 + Math.random() * 0.48;
+    const uvY = 0.65 + Math.random() * 0.22;
+    const targetWaterY = 0.32 + Math.random() * 0.09; // Confined strictly to reflective pond
 
     this.fallingDroplets.push({
       uvX,
@@ -143,6 +188,31 @@ export class LivingForestDirector {
     this.onRippleImpact({ x: uvX, y: uvY });
   }
 
+  initVisibilityObserver() {
+    // Performance Optimization: Pause rendering loop when canvas is outside viewport
+    if (typeof IntersectionObserver !== 'undefined' && this.canvas) {
+      this.observer = new IntersectionObserver(
+        ([entry]) => {
+          const wasVisible = this.isVisible;
+          this.isVisible = entry.isIntersecting;
+
+          if (this.isVisible && !wasVisible && !this.prefersReducedMotion) {
+            // Resume smoothly without time jump
+            this.clock.getDelta(); // flush accumulated time
+            if (!this.animationFrameId) {
+              this.animationFrameId = requestAnimationFrame(this.animate);
+            }
+          } else if (!this.isVisible && this.animationFrameId) {
+            cancelAnimationFrame(this.animationFrameId);
+            this.animationFrameId = null;
+          }
+        },
+        { threshold: 0.05 }
+      );
+      this.observer.observe(this.canvas);
+    }
+  }
+
   initEvents() {
     this.handlePointerMove = (e) => {
       this.targetMouse.x = e.clientX / window.innerWidth;
@@ -150,11 +220,14 @@ export class LivingForestDirector {
     };
 
     this.handleClick = (e) => {
-      // Interactive water ripple on click if clicked in pond area
-      const uvX = e.clientX / window.innerWidth;
-      const uvY = 1.0 - e.clientY / window.innerHeight;
-      if (uvY <= 0.44) {
-        this.triggerRipple(uvX, uvY, 1.1);
+      // Interactive water ripple on click
+      const screenX = e.clientX / window.innerWidth;
+      const screenY = 1.0 - e.clientY / window.innerHeight;
+      const { x, y } = this.getCoverCoord(screenX, screenY);
+
+      // Trigger ripple if click lands in water region
+      if (y <= 0.44) {
+        this.triggerRipple(x, y, 1.05);
       }
     };
 
@@ -163,20 +236,30 @@ export class LivingForestDirector {
       const w = window.innerWidth;
       const h = window.innerHeight;
       this.renderer.setSize(w, h);
+      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
       if (this.forestMaterial) {
         this.forestMaterial.uniforms.uResolution.value.set(w, h);
+        this.forestMaterial.uniforms.uFocalPoint.value.copy(this.getFocalPoint());
+      }
+      if (this.prefersReducedMotion) {
+        this.renderer.render(this.scene, this.camera);
       }
     };
 
-    window.addEventListener('pointermove', this.handlePointerMove);
+    window.addEventListener('pointermove', this.handlePointerMove, { passive: true });
     this.canvas.addEventListener('click', this.handleClick);
     window.addEventListener('resize', this.handleResize);
   }
 
   animate() {
+    if (!this.isVisible || this.prefersReducedMotion) {
+      this.animationFrameId = null;
+      return;
+    }
+
     this.animationFrameId = requestAnimationFrame(this.animate);
 
-    const delta = this.clock.getDelta();
+    const delta = Math.min(this.clock.getDelta(), 0.1); // clamp delta against hitching
     const elapsedTime = this.clock.getElapsedTime();
 
     // Smooth natural mouse parallax
@@ -191,7 +274,7 @@ export class LivingForestDirector {
     // Occasional falling dew droplets
     if (elapsedTime > this.nextDropTime) {
       this.spawnDroplet();
-      this.nextDropTime = elapsedTime + 4.0 + Math.random() * 4.5;
+      this.nextDropTime = elapsedTime + 4.5 + Math.random() * 4.0;
     }
 
     // Update falling droplets
@@ -199,13 +282,13 @@ export class LivingForestDirector {
       const d = this.fallingDroplets[i];
       if (!d.active) continue;
 
-      d.vy += 0.70 * delta; // Natural gentle gravity
+      d.vy += 0.65 * delta; // Natural gentle gravity
       d.uvY -= d.vy * delta;
 
       // Check for water surface impact
       if (d.uvY <= d.targetWaterY) {
         d.active = false;
-        this.triggerRipple(d.uvX, d.targetWaterY, 0.75);
+        this.triggerRipple(d.uvX, d.targetWaterY, 0.70);
         this.fallingDroplets.splice(i, 1);
       }
     }
@@ -214,8 +297,8 @@ export class LivingForestDirector {
     if (this.particles) {
       const pos = this.particles.geometry.attributes.position.array;
       for (let p = 0; p < pos.length; p += 3) {
-        pos[p] += Math.sin(elapsedTime * 0.3 + p) * 0.0002;
-        pos[p + 1] += Math.cos(elapsedTime * 0.25 + p) * 0.00015;
+        pos[p] += Math.sin(elapsedTime * 0.28 + p) * 0.00018;
+        pos[p + 1] += Math.cos(elapsedTime * 0.22 + p) * 0.00012;
       }
       this.particles.geometry.attributes.position.needsUpdate = true;
     }
@@ -224,7 +307,12 @@ export class LivingForestDirector {
   }
 
   destroy() {
-    cancelAnimationFrame(this.animationFrameId);
+    if (this.animationFrameId) {
+      cancelAnimationFrame(this.animationFrameId);
+    }
+    if (this.observer) {
+      this.observer.disconnect();
+    }
     window.removeEventListener('pointermove', this.handlePointerMove);
     this.canvas.removeEventListener('click', this.handleClick);
     window.removeEventListener('resize', this.handleResize);

@@ -110,7 +110,7 @@ export default function LandingPageView({
           ========================================================================= */}
       <section
         id="urban-challenge"
-        className="min-h-[85vh] flex flex-col justify-center px-6 sm:px-14 lg:px-24 py-24 bg-[#071C16]/85 backdrop-blur-2xl border-t border-white/10"
+        className="min-h-[85vh] flex flex-col justify-center px-6 sm:px-14 lg:px-24 py-24 bg-[#071C16]/92 backdrop-blur-md border-t border-white/10"
       >
         <div className="max-w-3xl space-y-4">
           <div className="text-xs font-mono font-bold uppercase tracking-wider text-emerald-300">

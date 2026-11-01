@@ -17,6 +17,8 @@ import {
   Search,
   ChevronRight,
   Maximize2,
+  Minimize2,
+  ChevronUp,
   ExternalLink,
   Thermometer,
   Trees,
@@ -45,6 +47,7 @@ export default function MapExplorerView({
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [drawerTab, setDrawerTab] = useState('summary'); // 'summary' | 'interventions'
+  const [isDrawerExpanded, setIsDrawerExpanded] = useState(false);
 
   const filteredCorridors = corridors.filter((c) => {
     const matchesSearch =
@@ -139,6 +142,8 @@ export default function MapExplorerView({
           onSelectDistrict={onSelectDistrict}
           aqiStations={aqiStations}
           rasterZones={rasterZones}
+          isDrawerExpanded={isDrawerExpanded}
+          isFilterOpen={isFilterOpen}
         />
 
         {/* Collapsible Left Filter Drawer */}
@@ -210,8 +215,57 @@ export default function MapExplorerView({
           </div>
         )}
 
-        {/* Contextual Right / Bottom Corridor Inspection Drawer */}
-        {selectedCorridor && (
+        {/* Contextual Right / Bottom Corridor: Peek Card & Full Drawer */}
+        {/* State A: Compact Discoverable Peek Card (Default on first load) */}
+        {selectedCorridor && !isDrawerExpanded && (
+          <div className="absolute bottom-4 right-4 w-96 max-w-[calc(100vw-2rem)] bg-[#071C16]/95 backdrop-blur-xl border border-white/20 rounded-2xl p-3.5 flex flex-col z-20 shadow-2xl transition-all">
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                    {selectedCorridor.code || `#${selectedCorridor.rank}`}
+                  </span>
+                  <span
+                    className="text-[10px] font-bold px-2 py-0.5 rounded"
+                    style={{
+                      backgroundColor: `${selectedCorridor.severity_color || '#f97316'}25`,
+                      color: selectedCorridor.severity_color || '#f97316',
+                    }}
+                  >
+                    {selectedCorridor.severity}
+                  </span>
+                </div>
+                <h3 className="font-editorial text-sm font-bold text-white mt-1 leading-tight truncate">
+                  {selectedCorridor.name}
+                </h3>
+                <div className="text-[10px] text-[#9CB9A3] mt-0.5 truncate">
+                  {selectedCorridor.district} • {selectedCorridor.length_km} km • Priority Score: {selectedCorridor.priority_score?.toFixed(3)}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  onClick={() => setIsDrawerExpanded(true)}
+                  className="px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1 transition shadow"
+                  title="Expand Full Analytics & Interventions Drawer"
+                >
+                  <span>Details</span>
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  onClick={() => onSelectCorridor(null)}
+                  className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/5"
+                  title="Deselect corridor"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* State B: Full Analytical & Intervention Inspection Drawer */}
+        {selectedCorridor && isDrawerExpanded && (
           <div className="absolute top-3 right-3 bottom-3 w-96 max-w-[calc(100vw-1.5rem)] bg-[#071C16]/95 backdrop-blur-xl border border-white/15 rounded-3xl p-4 flex flex-col z-20 shadow-2xl transition-all">
             {/* Header */}
             <div className="flex items-start justify-between pb-3 border-b border-white/10 mb-3">
@@ -238,13 +292,22 @@ export default function MapExplorerView({
                 </div>
               </div>
 
-              <button
-                onClick={() => onSelectCorridor(null)}
-                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/5"
-                title="Close inspection"
-              >
-                <X className="w-4 h-4" />
-              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setIsDrawerExpanded(false)}
+                  className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/5"
+                  title="Minimize to Peek Card"
+                >
+                  <Minimize2 className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => onSelectCorridor(null)}
+                  className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/5"
+                  title="Close inspection"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
             </div>
 
             {/* Tabs inside drawer */}
