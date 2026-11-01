@@ -3,10 +3,14 @@ name: VanSetu GreenTech CI Pipeline
 on:
   push:
     branches:
+      - main
+      - 'integration/**'
       - feature/delhi-intervention-ml-pipeline
       - feature/climate-investment-intelligence
   pull_request:
     branches:
+      - main
+      - 'integration/**'
       - feature/delhi-intervention-ml-pipeline
       - feature/climate-investment-intelligence
 
