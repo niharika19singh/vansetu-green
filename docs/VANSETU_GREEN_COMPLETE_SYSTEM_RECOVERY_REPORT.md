@@ -206,8 +206,17 @@ vite v5.4.21 building for production...
 ```
 - Clean production bundle with code-splitting across all 28 views.
 
-### 6.4 Production Staging Deployment
-- **Deployment URL:** `https://vansetu-green-staging.vercel.app/`
+### 6.4 GitHub Actions CI Workflow Status
+```bash
+All checks were successful
+0 cancelled, 0 failing, 4 successful, 0 skipped, and 0 pending checks
+
+✓ Backend Pytest & Scientific Validation (ubuntu-latest, python-3.13)
+✓ Frontend Test & Production Build (ubuntu-latest, node-20)
+```
+
+### 6.5 Production Staging Deployment
+- **Deployment URL:** `https://vansetu-green-staging.vercel.app/` (Active Alias: `https://vansetu-green-staging-hv0kxzrs2.vercel.app`)
 - **HTTP Status:** `HTTP/2 200 OK`
 - **Cache Header:** `public, max-age=0, must-revalidate`
 
@@ -217,8 +226,9 @@ vite v5.4.21 building for production...
 
 - **Source Branch:** `integration/complete-vansetu-green`
 - **Target Branch:** `main`
-- **PR URL:** `https://github.com/niharika19singh/vansetu-green/pull/new/integration/complete-vansetu-green`
-- **Commits Included:** 37 commits bringing all legacy features, RBAC workspaces, ML pipelines, and production numeric resilience onto `main`.
+- **Pull Request:** [PR #4: fix(system): complete platform recovery, numeric resilience, and legacy parity restoration](https://github.com/niharika19singh/vansetu-green/pull/4)
+- **Status:** Open & Mergeable (4/4 CI Checks Passed)
+- **Commits Included:** All legacy feature migrations, RBAC workspaces, ML pipelines, and production numeric resilience integrated onto `main`.
 
 ---
 
