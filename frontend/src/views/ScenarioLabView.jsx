@@ -18,6 +18,12 @@ import {
   Footprints,
   ShieldAlert,
 } from 'lucide-react';
+import {
+  safeToFixed,
+  formatPercentage,
+  formatScore,
+  isValidNumber,
+} from '../utils/numericFormat';
 
 export const SCENARIOS = [
   {
@@ -127,7 +133,7 @@ export default function ScenarioLabView({
                 </div>
 
                 <div className="mt-3 pt-2 border-t border-white/10 text-[10px] font-mono text-[#9CB9A3]">
-                  Heat: {(sc.weights.heat * 100).toFixed(0)}% • Transit: {(sc.weights.transit * 100).toFixed(0)}%
+                  Heat: {formatPercentage(sc.weights?.heat, 0)} • Transit: {formatPercentage(sc.weights?.transit, 0)}
                 </div>
               </button>
             );
@@ -150,7 +156,7 @@ export default function ScenarioLabView({
           <div className="text-right">
             <span className="text-xs text-slate-400">Heat Weight:</span>
             <div className="font-mono text-2xl font-bold text-amber-300">
-              {whatIfHeatWeight !== null ? `${(whatIfHeatWeight * 100).toFixed(0)}%` : 'Scenario Default'}
+              {isValidNumber(whatIfHeatWeight) ? formatPercentage(whatIfHeatWeight, 0) : 'Scenario Default'}
             </div>
           </div>
         </div>
@@ -160,7 +166,7 @@ export default function ScenarioLabView({
           min="0.10"
           max="0.80"
           step="0.05"
-          value={whatIfHeatWeight !== null ? whatIfHeatWeight : 0.35}
+          value={isValidNumber(whatIfHeatWeight) ? whatIfHeatWeight : 0.35}
           onChange={(e) => onChangeWhatIfHeatWeight(parseFloat(e.target.value))}
           className="w-full h-2.5 bg-slate-900 rounded-lg appearance-none cursor-pointer accent-emerald-500"
         />
@@ -215,7 +221,7 @@ export default function ScenarioLabView({
                         {isPositive ? `+${shift} ↑` : shift < 0 ? `${shift} ↓` : '—'}
                       </td>
                       <td className="py-2.5 px-3 text-amber-300 font-bold">
-                        {c.sensitivity_score?.toFixed(3) || '—'}
+                        {formatScore(c.sensitivity_score, 3, '—')}
                       </td>
                     </tr>
                   );

@@ -15,6 +15,11 @@ import {
   SyntheticScenarioBadge,
   deriveInterventionFeasibilityStatus,
 } from './ui/ScientificBadges';
+import {
+  safeToFixed,
+  formatCurrencyLakh,
+  formatPercentage,
+} from '../utils/numericFormat';
 
 export default function InterventionOptimizerView({
   selectedCorridor,
@@ -124,7 +129,7 @@ export default function InterventionOptimizerView({
           <label htmlFor="milp-budget-slider" className="text-slate-400 block mb-1 font-medium">
             Available Municipal Budget:{' '}
             <span className="text-emerald-400 font-mono font-bold">
-              ₹{Number(budgetLakh).toFixed(2)} Lakh
+              {formatCurrencyLakh(budgetLakh, 2)}
             </span>
           </label>
           <input
@@ -332,7 +337,7 @@ export default function InterventionOptimizerView({
                   ({item.ward_id}) • Treated Span:{' '}
                   <span className="font-mono text-slate-200">{item.deployment_km} km</span> • Equity Priority:{' '}
                   <span className="font-mono text-purple-300">
-                    {((item.vulnerable_population_index || 0.65) * 100).toFixed(0)}/100
+                    {formatPercentage(item.vulnerable_population_index, 0, true, '—')}/100
                   </span>
                 </div>
                 <div className="grid grid-cols-3 gap-2 pt-1 text-[11px] font-mono bg-slate-900 p-2 rounded">

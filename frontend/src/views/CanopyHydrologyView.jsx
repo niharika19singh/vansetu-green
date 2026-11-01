@@ -19,6 +19,12 @@ import {
   ExternalLink,
   ArrowRight,
 } from 'lucide-react';
+import {
+  safeToFixed,
+  formatScore,
+  formatTemperature,
+  formatNDVI,
+} from '../utils/numericFormat';
 
 export default function CanopyHydrologyView({
   statsSummary,
@@ -70,7 +76,7 @@ export default function CanopyHydrologyView({
           </div>
           <div>
             <div className="font-mono text-3xl font-bold text-white">
-              {lstStats.mean ? `${lstStats.mean.toFixed(1)}°C` : '25.8°C'}
+              {formatTemperature(lstStats?.mean)}
             </div>
             <h3 className="font-editorial text-base font-bold text-white mt-1">MODIS Daytime LST</h3>
             <p className="text-xs text-[#9CB9A3] mt-1">
@@ -90,7 +96,7 @@ export default function CanopyHydrologyView({
           </div>
           <div>
             <div className="font-mono text-3xl font-bold text-white">
-              {ndviStats.mean ? ndviStats.mean.toFixed(3) : '0.310'}
+              {formatNDVI(ndviStats?.mean, 3)}
             </div>
             <h3 className="font-editorial text-base font-bold text-white mt-1">Sentinel-2 NDVI</h3>
             <p className="text-xs text-[#9CB9A3] mt-1">
@@ -110,7 +116,7 @@ export default function CanopyHydrologyView({
           </div>
           <div>
             <div className="font-mono text-3xl font-bold text-amber-300">
-              {aqiStats.mean_aqi || '237.6'}
+              {aqiStats?.mean_aqi ? Math.round(Number(aqiStats.mean_aqi)) : '—'}
             </div>
             <h3 className="font-editorial text-base font-bold text-white mt-1">Particulate Index (AQI)</h3>
             <p className="text-xs text-[#9CB9A3] mt-1">
@@ -153,12 +159,12 @@ export default function CanopyHydrologyView({
                 <div className="flex items-center justify-between">
                   <span className="font-bold text-white text-sm">{d.district}</span>
                   <span className="text-xs font-mono font-bold text-emerald-400">
-                    Score: {d.mean_priority_score?.toFixed(3)}
+                    Score: {formatScore(d.mean_priority_score ?? d.avg_priority_score ?? d.score, 3)}
                   </span>
                 </div>
                 <div className="text-xs text-[#9CB9A3] mt-1 flex items-center justify-between">
                   <span>{d.corridor_count} Corridors</span>
-                  <span>{d.total_corridor_length_km} km total</span>
+                  <span>{safeToFixed(d.total_corridor_length_km, 1)} km total</span>
                 </div>
               </div>
             );

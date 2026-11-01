@@ -31,6 +31,12 @@ import {
   deriveCorridorFeasibilityStatus,
   FEASIBILITY_STATUS_META,
 } from './ui/ScientificBadges';
+import {
+  safeToFixed,
+  formatScore,
+  formatPercentage,
+  formatDistanceKm,
+} from '../utils/numericFormat';
 
 const INDICATOR_LABELS = {
   heat: 'Heat Exposure (Surface LST)',
@@ -336,10 +342,10 @@ function CorridorAnalyticalDetail({
               1. Priority Need
             </div>
             <div className="text-lg font-bold font-mono text-emerald-400 mt-0.5">
-              {corridor.priority_score !== null ? corridor.priority_score.toFixed(4) : 'N/A'}
+              {formatScore(corridor.priority_score, 4)}
             </div>
             <div className="text-[10px] text-slate-300 font-medium">
-              Rank #{corridor.rank} ({corridor.severity})
+              Rank #{corridor.rank ?? '—'} ({corridor.severity || 'Unranked'})
             </div>
             <div className="text-[10px] text-slate-500 mt-0.5">
               6-indicator multi-hazard index
@@ -352,10 +358,10 @@ function CorridorAnalyticalDetail({
               2. Site Feasibility
             </div>
             <div className="text-lg font-bold font-mono text-sky-400 mt-0.5">
-              {(corridor.feasibility_score * 100).toFixed(0)}%
+              {formatPercentage(corridor.feasibility_score, 0)}
             </div>
             <div className="text-[10px] text-slate-300 font-medium">
-              Est. ROW ~{feasBreakdown.estimated_row_width_m || 18}m ({corridor.highway})
+              Est. ROW ~{feasBreakdown.estimated_row_width_m || 18}m ({corridor.highway || 'local'})
             </div>
             <div className="text-[10px] text-amber-300/90 mt-0.5">
               OSM proxy — civil survey pending
@@ -368,7 +374,7 @@ function CorridorAnalyticalDetail({
               3. Evidence Confidence
             </div>
             <div className="text-lg font-bold font-mono text-amber-400 mt-0.5">
-              {(corridor.confidence_score * 100).toFixed(0)}%
+              {formatPercentage(corridor.confidence_score, 0)}
             </div>
             <div className="text-[10px] text-slate-300 font-medium">
               {completeness.active_signal_count || 6}/{completeness.total_signal_count || 6} Signals Active
@@ -473,7 +479,7 @@ function CorridorAnalyticalDetail({
           <Footprints className="w-3.5 h-3.5 text-sky-400 shrink-0 mt-0.5" aria-hidden="true" />
           <div className="text-slate-300">
             <strong className="text-sky-300">Pedestrian Corridor Continuity: </strong>
-            Span <span className="font-mono text-white">{corridor.length_km} km</span> along <span className="font-mono uppercase text-slate-200">{corridor.highway}</span> right-of-way in {corridor.district} ({corridor.ward_id}). Canopy gap ratio <span className="font-mono text-emerald-300">{(corridor.green_deficit * 100).toFixed(1)}%</span> indicates priority for continuous shaded pedestrian walkability.
+            Span <span className="font-mono text-white">{formatDistanceKm(corridor.length_km)}</span> along <span className="font-mono uppercase text-slate-200">{corridor.highway || 'local'}</span> right-of-way in {corridor.district || 'Delhi'} ({corridor.ward_id || '—'}). Canopy gap ratio <span className="font-mono text-emerald-300">{formatPercentage(corridor.green_deficit, 1)}</span> indicates priority for continuous shaded pedestrian walkability.
           </div>
         </div>
       </div>
@@ -518,10 +524,11 @@ function CorridorAnalyticalDetail({
                   color: '#f1f5f9',
                 }}
                 formatter={(val, _name, props) => [
-                  `${Number(val).toFixed(4)} (Norm: ${props.payload.normalized.toFixed(
+                  `${safeToFixed(val, 4)} (Norm: ${safeToFixed(
+                    props?.payload?.normalized,
                     3
-                  )} × Weight: ${props.payload.activeWeight.toFixed(2)})`,
-                  props.payload.fullLabel,
+                  )} × Weight: ${safeToFixed(props?.payload?.activeWeight, 2)})`,
+                  props?.payload?.fullLabel || '',
                 ]}
               />
               <Bar dataKey="contribution" radius={[0, 4, 4, 0]}>
@@ -555,16 +562,16 @@ function CorridorAnalyticalDetail({
                   <tr key={k}>
                     <td className="py-1 font-sans text-slate-300">{INDICATOR_LABELS[k]}</td>
                     <td className="py-1 text-right text-slate-200">
-                      {nVal !== null && nVal !== undefined ? nVal.toFixed(3) : 'MISSING'}
+                      {safeToFixed(nVal, 3, 'MISSING')}
                     </td>
                     <td className="py-1 text-right text-slate-400">
-                      {cW !== undefined ? cW.toFixed(2) : '-'}
+                      {safeToFixed(cW, 2, '-')}
                     </td>
                     <td className="py-1 text-right text-emerald-400">
-                      {aW !== undefined ? aW.toFixed(3) : '-'}
+                      {safeToFixed(aW, 3, '-')}
                     </td>
                     <td className="py-1 text-right font-bold text-slate-100">
-                      {contrib !== null && contrib !== undefined ? contrib.toFixed(4) : 'Excl.'}
+                      {safeToFixed(contrib, 4, 'Excl.')}
                     </td>
                   </tr>
                 );
@@ -583,15 +590,15 @@ function CorridorAnalyticalDetail({
               5-Scenario Sensitivity &amp; Ranking Stability
             </span>
             <span className="px-2 py-0.5 rounded bg-sky-500/15 text-sky-300 border border-sky-500/30 font-mono text-[10px]">
-              Stability S = {stability.stability_index?.toFixed(3)} ({stability.stability_class})
+              Stability S = {safeToFixed(stability.stability_index, 3)} ({stability.stability_class || 'N/A'})
             </span>
           </div>
 
           <p className="text-[11px] text-slate-400">
             Across all 5 policy scenarios, this corridor ranks between{' '}
-            <span className="text-slate-200 font-semibold">#{stability.min_rank}</span> and{' '}
-            <span className="text-slate-200 font-semibold">#{stability.max_rank}</span> (Rank
-            range: {stability.rank_range}, StdDev: ±{stability.rank_std}).
+            <span className="text-slate-200 font-semibold">#{stability.min_rank ?? '—'}</span> and{' '}
+            <span className="text-slate-200 font-semibold">#{stability.max_rank ?? '—'}</span> (Rank
+            range: {stability.rank_range ?? '—'}, StdDev: ±{stability.rank_std ?? '—'}).
           </p>
 
           <div className="h-32 w-full">
@@ -609,8 +616,8 @@ function CorridorAnalyticalDetail({
                     fontSize: '11px',
                   }}
                   formatter={(val, _n, props) => [
-                    `Score: ${Number(val).toFixed(4)} | Rank: #${props.payload.rank}`,
-                    props.payload.name,
+                    `Score: ${safeToFixed(val, 4)} | Rank: #${props?.payload?.rank ?? '—'}`,
+                    props?.payload?.name || '',
                   ]}
                 />
                 <Bar dataKey="score" radius={[4, 4, 0, 0]}>
@@ -637,9 +644,9 @@ function CorridorAnalyticalDetail({
                 }`}
               >
                 <div className="text-[10px] text-slate-400 truncate">{sc.name}</div>
-                <div className="font-mono font-bold text-slate-100">#{sc.rank}</div>
+                <div className="font-mono font-bold text-slate-100">#{sc.rank ?? '—'}</div>
                 <div className="font-mono text-[10px] text-emerald-400">
-                  {sc.score.toFixed(3)}
+                  {safeToFixed(sc.score, 3)}
                 </div>
               </div>
             ))}
@@ -655,7 +662,7 @@ function CorridorAnalyticalDetail({
             Evidence Confidence Deduction Ledger
           </span>
           <span className="font-mono text-amber-400 font-bold">
-            1.00 {confBreakdown.total_deduction} = {corridor.confidence_score?.toFixed(2)}
+            1.00 {confBreakdown.total_deduction || '- 0.00'} = {safeToFixed(corridor.confidence_score, 2)}
           </span>
         </div>
         <div className="space-y-1.5">
@@ -666,7 +673,7 @@ function CorridorAnalyticalDetail({
             >
               <span className="text-slate-300">{pen.detail}</span>
               <span className="font-mono font-bold text-amber-400 shrink-0">
-                {pen.deduction.toFixed(2)}
+                {safeToFixed(pen.deduction, 2)}
               </span>
             </div>
           ))}

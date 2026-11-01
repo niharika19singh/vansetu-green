@@ -32,6 +32,7 @@ import {
 import { api } from '../api/client';
 import StatCard from './ui/StatCard';
 import StatusBadge from './ui/StatusBadge';
+import { formatCurrencyLakh } from '../utils/numericFormat';
 
 const INVESTMENT_TREND_DATA = [
   { month: 'May 2026', capex: 6.5, opex: 1.8 },
@@ -208,7 +209,7 @@ export default function GovernmentOverviewView({
 
         <StatCard
           title="Sanctioned Budget"
-          value={`₹${totalApprovedBudgetLakh.toFixed(1)}L`}
+          value={formatCurrencyLakh(totalApprovedBudgetLakh, 1)}
           subtitle="CapEx & 5-Yr OpEx"
           trend="up"
           trendValue="100% Audited"

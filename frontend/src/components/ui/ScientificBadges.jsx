@@ -11,6 +11,7 @@ import {
   Activity,
   Compass,
 } from 'lucide-react';
+import { formatPercentage } from '../../utils/numericFormat';
 
 /**
  * 7-Step Municipal Climate Investment Decision Workflow (Section 3)
@@ -303,7 +304,7 @@ export function ThermalSeparationCard({ corridor }) {
               Pedestrian Exposure Proxy:{' '}
               <strong className="text-sky-300">
                 {pedestrianProxy !== null && pedestrianProxy !== undefined
-                  ? `${(pedestrianProxy * 100).toFixed(0)}/100`
+                  ? `${formatPercentage(pedestrianProxy, 0)}/100`
                   : 'Missing'}
               </strong>
             </span>

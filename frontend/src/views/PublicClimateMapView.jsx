@@ -17,6 +17,12 @@ import {
 } from 'lucide-react';
 import { api } from '../api/client';
 import InteractiveMap from '../components/InteractiveMap';
+import {
+  safeToFixed,
+  formatTemperature,
+  formatPercentage,
+  formatDistanceKm,
+} from '../utils/numericFormat';
 
 export const CANONICAL_DELHI_DISTRICTS = [
   'Central Delhi',
@@ -216,13 +222,13 @@ export default function PublicClimateMapView({
                   <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono font-bold ${
                     lst >= 41.0 ? 'bg-rose-500/20 text-rose-300' : 'bg-emerald-500/20 text-emerald-300'
                   }`}>
-                    {lst.toFixed(1)}°C
+                    {formatTemperature(lst)}
                   </span>
                 </div>
 
                 <div className="flex items-center justify-between text-[11px] text-slate-400">
                   <span>{cDist}</span>
-                  <span>Tree Cover: {(ndvi * 100).toFixed(0)}%</span>
+                  <span>Tree Cover: {formatPercentage(ndvi, 0)}</span>
                 </div>
 
                 <div className="text-[10px] text-slate-400 leading-snug">
@@ -299,7 +305,7 @@ export default function PublicClimateMapView({
                 </div>
                 <p className="text-xs text-slate-300">
                   District: <strong>{displayCorridor.properties?.district || displayCorridor.district}</strong> •
-                  Length: <strong>{((displayCorridor.properties?.length_m || displayCorridor.length_m || 2000) / 1000).toFixed(1)} km</strong>
+                  Length: <strong>{formatDistanceKm(((displayCorridor.properties?.length_m || displayCorridor.length_m || 2000) / 1000), 1)}</strong>
                 </p>
               </div>
 

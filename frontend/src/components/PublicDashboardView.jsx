@@ -10,6 +10,10 @@ import {
   Users,
   Eye,
 } from 'lucide-react';
+import {
+  formatTemperature,
+  formatNDVI,
+} from '../utils/numericFormat';
 
 export default function PublicDashboardView({
   statsSummary,
@@ -51,7 +55,7 @@ export default function PublicDashboardView({
           </div>
           <div className="flex items-baseline gap-2">
             <span className="text-3xl font-black text-orange-400 font-mono">
-              {lstStats.mean ? `${lstStats.mean.toFixed(1)}°C` : '25.8°C'}
+              {formatTemperature(lstStats?.mean)}
             </span>
             <span className="text-xs text-slate-400">MODIS Satellite</span>
           </div>
@@ -68,7 +72,7 @@ export default function PublicDashboardView({
           </div>
           <div className="flex items-baseline gap-2">
             <span className="text-3xl font-black text-emerald-400 font-mono">
-              {ndviStats.mean ? ndviStats.mean.toFixed(3) : '0.310'}
+              {formatNDVI(ndviStats?.mean, 3)}
             </span>
             <span className="text-xs text-slate-400">Sentinel-2 NDVI</span>
           </div>

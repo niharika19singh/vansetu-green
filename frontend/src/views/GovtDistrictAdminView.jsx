@@ -14,6 +14,12 @@ import {
   Search,
 } from 'lucide-react';
 import { api } from '../api/client';
+import {
+  safeToFixed,
+  formatCurrencyCrore,
+  formatCurrencyLakh,
+  formatPercentage,
+} from '../utils/numericFormat';
 import { DELHI_DISTRICTS_LIST, DISTRICT_CLIMATE_DATA } from './PublicCitizenDashboardView';
 
 export const DISTRICT_GOVERNANCE_DATA = [
@@ -75,9 +81,11 @@ export default function GovtDistrictAdminView({ token, onNavigate }) {
           <div className="p-4 rounded-xl bg-[#071C16] border border-emerald-500/20 text-right shrink-0">
             <span className="text-[11px] text-slate-400 block font-mono">Total Municipal Sanction</span>
             <div className="text-2xl font-black text-emerald-300 font-mono">
-              ₹{(totalBudget / 100).toFixed(2)} Cr
+              {formatCurrencyCrore(totalBudget / 100, 2)}
             </div>
-            <span className="text-[11px] text-slate-400">Spent: ₹{(totalSpent / 100).toFixed(2)} Cr ({((totalSpent/totalBudget)*100).toFixed(1)}%)</span>
+            <span className="text-[11px] text-slate-400">
+              Spent: {formatCurrencyCrore(totalSpent / 100, 2)} ({totalBudget > 0 ? formatPercentage(totalSpent / totalBudget, 1) : '0.0%'})
+            </span>
           </div>
         </div>
       </div>
@@ -144,10 +152,10 @@ export default function GovtDistrictAdminView({ token, onNavigate }) {
                     {d.priorityCorridors}
                   </td>
                   <td className="py-3.5 px-4 text-right font-mono font-bold text-white">
-                    ₹{d.budgetAllocatedLakh.toFixed(1)}L
+                    {formatCurrencyLakh(d.budgetAllocatedLakh, 1)}
                   </td>
                   <td className="py-3.5 px-4 text-right font-mono text-emerald-400">
-                    ₹{d.budgetSpentLakh.toFixed(1)}L
+                    {formatCurrencyLakh(d.budgetSpentLakh, 1)}
                   </td>
                   <td className="py-3.5 px-4 text-center">
                     <span className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold ${

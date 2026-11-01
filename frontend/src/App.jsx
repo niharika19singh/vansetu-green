@@ -36,6 +36,11 @@ import {
 } from 'lucide-react';
 import { api } from './api/client';
 import { forestAudio } from './forest/forestAudio';
+import {
+  safeToFixed,
+  formatTemperature,
+  formatNDVI,
+} from './utils/numericFormat';
 
 // Core and Navigation Components
 import AppSidebar from './components/AppSidebar';
@@ -595,7 +600,7 @@ export default function App() {
                   MODIS LST (1km Native)
                 </span>
                 <span className="font-mono font-bold text-slate-100">
-                  {lstStats.mean ? `${lstStats.mean.toFixed(1)}°C` : '25.8°C'}{' '}
+                  {formatTemperature(lstStats?.mean)}{' '}
                   <span className="text-[10px] text-slate-400 font-normal">
                     (57×79 → 10m Display)
                   </span>
@@ -610,7 +615,7 @@ export default function App() {
                   Sentinel-2 NDVI (10m Native)
                 </span>
                 <span className="font-mono font-bold text-slate-100">
-                  {ndviStats.mean ? ndviStats.mean.toFixed(3) : '0.310'}{' '}
+                  {formatNDVI(ndviStats?.mean, 3)}{' '}
                   <span className="text-[10px] text-slate-400 font-normal">(5572×7794)</span>
                 </span>
               </div>

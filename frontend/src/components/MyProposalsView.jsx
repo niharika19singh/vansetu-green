@@ -16,6 +16,7 @@ import { api } from '../api/client';
 import StatCard from './ui/StatCard';
 import StatusBadge from './ui/StatusBadge';
 import DataTable from './ui/DataTable';
+import { formatCurrencyLakh } from '../utils/numericFormat';
 
 export default function MyProposalsView({ token }) {
   const [tenders, setTenders] = useState([]);
@@ -87,7 +88,7 @@ export default function MyProposalsView({ token }) {
       render: (row) => (
         <div className="font-mono">
           <div className="font-bold text-amber-300 text-xs">
-            ₹{Number(row.total_financial_bid_lakh).toFixed(2)}L
+            {formatCurrencyLakh(row.total_financial_bid_lakh, 2)}
           </div>
           <div className="text-[10px] text-slate-400">
             CapEx: ₹{row.proposed_capex_lakh}L • OpEx: ₹{row.proposed_opex_5yr_lakh}L
@@ -183,7 +184,7 @@ export default function MyProposalsView({ token }) {
           />
           <StatCard
             title="Aggregate Bid Volume"
-            value={`₹${totalBidValue.toFixed(1)}L`}
+            value={formatCurrencyLakh(totalBidValue, 1)}
             subtitle="CapEx + 5-Yr OpEx Submitted"
             icon={IndianRupee}
             color="rose"

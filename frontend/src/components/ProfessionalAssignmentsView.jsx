@@ -21,6 +21,7 @@ import { api } from '../api/client';
 import StatCard from './ui/StatCard';
 import StatusBadge from './ui/StatusBadge';
 import DataTable from './ui/DataTable';
+import { formatCurrencyLakh } from '../utils/numericFormat';
 
 export default function ProfessionalAssignmentsView({ token, corridors = [] }) {
   const [professionals, setProfessionals] = useState([]);
@@ -155,7 +156,7 @@ export default function ProfessionalAssignmentsView({ token, corridors = [] }) {
       accessor: 'approved_budget_lakh',
       render: (row) => (
         <span className="font-mono font-bold text-amber-300 text-xs">
-          ₹{Number(row.approved_budget_lakh || 8.5).toFixed(2)}L
+          {formatCurrencyLakh(row.approved_budget_lakh, 2)}
         </span>
       ),
     },
@@ -254,7 +255,7 @@ export default function ProfessionalAssignmentsView({ token, corridors = [] }) {
           />
           <StatCard
             title="Total Sanctioned Value"
-            value={`₹${totalSanctionedBudget.toFixed(1)}L`}
+            value={formatCurrencyLakh(totalSanctionedBudget, 1)}
             subtitle="Committed Work Packages"
             icon={IndianRupee}
             color="rose"

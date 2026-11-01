@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { api } from '../api/client';
 import { FeasibilityStatusBadge } from './ui/ScientificBadges';
+import { formatCurrencyLakh } from '../utils/numericFormat';
 
 export default function ProcurementStudioView({
   selectedCorridor,
@@ -174,19 +175,19 @@ export default function ProcurementStudioView({
                   <div>
                     <span className="text-slate-400 block">CapEx (Ref)</span>
                     <span className="text-emerald-400 font-bold">
-                      ₹{(item.capex_inr / 100000).toFixed(2)}L
+                      {formatCurrencyLakh(item.capex_inr != null ? item.capex_inr / 100000 : null, 2)}
                     </span>
                   </div>
                   <div>
                     <span className="text-slate-400 block">Annual OpEx</span>
                     <span className="text-amber-300 font-bold">
-                      ₹{(item.annual_opex_inr / 100000).toFixed(2)}L/yr
+                      {item.annual_opex_inr != null ? `${formatCurrencyLakh(item.annual_opex_inr / 100000, 2)}/yr` : '—'}
                     </span>
                   </div>
                   <div>
                     <span className="text-slate-400 block">5-Yr Lifecycle</span>
                     <span className="text-cyan-300 font-bold">
-                      ₹{(item.lifecycle_5yr_inr / 100000).toFixed(2)}L
+                      {formatCurrencyLakh(item.lifecycle_5yr_inr != null ? item.lifecycle_5yr_inr / 100000 : null, 2)}
                     </span>
                   </div>
                 </div>

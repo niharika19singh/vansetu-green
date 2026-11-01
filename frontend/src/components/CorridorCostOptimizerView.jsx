@@ -21,6 +21,7 @@ import { api } from '../api/client';
 import StatCard from './ui/StatCard';
 import StatusBadge from './ui/StatusBadge';
 import DataTable from './ui/DataTable';
+import { formatCurrencyLakh } from '../utils/numericFormat';
 
 export default function CorridorCostOptimizerView({
   token,
@@ -456,7 +457,7 @@ export default function CorridorCostOptimizerView({
                       </div>
                       <div className="text-right font-mono">
                         <div className="text-amber-300 font-bold text-sm">
-                          ₹{(item.quantity * item.unit_capex_lakh).toFixed(2)}L
+                          {formatCurrencyLakh(item.quantity * item.unit_capex_lakh, 2)}
                         </div>
                         <div className="text-[10px] text-emerald-400">
                           +{item.cooling_impact_celsius}°C Cooling

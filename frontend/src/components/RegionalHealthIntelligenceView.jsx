@@ -17,6 +17,7 @@ import {
   ChevronUp,
 } from 'lucide-react';
 import { api } from '../api/client';
+import { safeToFixed } from '../utils/numericFormat';
 
 export default function RegionalHealthIntelligenceView({ token }) {
   const [indicators, setIndicators] = useState([]);
@@ -254,7 +255,7 @@ export default function RegionalHealthIntelligenceView({ token }) {
                             : 'bg-slate-800 text-slate-400'
                         }`}
                       >
-                        {mult.toFixed(2)}×
+                        {safeToFixed(mult, 2)}×
                       </span>
                     </td>
 

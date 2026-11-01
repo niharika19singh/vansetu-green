@@ -19,6 +19,11 @@ import {
   Activity,
   Layers,
 } from 'lucide-react';
+import {
+  formatTemperature,
+  formatNDVI,
+  formatScore,
+} from '../utils/numericFormat';
 
 export default function HeatwaveMappingView({
   corridors = [],
@@ -152,7 +157,7 @@ export default function HeatwaveMappingView({
                             isExtreme ? 'bg-red-500/20 text-red-300' : 'bg-amber-500/20 text-amber-300'
                           }`}
                         >
-                          {lst.toFixed(1)}°C LST
+                          {formatTemperature(lst)} LST
                         </span>
                       </div>
                       <h4 className="text-xs font-bold text-white mb-1 line-clamp-1">{c.name}</h4>
@@ -160,8 +165,8 @@ export default function HeatwaveMappingView({
                     </div>
 
                     <div className="pt-3 mt-3 border-t border-white/10 flex items-center justify-between text-[11px] text-[#9CB9A3]">
-                      <span>NDVI: <strong className="text-white font-mono">{c.ndvi_mean?.toFixed(3) || '0.180'}</strong></span>
-                      <span>Priority: <strong className="text-emerald-400 font-mono">{c.priority_score?.toFixed(3)}</strong></span>
+                      <span>NDVI: <strong className="text-white font-mono">{formatNDVI(c.ndvi_mean, 3)}</strong></span>
+                      <span>Priority: <strong className="text-emerald-400 font-mono">{formatScore(c.priority_score, 3)}</strong></span>
                       <span className="text-emerald-400 font-semibold flex items-center gap-1 group-hover:translate-x-0.5 transition">
                         Map <ArrowRight className="w-3 h-3" />
                       </span>

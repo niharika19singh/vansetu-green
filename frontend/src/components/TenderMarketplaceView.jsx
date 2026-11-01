@@ -19,6 +19,11 @@ import {
 import { api } from '../api/client';
 import StatCard from './ui/StatCard';
 import StatusBadge from './ui/StatusBadge';
+import {
+  safeToFixed,
+  formatCurrencyLakh,
+  isValidNumber,
+} from '../utils/numericFormat';
 
 export default function TenderMarketplaceView({ token, corridors = [] }) {
   const [tenders, setTenders] = useState([]);
@@ -67,8 +72,9 @@ export default function TenderMarketplaceView({ token, corridors = [] }) {
   const handleOpenProposalDrawer = (t) => {
     setSelectedTender(t);
     setProposalTitle(`Climate Action Masterplan — ${t.corridor_id} (${t.title})`);
-    setProposedCapex((Number(t.budget_ceiling_lakh) * 0.7).toFixed(2));
-    setProposedOpex((Number(t.budget_ceiling_lakh) * 0.2).toFixed(2));
+    const ceil = isValidNumber(t.budget_ceiling_lakh) ? Number(t.budget_ceiling_lakh) : 10;
+    setProposedCapex(safeToFixed(ceil * 0.7, 2, '7.00'));
+    setProposedOpex(safeToFixed(ceil * 0.2, 2, '2.00'));
     setDrawerOpen(true);
   };
 
@@ -145,7 +151,7 @@ export default function TenderMarketplaceView({ token, corridors = [] }) {
           />
           <StatCard
             title="Avg. Budget Ceiling"
-            value={`₹${avgBudget.toFixed(1)}L`}
+            value={formatCurrencyLakh(avgBudget, 1)}
             subtitle="Per Corridor Work Package"
             icon={IndianRupee}
             color="amber"
@@ -402,7 +408,7 @@ export default function TenderMarketplaceView({ token, corridors = [] }) {
                 <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 font-mono text-xs flex justify-between items-center">
                   <span className="text-slate-400">Total Financial Bid (CapEx + OpEx):</span>
                   <span className="text-amber-300 font-bold text-sm">
-                    ₹{(Number(proposedCapex) + Number(proposedOpex)).toFixed(2)} Lakh
+                    {formatCurrencyLakh(Number(proposedCapex || 0) + Number(proposedOpex || 0), 2)}
                   </span>
                 </div>
 

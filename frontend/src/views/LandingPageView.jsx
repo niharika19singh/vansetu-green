@@ -27,6 +27,11 @@ import {
   Compass,
 } from 'lucide-react';
 import LivingForestExperience from '../forest/LivingForestExperience';
+import {
+  formatTemperature,
+  formatNDVI,
+  isValidNumber,
+} from '../utils/numericFormat';
 
 export default function LandingPageView({
   onNavigate,
@@ -39,13 +44,15 @@ export default function LandingPageView({
     }
   };
 
-  const hasLst = statsSummary?.raster?.lst?.mean !== undefined && statsSummary?.raster?.lst?.mean !== null;
-  const hasNdvi = statsSummary?.raster?.ndvi?.mean !== undefined && statsSummary?.raster?.ndvi?.mean !== null;
-  const hasAqi = statsSummary?.aqi?.mean_aqi !== undefined && statsSummary?.aqi?.mean_aqi !== null;
-
-  const lstMean = hasLst ? `${statsSummary.raster.lst.mean.toFixed(1)}°C` : 'Telemetry Offline';
-  const ndviMean = hasNdvi ? statsSummary.raster.ndvi.mean.toFixed(3) : 'Telemetry Offline';
-  const aqiMean = hasAqi ? String(statsSummary.aqi.mean_aqi) : 'Telemetry Offline';
+  const lstMean = isValidNumber(statsSummary?.raster?.lst?.mean)
+    ? formatTemperature(statsSummary.raster.lst.mean)
+    : 'Telemetry Offline';
+  const ndviMean = isValidNumber(statsSummary?.raster?.ndvi?.mean)
+    ? formatNDVI(statsSummary.raster.ndvi.mean, 3)
+    : 'Telemetry Offline';
+  const aqiMean = isValidNumber(statsSummary?.aqi?.mean_aqi)
+    ? String(statsSummary.aqi.mean_aqi)
+    : 'Telemetry Offline';
   const aqiMode = statsSummary?.aqi?.data_mode || 'Historical CPCB CAAQMS baseline';
 
   return (

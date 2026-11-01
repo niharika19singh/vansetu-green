@@ -23,6 +23,12 @@ import {
   Zap,
 } from 'lucide-react';
 import { api } from '../api/client';
+import {
+  safeToFixed,
+  formatScore,
+  formatTemperature,
+  formatNDVI,
+} from '../utils/numericFormat';
 
 export default function CorridorPredictionView({
   corridors = [],
@@ -95,10 +101,14 @@ export default function CorridorPredictionView({
     };
   }, [activeCorridorId, selectedHorizon]);
 
-  const pred = predictionData?.predicted_metrics;
-  const obs = predictionData?.observed_metrics;
-  const attributions = predictionData?.feature_attributions || [];
-  const interventions = predictionData?.intervention_mitigation_potential || [];
+  const pred = predictionData?.predicted_metrics || predictionData?.predicted || {};
+  const obs = predictionData?.observed_metrics || predictionData?.observed || {};
+  const attributions = predictionData?.feature_attributions || predictionData?.attributions || [];
+  const interventions = predictionData?.intervention_mitigation_potential || predictionData?.interventions || [];
+
+  const ciBand = pred?.confidence_interval_90 || predictionData?.confidence_interval_90;
+  const ciLower = Array.isArray(ciBand) ? ciBand[0] : (ciBand?.lower_lst_celsius ?? null);
+  const ciUpper = Array.isArray(ciBand) ? ciBand[1] : (ciBand?.upper_lst_celsius ?? null);
 
   return (
     <div className="w-full h-full flex flex-col overflow-hidden bg-[#071C16] text-[#F3F1E7]">
@@ -241,7 +251,7 @@ export default function CorridorPredictionView({
               </div>
               <div className="flex items-baseline gap-2 mb-1">
                 <span className="text-3xl font-black text-white font-mono">
-                  {pred?.lst_celsius?.toFixed(1)}°C
+                  {formatTemperature(pred?.lst_celsius)}
                 </span>
                 <span
                   className={`text-xs font-bold ${
@@ -249,19 +259,19 @@ export default function CorridorPredictionView({
                   }`}
                 >
                   {(pred?.lst_delta_celsius || 0) > 0
-                    ? `+${pred?.lst_delta_celsius?.toFixed(2)}°C`
-                    : `${pred?.lst_delta_celsius?.toFixed(2)}°C`}
+                    ? `+${safeToFixed(pred?.lst_delta_celsius, 2)}°C`
+                    : `${safeToFixed(pred?.lst_delta_celsius, 2)}°C`}
                 </span>
               </div>
               <div className="text-[11px] text-[#9CB9A3] space-y-1 mt-2 pt-2 border-t border-white/10">
                 <div className="flex justify-between">
                   <span>Baseline Observed:</span>
-                  <span className="font-mono text-white font-semibold">{obs?.lst_celsius?.toFixed(1)}°C</span>
+                  <span className="font-mono text-white font-semibold">{formatTemperature(obs?.lst_celsius)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span>Confidence Band (90%):</span>
                   <span className="font-mono text-amber-300 font-semibold">
-                    [{pred?.confidence_interval_90?.[0]?.toFixed(1)}°C — {pred?.confidence_interval_90?.[1]?.toFixed(1)}°C]
+                    [{formatTemperature(ciLower)} — {formatTemperature(ciUpper)}]
                   </span>
                 </div>
               </div>
@@ -280,7 +290,7 @@ export default function CorridorPredictionView({
               </div>
               <div className="flex items-baseline gap-2 mb-1">
                 <span className="text-3xl font-black text-white font-mono">
-                  {pred?.ndvi?.toFixed(3)}
+                  {formatNDVI(pred?.ndvi, 3)}
                 </span>
                 <span
                   className={`text-xs font-bold ${
@@ -288,19 +298,19 @@ export default function CorridorPredictionView({
                   }`}
                 >
                   {(pred?.ndvi_delta || 0) >= 0
-                    ? `+${pred?.ndvi_delta?.toFixed(3)}`
-                    : `${pred?.ndvi_delta?.toFixed(3)}`}
+                    ? `+${safeToFixed(pred?.ndvi_delta, 3)}`
+                    : `${safeToFixed(pred?.ndvi_delta, 3)}`}
                 </span>
               </div>
               <div className="text-[11px] text-[#9CB9A3] space-y-1 mt-2 pt-2 border-t border-white/10">
                 <div className="flex justify-between">
                   <span>Baseline NDVI:</span>
-                  <span className="font-mono text-white font-semibold">{obs?.ndvi?.toFixed(3)}</span>
+                  <span className="font-mono text-white font-semibold">{formatNDVI(obs?.ndvi, 3)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span>Green Deficit (1-NDVI):</span>
                   <span className="font-mono text-emerald-300 font-semibold">
-                    {(1 - (pred?.ndvi || 0.2)).toFixed(3)}
+                    {safeToFixed(1 - (Number(pred?.ndvi) || 0.2), 3)}
                   </span>
                 </div>
               </div>
@@ -319,7 +329,7 @@ export default function CorridorPredictionView({
               </div>
               <div className="flex items-baseline gap-2 mb-1">
                 <span className="text-3xl font-black text-white font-mono">
-                  {pred?.priority_score?.toFixed(3)}
+                  {formatScore(pred?.priority_score, 3)}
                 </span>
                 <span
                   className={`text-xs font-bold ${
@@ -327,19 +337,19 @@ export default function CorridorPredictionView({
                   }`}
                 >
                   {(pred?.score_delta || 0) >= 0
-                    ? `+${pred?.score_delta?.toFixed(3)}`
-                    : `${pred?.score_delta?.toFixed(3)}`}
+                    ? `+${safeToFixed(pred?.score_delta, 3)}`
+                    : `${safeToFixed(pred?.score_delta, 3)}`}
                 </span>
               </div>
               <div className="text-[11px] text-[#9CB9A3] space-y-1 mt-2 pt-2 border-t border-white/10">
                 <div className="flex justify-between">
                   <span>Baseline Priority:</span>
-                  <span className="font-mono text-white font-semibold">{obs?.priority_score?.toFixed(3)}</span>
+                  <span className="font-mono text-white font-semibold">{formatScore(obs?.priority_score, 3)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span>Heat Vulnerability Index:</span>
                   <span className="font-mono text-cyan-300 font-semibold">
-                    {pred?.heat_vulnerability_index?.toFixed(2)} / 1.00
+                    {safeToFixed(pred?.heat_vulnerability_index, 2)} / 1.00
                   </span>
                 </div>
               </div>

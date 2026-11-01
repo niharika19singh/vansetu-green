@@ -18,6 +18,12 @@ import { api } from '../api/client';
 import StatCard from './ui/StatCard';
 import StatusBadge from './ui/StatusBadge';
 import DataTable from './ui/DataTable';
+import {
+  safeToFixed,
+  formatDistanceKm,
+  formatScore,
+  formatCurrencyLakh,
+} from '../utils/numericFormat';
 
 export default function CorridorInventoryView({
   token,
@@ -156,7 +162,7 @@ export default function CorridorInventoryView({
       accessor: 'length_km',
       render: (row) => (
         <span className="font-mono text-slate-300">
-          {row.length_km ? `${row.length_km.toFixed(2)} km` : '1.50 km'}
+          {formatDistanceKm(row.length_km)}
         </span>
       ),
     },
@@ -165,7 +171,7 @@ export default function CorridorInventoryView({
       accessor: 'priority_score',
       render: (row) => (
         <span className="font-mono font-bold text-emerald-400">
-          {row.priority_score ? row.priority_score.toFixed(3) : '0.742'}
+          {formatScore(row.priority_score, 3)}
         </span>
       ),
     },
@@ -434,29 +440,25 @@ export default function CorridorInventoryView({
                 <div className="p-3 bg-slate-950 rounded-xl border border-slate-800">
                   <span className="text-[10px] text-slate-500 uppercase block">Total Length</span>
                   <span className="text-white font-bold text-sm">
-                    {selectedCorridorDrawer.length_km
-                      ? `${selectedCorridorDrawer.length_km.toFixed(2)} km`
-                      : '1.50 km'}
+                    {formatDistanceKm(selectedCorridorDrawer.length_km)}
                   </span>
                 </div>
                 <div className="p-3 bg-slate-950 rounded-xl border border-slate-800">
                   <span className="text-[10px] text-slate-500 uppercase block">Priority Score</span>
                   <span className="text-emerald-400 font-bold text-sm">
-                    {selectedCorridorDrawer.priority_score
-                      ? selectedCorridorDrawer.priority_score.toFixed(3)
-                      : '0.742'}
+                    {formatScore(selectedCorridorDrawer.priority_score, 3)}
                   </span>
                 </div>
                 <div className="p-3 bg-slate-950 rounded-xl border border-slate-800">
                   <span className="text-[10px] text-slate-500 uppercase block">Est. CapEx</span>
                   <span className="text-amber-300 font-bold text-sm">
-                    ₹{(selectedCorridorDrawer.length_km ? selectedCorridorDrawer.length_km * 4.2 : 6.8).toFixed(1)}L
+                    {formatCurrencyLakh(selectedCorridorDrawer.length_km != null ? selectedCorridorDrawer.length_km * 4.2 : null, 1)}
                   </span>
                 </div>
                 <div className="p-3 bg-slate-950 rounded-xl border border-slate-800">
                   <span className="text-[10px] text-slate-500 uppercase block">Est. 5-Yr OpEx</span>
                   <span className="text-blue-300 font-bold text-sm">
-                    ₹{(selectedCorridorDrawer.length_km ? selectedCorridorDrawer.length_km * 1.5 : 2.4).toFixed(1)}L
+                    {formatCurrencyLakh(selectedCorridorDrawer.length_km != null ? selectedCorridorDrawer.length_km * 1.5 : null, 1)}
                   </span>
                 </div>
               </div>

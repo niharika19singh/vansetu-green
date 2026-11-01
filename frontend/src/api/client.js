@@ -759,12 +759,24 @@ async function calculateCorridorPredictionFallback(corridorId, horizonId = 'hori
     },
     predicted: {
       lst_celsius: predLst,
+      lst_delta_celsius: lstDelta,
       ndvi: predNdvi,
+      ndvi_delta: ndviDelta,
       priority_score: predScore,
       score_delta: scoreDelta,
       heat_vulnerability_index: hvi,
+      confidence_interval_90: Object.assign([ciLower, ciUpper], {
+        lower_lst_celsius: ciLower,
+        upper_lst_celsius: ciUpper,
+        confidence_level_pct: 90.0,
+      }),
     },
-    confidence_interval_90: {
+    confidence_interval_90: Object.assign([ciLower, ciUpper], {
+      lower_lst_celsius: ciLower,
+      upper_lst_celsius: ciUpper,
+      confidence_level_pct: 90.0,
+    }),
+    confidence_interval_90_detail: {
       lower_lst_celsius: ciLower,
       upper_lst_celsius: ciUpper,
       confidence_level_pct: 90.0,

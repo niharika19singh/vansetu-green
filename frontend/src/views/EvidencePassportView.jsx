@@ -31,6 +31,11 @@ import {
   Lock,
 } from 'lucide-react';
 import { api } from '../api/client';
+import {
+  safeToFixed,
+  formatScore,
+  formatPercentage,
+} from '../utils/numericFormat';
 
 export default function EvidencePassportView({
   selectedCorridorId,
@@ -547,7 +552,7 @@ export default function EvidencePassportView({
                       </div>
                     )}
                     <div className="text-[10px] text-slate-400 mt-1">
-                      Priority Score: {passport.corridor_identity?.priority_score ? Number(passport.corridor_identity.priority_score).toFixed(3) : '0.742'}
+                      Priority Score: {formatScore(passport.corridor_identity?.priority_score, 3)}
                     </div>
                   </div>
                 </div>
@@ -809,7 +814,7 @@ export default function EvidencePassportView({
                   <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
                     <span className="text-slate-400 text-[10px] uppercase font-semibold block">Pedestrian Exposure Proxy</span>
                     <div className="text-xl font-bold font-mono text-emerald-400 mt-1">
-                      {passport.infrastructure_evidence?.walkability_proxy_score ? `${(passport.infrastructure_evidence.walkability_proxy_score * 100).toFixed(0)} / 100` : '72 / 100'}
+                      {passport.infrastructure_evidence?.walkability_proxy_score != null ? `${formatPercentage(passport.infrastructure_evidence.walkability_proxy_score, 0)} / 100` : '—'}
                     </div>
                     <span className="text-[10px] text-slate-500 block mt-0.5">
                       Green Space: {passport.infrastructure_evidence?.green_space_proximity}

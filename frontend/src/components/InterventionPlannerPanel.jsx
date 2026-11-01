@@ -22,6 +22,11 @@ import {
   deriveInterventionFeasibilityStatus,
   FEASIBILITY_STATUS_META,
 } from './ui/ScientificBadges';
+import {
+  safeToFixed,
+  formatPercentage,
+  formatCurrencyLakh,
+} from '../utils/numericFormat';
 
 function InterventionPlannerPanel({ corridor, mekoEnabled = true }) {
   const plan = corridor?.intervention_plan;
@@ -90,7 +95,7 @@ function InterventionPlannerPanel({ corridor, mekoEnabled = true }) {
             {plan.primary_recommendation?.name}
           </div>
           <div className="text-[10px] font-mono text-slate-300">
-            Suitability: {(plan.primary_recommendation?.suitability_score * 100).toFixed(0)}%
+            Suitability: {formatPercentage(plan.primary_recommendation?.suitability_score, 0)}
           </div>
         </div>
       </div>
@@ -133,7 +138,7 @@ function InterventionPlannerPanel({ corridor, mekoEnabled = true }) {
 
                 <div className="text-right shrink-0">
                   <div className="font-mono font-bold text-emerald-400 text-xs">
-                    {(item.suitability_score * 100).toFixed(0)}% Fit
+                    {formatPercentage(item.suitability_score, 0)} Fit
                   </div>
                   <div className="font-mono text-[10px] text-amber-300">
                     ₹{item.cost_breakdown.total_five_year_lifecycle_inr_lakhs}L (5-yr)
@@ -171,7 +176,7 @@ function InterventionPlannerPanel({ corridor, mekoEnabled = true }) {
                   borderColor: '#334155',
                   fontSize: '11px',
                 }}
-                formatter={(val, name) => [`₹${Number(val).toFixed(2)} Lakhs`, name]}
+                formatter={(val, name) => [`${formatCurrencyLakh(val, 2)}akhs`, name]}
               />
               <Legend wrapperStyle={{ fontSize: '10px' }} />
               <Bar dataKey="CapEx" stackId="a" fill="#10b981" name="Capital Expenditure (CapEx)" />
@@ -256,7 +261,7 @@ function InterventionPlannerPanel({ corridor, mekoEnabled = true }) {
               {Object.entries(cb.capex_line_items_per_km || {}).map(([k, v]) => (
                 <div key={k} className="flex justify-between text-[10px]">
                   <span className="text-slate-400 capitalize">{k.replace(/_/g, ' ')}</span>
-                  <span className="font-mono text-slate-200">₹{Number(v).toFixed(2)}L</span>
+                  <span className="font-mono text-slate-200">{formatCurrencyLakh(v, 2)}</span>
                 </div>
               ))}
             </div>
@@ -268,7 +273,7 @@ function InterventionPlannerPanel({ corridor, mekoEnabled = true }) {
               {Object.entries(cb.opex_line_items_per_km || {}).map(([k, v]) => (
                 <div key={k} className="flex justify-between text-[10px]">
                   <span className="text-slate-400 capitalize">{k.replace(/_/g, ' ')}</span>
-                  <span className="font-mono text-slate-200">₹{Number(v).toFixed(2)}L</span>
+                  <span className="font-mono text-slate-200">{formatCurrencyLakh(v, 2)}</span>
                 </div>
               ))}
               <div className="pt-1 border-t border-slate-800 flex justify-between text-[10px] text-amber-300">

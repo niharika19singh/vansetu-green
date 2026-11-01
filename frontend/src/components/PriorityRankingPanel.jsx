@@ -18,6 +18,14 @@ import {
   FeasibilityStatusBadge,
   deriveCorridorFeasibilityStatus,
 } from './ui/ScientificBadges';
+import {
+  safeToFixed,
+  formatScore,
+  formatTemperature,
+  formatNDVI,
+  formatPercentage,
+  formatDistanceKm,
+} from '../utils/numericFormat';
 
 const SCENARIO_LIST = [
   { id: 'baseline', label: 'Baseline', badge: 'Balanced 6-Factor' },
@@ -327,7 +335,7 @@ export default function PriorityRankingPanel({
                         {corr.highway}
                       </span>
                       <span>•</span>
-                      <span>{corr.length_km} km</span>
+                      <span>{formatDistanceKm(corr.length_km)}</span>
                     </div>
                   </div>
                 </div>
@@ -335,7 +343,7 @@ export default function PriorityRankingPanel({
                 {/* Score & Rank Shift vs Baseline */}
                 <div className="text-right shrink-0">
                   <div className="text-sm font-bold font-mono text-emerald-400">
-                    {corr.priority_score !== null ? corr.priority_score.toFixed(3) : 'N/A'}
+                    {formatScore(corr.priority_score, 3)}
                   </div>
                   <div className="flex items-center justify-end gap-0.5 text-[10px]">
                     {rankDelta > 0 ? (
@@ -362,7 +370,7 @@ export default function PriorityRankingPanel({
                   <div>
                     <span className="text-slate-500 block leading-none">Surf. LST</span>
                     <span className="font-mono font-semibold text-slate-200">
-                      {corr.lst_mean}°C
+                      {formatTemperature(corr.lst_mean)}
                     </span>
                   </div>
                 </div>
@@ -371,7 +379,7 @@ export default function PriorityRankingPanel({
                   <div>
                     <span className="text-slate-500 block leading-none">NDVI</span>
                     <span className="font-mono font-semibold text-slate-200">
-                      {corr.ndvi_mean}
+                      {formatNDVI(corr.ndvi_mean, 3)}
                     </span>
                   </div>
                 </div>
@@ -379,7 +387,7 @@ export default function PriorityRankingPanel({
                   <Wind className="w-3 h-3 text-amber-400 shrink-0" />
                   <div>
                     <span className="text-slate-500 block leading-none">AQI</span>
-                    <span className="font-mono font-semibold text-slate-200">{corr.aqi}</span>
+                    <span className="font-mono font-semibold text-slate-200">{corr.aqi || '—'}</span>
                   </div>
                 </div>
                 <div className="flex items-center gap-1">
@@ -387,7 +395,7 @@ export default function PriorityRankingPanel({
                   <div>
                     <span className="text-slate-500 block leading-none">Conf.</span>
                     <span className="font-mono font-semibold text-slate-200">
-                      {Math.round((corr.confidence_score || 0) * 100)}%
+                      {formatPercentage(corr.confidence_score, 0)}
                     </span>
                   </div>
                 </div>

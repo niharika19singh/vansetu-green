@@ -25,6 +25,11 @@ import {
   FileCheck,
 } from 'lucide-react';
 import { api } from '../api/client';
+import {
+  safeToFixed,
+  formatScore,
+  isValidNumber,
+} from '../utils/numericFormat';
 
 export default function CorridorRankingView({
   districts = [],
@@ -42,7 +47,8 @@ export default function CorridorRankingView({
   const [explanationData, setExplanationData] = useState(null);
   const [isExplaining, setIsExplaining] = useState(false);
 
-  const greenWeight = (1.0 - heatWeight).toFixed(2);
+  const safeHeatWeight = isValidNumber(heatWeight) ? Number(heatWeight) : 0.60;
+  const greenWeight = safeToFixed(1.0 - safeHeatWeight, 2);
 
   // Fetch What-if ranked corridors
   useEffect(() => {
@@ -51,7 +57,7 @@ export default function CorridorRankingView({
       setIsLoading(true);
       try {
         const res = await api.getCorridorsWhatIfRank({
-          heatWeight,
+          heatWeight: safeHeatWeight,
           top: topN,
           district: selectedDistrict !== 'All Districts' ? selectedDistrict : null,
         });
@@ -94,7 +100,7 @@ export default function CorridorRankingView({
       console.error('Failed to explain ranking:', err);
       setExplanationData({
         status: 'fallback',
-        explanation: `${corridor.name} ranked #${corridor.rank} with score ${corridor.score?.toFixed(4)}. Thermal weight: ${heatWeight}, Green deficit weight: ${greenWeight}.`,
+        explanation: `${corridor.name} ranked #${corridor.rank} with score ${formatScore(corridor.score, 4)}. Thermal weight: ${safeToFixed(safeHeatWeight, 2)}, Green deficit weight: ${greenWeight}.`,
       });
     } finally {
       setIsExplaining(false);
@@ -160,7 +166,7 @@ export default function CorridorRankingView({
             </div>
             <div className="flex items-center gap-4 text-xs font-mono">
               <span className="text-amber-400 font-bold flex items-center gap-1">
-                <Flame className="w-3.5 h-3.5" /> Heat Weight: {heatWeight.toFixed(2)}
+                <Flame className="w-3.5 h-3.5" /> Heat Weight: {safeToFixed(safeHeatWeight, 2)}
               </span>
               <span className="text-emerald-400 font-bold flex items-center gap-1">
                 <Trees className="w-3.5 h-3.5" /> Green Deficit Weight: {greenWeight}
@@ -250,16 +256,16 @@ export default function CorridorRankingView({
                       </td>
                       <td className="py-3.5 px-4 text-[#9CB9A3]">{c.district_full || c.district}</td>
                       <td className="py-3.5 px-4 text-right font-mono font-bold text-emerald-400">
-                        {c.score?.toFixed(4)}
+                        {formatScore(c.score, 4)}
                       </td>
                       <td className="py-3.5 px-4 text-right font-mono text-slate-300">
-                        {c.baseline_score?.toFixed(4)}
+                        {formatScore(c.baseline_score, 4)}
                       </td>
                       <td className="py-3.5 px-4 text-right font-mono text-amber-300">
-                        {c.heat_contribution?.toFixed(4)}
+                        {formatScore(c.heat_contribution, 4)}
                       </td>
                       <td className="py-3.5 px-4 text-right font-mono text-emerald-300">
-                        {c.green_deficit_contribution?.toFixed(4)}
+                        {formatScore(c.green_deficit_contribution, 4)}
                       </td>
                       <td className="py-3.5 px-4 text-center">
                         <button
@@ -313,8 +319,8 @@ export default function CorridorRankingView({
             ) : (
               <div className="space-y-3 text-xs leading-relaxed text-slate-200">
                 <div className="p-3.5 rounded-xl bg-[#12392B]/80 border border-emerald-500/30 text-white font-mono text-[11px] space-y-1">
-                  <div>Formula: score = {heatWeight.toFixed(2)} × Heat + {greenWeight} × (1 - NDVI)</div>
-                  <div>Computed Score: {selectedForExplanation.score?.toFixed(4)}</div>
+                  <div>Formula: score = {safeToFixed(safeHeatWeight, 2)} × Heat + {greenWeight} × (1 - NDVI)</div>
+                  <div>Computed Score: {formatScore(selectedForExplanation.score, 4)}</div>
                   <div>Rank: #{selectedForExplanation.rank} (Baseline: #{selectedForExplanation.baseline_rank})</div>
                 </div>
 

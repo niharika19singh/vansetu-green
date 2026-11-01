@@ -12,6 +12,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { api } from '../api/client';
+import { formatCurrencyLakh } from '../utils/numericFormat';
 
 export default function ParetoPortfolioLabView({ onSelectPortfolioForImplementation }) {
   const [budgetLakhs, setBudgetLakhs] = useState(50.0);
@@ -241,8 +242,8 @@ export default function ParetoPortfolioLabView({ onSelectPortfolioForImplementat
                             <div className="text-[11px] text-emerald-400">{item.intervention_name}</div>
                           </div>
                           <div className="text-right">
-                            <div className="font-mono font-bold text-white">₹{item.capex_inr_lakhs?.toFixed(2)}L</div>
-                            <div className="text-[10px] text-slate-500">5-Yr: ₹{item.five_year_lifecycle_inr_lakhs?.toFixed(2)}L</div>
+                            <div className="font-mono font-bold text-white">{formatCurrencyLakh(item.capex_inr_lakhs, 2)}</div>
+                            <div className="text-[10px] text-slate-500">5-Yr: {formatCurrencyLakh(item.five_year_lifecycle_inr_lakhs, 2)}</div>
                           </div>
                         </div>
                       ))}

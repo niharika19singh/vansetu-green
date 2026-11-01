@@ -53,6 +53,11 @@ import {
   X,
 } from 'lucide-react';
 import { getTileUrl, api } from '../api/client';
+import {
+  safeToFixed,
+  formatScore,
+  formatDistanceKm,
+} from '../utils/numericFormat';
 import districtsGeoJson from '../data/delhi_districts.json';
 
 const DELHI_CENTER = [28.6289, 77.2195];
@@ -606,7 +611,7 @@ function PointClickInspector({ enabled, onPointInspected }) {
       if (!enabled) return;
       const { lat, lng } = e.latlng;
       try {
-        const res = await api.inspectPoint(lat.toFixed(6), lng.toFixed(6));
+        const res = await api.inspectPoint(safeToFixed(lat, 6), safeToFixed(lng, 6));
         onPointInspected(res);
       } catch (err) {
         console.error('Point inspection failed:', err);
@@ -1021,14 +1026,14 @@ export default function InteractiveMap({
                       </div>
                       <div className="text-slate-700">
                         District: {corr.district} | Score:{' '}
-                        {typeof score === 'number' ? score.toFixed(3) : score}
+                        {formatScore(score, 3)}
                       </div>
                       <div className="text-slate-600">
                         LST: {corr.lst_mean}°C (1km native: {corr.lst_native_mean}°C) | NDVI:{' '}
                         {corr.ndvi_mean} | AQI: {corr.aqi}
                       </div>
                       <div className="text-slate-500 text-[10px] mt-0.5">
-                        Length: {corr.length_km ? `${corr.length_km.toFixed(2)} km` : 'N/A'} • Status:{' '}
+                        Length: {formatDistanceKm(corr.length_km)} • Status:{' '}
                         {corr.status || 'Active'}
                       </div>
                     </div>
@@ -1044,8 +1049,7 @@ export default function InteractiveMap({
           const flat = getFlatLatLngs(latLngs);
           const midpoint = getCorridorMidpoint(flat);
           const score = selectedCorridor.priority_score ?? selectedCorridor.score;
-          const scoreFormatted =
-            typeof score === 'number' ? score.toFixed(2) : (score || 'N/A');
+          const scoreFormatted = formatScore(score, 2);
           const rankVal = selectedCorridor.rank ?? selectedCorridor.priority_rank;
 
           return (
@@ -1106,7 +1110,7 @@ export default function InteractiveMap({
                     </div>
                     <div className="text-slate-700">
                       District: {selectedCorridor.district} | Score:{' '}
-                      {typeof score === 'number' ? score.toFixed(3) : score}
+                      {formatScore(score, 3)}
                     </div>
                     <div className="text-slate-600">
                       LST: {selectedCorridor.lst_mean}°C | NDVI: {selectedCorridor.ndvi_mean} | AQI:{' '}
@@ -1225,7 +1229,7 @@ export default function InteractiveMap({
                 <div className="flex items-center justify-between border-b border-slate-700 pb-1">
                   <span className="font-bold text-sky-400">Geospatial Pixel Inspection</span>
                   <span className="text-[10px] font-mono text-slate-400">
-                    {inspectedPoint.lat.toFixed(4)}°N, {inspectedPoint.lng.toFixed(4)}°E
+                    {safeToFixed(inspectedPoint?.lat, 4)}°N, {safeToFixed(inspectedPoint?.lng, 4)}°E
                   </span>
                 </div>
                 <div className="grid grid-cols-2 gap-1.5 bg-slate-900 p-2 rounded border border-slate-800">

@@ -23,6 +23,7 @@ import { api } from '../api/client';
 import StatCard from './ui/StatCard';
 import StatusBadge from './ui/StatusBadge';
 import DataTable from './ui/DataTable';
+import { formatCurrencyLakh } from '../utils/numericFormat';
 
 export default function TenderManagementView({ token, corridors = [] }) {
   const [tenders, setTenders] = useState([]);
@@ -215,7 +216,7 @@ export default function TenderManagementView({ token, corridors = [] }) {
       accessor: 'budget_ceiling_lakh',
       render: (row) => (
         <span className="font-mono font-bold text-amber-300 text-xs">
-          ₹{Number(row.budget_ceiling_lakh).toFixed(2)}L
+          {formatCurrencyLakh(row.budget_ceiling_lakh, 2)}
         </span>
       ),
     },
@@ -333,7 +334,7 @@ export default function TenderManagementView({ token, corridors = [] }) {
           />
           <StatCard
             title="Total RFP Ceilings"
-            value={`₹${totalBudgetSanctioned.toFixed(1)}L`}
+            value={formatCurrencyLakh(totalBudgetSanctioned, 1)}
             subtitle="Municipal Greening Fund"
             icon={IndianRupee}
             color="rose"

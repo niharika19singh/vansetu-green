@@ -21,6 +21,7 @@ import {
 import { api } from '../api/client';
 import StatCard from './ui/StatCard';
 import StatusBadge from './ui/StatusBadge';
+import { formatCurrencyLakh } from '../utils/numericFormat';
 
 export default function MyAssignedProjectsView({ token, onNavigate }) {
   const [assignments, setAssignments] = useState([]);
@@ -121,7 +122,7 @@ export default function MyAssignedProjectsView({ token, onNavigate }) {
           />
           <StatCard
             title="Total Contract Value"
-            value={`₹${totalSanctioned.toFixed(2)}L`}
+            value={formatCurrencyLakh(totalSanctioned, 2)}
             subtitle="Sanctioned Capital"
             icon={IndianRupee}
             color="amber"
@@ -225,7 +226,7 @@ export default function MyAssignedProjectsView({ token, onNavigate }) {
                   <div>
                     <span className="text-[10px] text-slate-400 uppercase block">Contract Value</span>
                     <span className="text-amber-300 font-bold text-base">
-                      ₹{a.approved_budget_lakh ? Number(a.approved_budget_lakh).toFixed(2) : '18.50'} Lakh
+                      {formatCurrencyLakh(a.approved_budget_lakh, 2)}
                     </span>
                   </div>
                   <div>

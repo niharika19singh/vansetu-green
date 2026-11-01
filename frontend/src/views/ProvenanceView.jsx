@@ -29,6 +29,7 @@ import {
   Maximize2,
 } from 'lucide-react';
 import { api } from '../api/client';
+import { safeToFixed } from '../utils/numericFormat';
 
 export default function ProvenanceView({ onNavigate }) {
   const [summary, setSummary] = useState(null);
@@ -749,7 +750,7 @@ export default function ProvenanceView({ onNavigate }) {
                           {chk.file_type}
                         </td>
                         <td className="p-3.5 font-mono text-cyan-400">
-                          {chk.size_bytes ? `${(chk.size_bytes / (1024 * 1024)).toFixed(2)} MB` : 'N/A'}
+                          {chk.size_bytes ? `${safeToFixed(chk.size_bytes / (1024 * 1024), 2)} MB` : 'N/A'}
                         </td>
                         <td className="p-3.5 text-[11px] text-slate-400 font-mono">
                           {chk.last_modified ? new Date(chk.last_modified).toLocaleDateString() : 'N/A'}

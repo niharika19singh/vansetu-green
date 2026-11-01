@@ -18,6 +18,7 @@ import {
   Check,
 } from 'lucide-react';
 import { api } from '../api/client';
+import { safeToFixed, formatNDVI } from '../utils/numericFormat';
 
 export default function InterventionIntelligenceView({
   selectedCorridor,
@@ -433,7 +434,7 @@ export default function InterventionIntelligenceView({
             <Trees className="w-3.5 h-3.5 text-emerald-400" />
           </div>
           <span className="text-lg font-mono font-bold text-emerald-400 block mt-1">
-            {feats.ndvi_mean !== undefined && feats.ndvi_mean !== null ? feats.ndvi_mean.toFixed(3) : 'N/A'}
+            {formatNDVI(feats.ndvi_mean, 3)}
           </span>
           <span className="text-[10px] text-emerald-300/80 block font-mono">10m Satellite Observed</span>
         </div>
@@ -527,7 +528,7 @@ export default function InterventionIntelligenceView({
                   <div>
                     <span className="text-slate-400 text-[10px] block">Relative Suitability Score</span>
                     <span className="font-mono text-emerald-400 font-bold text-sm">
-                      {item.ranking_score.toFixed(1)} / 100
+                      {safeToFixed(item.ranking_score, 1)} / 100
                     </span>
                   </div>
                   <div>

@@ -15,6 +15,7 @@ import {
   Compass,
 } from 'lucide-react';
 import { api } from '../api/client';
+import { formatPercentage } from '../utils/numericFormat';
 
 export default function CorridorEvidencePassportModal({ corridorId, open, onClose }) {
   const [passport, setPassport] = useState(null);
@@ -130,8 +131,8 @@ export default function CorridorEvidencePassportModal({ corridorId, open, onClos
                     Confidence:{' '}
                     {(() => {
                       const cScore = passport.data_quality_dimensions?.recommendation_confidence?.score;
-                      return cScore <= 1 ? (cScore * 100).toFixed(0) : cScore;
-                    })()}%
+                      return cScore != null ? (cScore <= 1 ? formatPercentage(cScore, 0) : `${cScore}%`) : '—';
+                    })()}
                   </span>
                 </div>
 
@@ -145,7 +146,7 @@ export default function CorridorEvidencePassportModal({ corridorId, open, onClos
                         {key.replace(/_/g, ' ')}
                       </div>
                       <div className="text-base font-bold text-white font-mono mt-0.5">
-                        {dim.score <= 1 ? (dim.score * 100).toFixed(0) : dim.score}%
+                        {dim?.score != null ? (dim.score <= 1 ? formatPercentage(dim.score, 0) : `${dim.score}%`) : '—'}
                       </div>
                       <div className="mt-1">
                         <span
