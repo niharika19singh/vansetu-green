@@ -137,6 +137,8 @@ ROLE_PERMISSIONS: Dict[ReviewerRole, Set[Permission]] = {
         Permission.VIEW_GOVERNMENT_AUDIT,
         Permission.MANAGE_USERS,
         Permission.MANAGE_REGISTRY,
+        Permission.VERIFY_EVIDENCE,
+        Permission.VIEW_EVIDENCE,
     },
     ReviewerRole.GOVERNMENT_ENGINEER: {
         Permission.VIEW_PUBLIC_MAP,
@@ -148,6 +150,7 @@ ROLE_PERMISSIONS: Dict[ReviewerRole, Set[Permission]] = {
         Permission.BROWSE_TENDERS,
         Permission.VIEW_ALL_ASSIGNMENTS,
         Permission.VIEW_REGIONAL_HEALTH,
+        Permission.VIEW_EVIDENCE,
     },
     ReviewerRole.ADMINISTRATOR: set(Permission),
     ReviewerRole.PRO_PROFESSIONAL: {
@@ -207,6 +210,7 @@ ROLE_PERMISSIONS: Dict[ReviewerRole, Set[Permission]] = {
         Permission.VIEW_PUBLIC_MAP,
         Permission.VIEW_CORRIDOR_INTELLIGENCE,
         Permission.VIEW_REGIONAL_HEALTH,
+        Permission.VIEW_EVIDENCE,
     },
 }
 

@@ -50,6 +50,7 @@ from app.routers import (
     health,
     prediction,
     community,
+    provenance,
 )
 
 logging.basicConfig(
@@ -137,6 +138,7 @@ app.include_router(corridor_cost.router)
 app.include_router(health.router)
 app.include_router(prediction.router)
 app.include_router(community.router)
+app.include_router(provenance.router)
 
 
 @app.get("/", tags=["System"])

@@ -1053,6 +1053,41 @@ export const api = {
     }
   },
   getEvidencePassportsSummary: () => requestJson('/api/evidence/passports'),
+  getEvidenceCatalogue: async ({ district, status, search, source } = {}) => {
+    const params = new URLSearchParams();
+    if (district && district !== 'all') params.set('district', district);
+    if (status && status !== 'all') params.set('status', status);
+    if (search) params.set('search', search);
+    if (source && source !== 'all') params.set('source', source);
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return requestJson(`/api/evidence/catalogue${query}`);
+  },
+  verifyEvidencePassport: async ({ corridorId, status, surveyNotes, checkpointsVerified }, token) => {
+    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+    return requestJson('/api/evidence/verify', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        corridor_id: corridorId,
+        status,
+        survey_notes: surveyNotes || '',
+        checkpoints_verified: checkpointsVerified || [],
+      }),
+    });
+  },
+  getEvidenceHistory: (corridorId) => requestJson(`/api/evidence/history/${encodeURIComponent(corridorId)}`),
+
+  // Module 2: Data Provenance & Lineage
+  getProvenanceSummary: () => requestJson('/api/provenance/summary'),
+  getProvenanceDatasets: (search) => {
+    const query = search ? `?search=${encodeURIComponent(search)}` : '';
+    return requestJson(`/api/provenance/datasets${query}`);
+  },
+  getProvenanceDataset: (datasetId) => requestJson(`/api/provenance/datasets/${encodeURIComponent(datasetId)}`),
+  getProvenanceLineage: () => requestJson('/api/provenance/lineage'),
+  getProvenanceHealth: () => requestJson('/api/provenance/health'),
+  getProvenanceAudit: () => requestJson('/api/provenance/audit'),
+  exportProvenanceManifest: () => requestJson('/api/provenance/export'),
 
   // Feature 2: Right Tree, Right Place (Segment Suitability & Species)
   getSegmentSuitability: async (corridorId) => {

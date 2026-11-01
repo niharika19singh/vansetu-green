@@ -62,6 +62,8 @@ const CorridorRankingView = React.lazy(() => import('./views/CorridorRankingView
 const HeatwaveMappingView = React.lazy(() => import('./views/HeatwaveMappingView'));
 const CommunityInputView = React.lazy(() => import('./views/CommunityInputView'));
 const HealthDataView = React.lazy(() => import('./views/HealthDataView'));
+const EvidencePassportView = React.lazy(() => import('./views/EvidencePassportView'));
+const ProvenanceView = React.lazy(() => import('./views/ProvenanceView'));
 
 // Niharika Government Institutional Workspaces
 const GovernmentOverviewView = React.lazy(() => import('./components/GovernmentOverviewView'));
@@ -182,6 +184,7 @@ export const ROLE_PERMISSIONS_VIEW = {
   corridors: ['normal_user', 'pro_professional', 'government_admin', 'government_engineer'],
   canopy: ['normal_user', 'pro_professional', 'government_admin', 'government_engineer'],
   public_projects: ['normal_user', 'pro_professional', 'government_admin', 'government_engineer'],
+  evidence_passport: ['normal_user', 'pro_professional', 'government_admin', 'government_engineer'],
   provenance: ['normal_user', 'pro_professional', 'government_admin', 'government_engineer'],
   shade: ['normal_user', 'pro_professional', 'government_admin', 'government_engineer'],
   seasonal: ['normal_user', 'pro_professional', 'government_admin', 'government_engineer'],
@@ -570,11 +573,12 @@ export default function App() {
             </button>
 
             <button
-              onClick={() => {
-                setPassportCorridorId(selectedCorridor?.code || selectedCorridor?.id || 'C-14');
-                setPassportOpen(true);
-              }}
-              className="px-2.5 py-1.5 rounded-lg bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-700/80 text-xs font-bold text-emerald-300 flex items-center gap-1.5 transition shadow"
+              onClick={() => setActiveView('evidence_passport')}
+              className={`px-2.5 py-1.5 rounded-lg border text-xs font-bold flex items-center gap-1.5 transition shadow ${
+                activeView === 'evidence_passport'
+                  ? 'bg-emerald-800 border-emerald-500 text-white ring-1 ring-emerald-400'
+                  : 'bg-emerald-950/80 hover:bg-emerald-900 border-emerald-700/80 text-emerald-300'
+              }`}
               title="Open Corridor Evidence Passport"
             >
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
@@ -582,8 +586,12 @@ export default function App() {
             </button>
 
             <button
-              onClick={() => setProvenanceModalOpen(true)}
-              className="px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-white/10 text-xs font-medium text-slate-300 flex items-center gap-1.5 transition"
+              onClick={() => setActiveView('provenance')}
+              className={`px-2.5 py-1.5 rounded-lg border text-xs font-medium flex items-center gap-1.5 transition ${
+                activeView === 'provenance'
+                  ? 'bg-cyan-900 border-cyan-500 text-white ring-1 ring-cyan-400'
+                  : 'bg-slate-900 hover:bg-slate-800 border-white/10 text-slate-300'
+              }`}
               title="View Scientific Data Provenance"
             >
               <Database className="w-3.5 h-3.5 text-emerald-400" />
@@ -876,9 +884,17 @@ export default function App() {
               )}
 
               {activeView === 'provenance' && (
-                <EquityAndProvenanceView
-                  provenance={provenance}
-                  statsSummary={statsSummary}
+                <ProvenanceView onNavigate={(v) => setActiveView(v)} />
+              )}
+
+              {activeView === 'evidence_passport' && (
+                <EvidencePassportView
+                  selectedCorridorId={selectedCorridor?.code || selectedCorridor?.id}
+                  onSelectCorridor={setSelectedCorridor}
+                  onNavigate={(v) => setActiveView(v)}
+                  currentUser={currentUser}
+                  currentRole={currentRole}
+                  token={token}
                 />
               )}
 

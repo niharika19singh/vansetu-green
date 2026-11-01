@@ -122,7 +122,8 @@ export default function AppSidebar({
           { id: 'govt_audit', shortLabel: 'Audit Trail', icon: ShieldCheck },
         ]
       : []),
-    { id: 'provenance', shortLabel: 'Community Review', icon: Users },
+    { id: 'evidence_passport', shortLabel: 'Evidence Passport', icon: ShieldCheck },
+    { id: 'provenance', shortLabel: 'Data Provenance', icon: Database },
     { id: 'records', shortLabel: 'Institutional Memory', icon: Brain },
     { id: 'agent', shortLabel: 'VanSetu AI Planning', icon: Sparkles },
   ];
@@ -144,6 +145,8 @@ export default function AppSidebar({
     { id: 'my_proposals', shortLabel: 'My Submitted Bids', icon: FileText },
     { id: 'my_assigned_projects', shortLabel: 'Awarded Projects', icon: Award },
     { id: 'corridor_cost_approval', shortLabel: 'CapEx & LifeCycle', icon: Calculator },
+    { id: 'evidence_passport', shortLabel: 'Evidence Passport', icon: ShieldCheck },
+    { id: 'provenance', shortLabel: 'Data Provenance', icon: Database },
     { id: 'agent', shortLabel: 'VanSetu AI Planning', icon: Sparkles },
   ];
 
@@ -155,7 +158,8 @@ export default function AppSidebar({
     { id: 'public_projects', shortLabel: 'Greening Works', icon: Trees },
     { id: 'shade', shortLabel: 'Pedestrian Shade', icon: Sun },
     { id: 'seasonal', shortLabel: 'Seasonal Heat', icon: Thermometer },
-    { id: 'provenance', shortLabel: 'Evidence Provenance', icon: FileCheck },
+    { id: 'evidence_passport', shortLabel: 'Evidence Passport', icon: ShieldCheck },
+    { id: 'provenance', shortLabel: 'Data Provenance', icon: Database },
     { id: 'community_input', shortLabel: 'Community Input', icon: Users },
     { id: 'health_data', shortLabel: 'Health Data Registry', icon: HeartPulse },
   ];
