@@ -24,6 +24,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/provenance", tags=["Data Provenance & Lineage"])
 
 
+@router.get("", summary="Get Provenance Overview")
+@router.get("/", summary="Get Provenance Overview")
 @router.get("/summary", summary="Get Provenance Overview Summary")
 def get_provenance_summary() -> Dict[str, Any]:
     """

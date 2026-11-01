@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
+import ErrorBoundary from './components/ui/ErrorBoundary';
 import {
   Trees,
   Thermometer,
@@ -512,18 +513,20 @@ export default function App() {
   if (activeView === 'landing' || activeView === 'home') {
     return (
       <div className="w-screen min-h-screen bg-[#071C16]">
-        <React.Suspense fallback={<ViewLoadingFallback />}>
-          <LandingPageView
-            onNavigate={(v) => {
-              if (v === 'home' || v === 'landing') {
-                setActiveView('landing');
-              } else {
-                setActiveView(v);
-              }
-            }}
-            statsSummary={statsSummary}
-          />
-        </React.Suspense>
+        <ErrorBoundary featureName="Landing Page" onNavigate={setActiveView}>
+          <React.Suspense fallback={<ViewLoadingFallback />}>
+            <LandingPageView
+              onNavigate={(v) => {
+                if (v === 'home' || v === 'landing') {
+                  setActiveView('landing');
+                } else {
+                  setActiveView(v);
+                }
+              }}
+              statsSummary={statsSummary}
+            />
+          </React.Suspense>
+        </ErrorBoundary>
 
         {/* Global Modals Accessible via Landing Page */}
         <React.Suspense fallback={null}>
@@ -718,7 +721,8 @@ export default function App() {
               />
             </React.Suspense>
           ) : (
-            <React.Suspense fallback={<ViewLoadingFallback />}>
+            <ErrorBoundary featureName={activeView} onNavigate={setActiveView}>
+              <React.Suspense fallback={<ViewLoadingFallback />}>
               {/* Kunal Map-First Views */}
               {(activeView === 'map' || activeView === 'engineer_map') && (
                 <MapExplorerView
@@ -1132,7 +1136,8 @@ export default function App() {
                 />
               )}
             </React.Suspense>
-          )}
+          </ErrorBoundary>
+        )}
         </div>
       </div>
 
