@@ -47,18 +47,18 @@ export default function MekoMemoryStudioView({ mekoEnabled, onToggleMeko }) {
           ? 'niharika-coding-agent'
           : 'climate_planner_agent';
 
-      const [dpRes, compRes, checkTRes, memRes, actRes] = await Promise.all([
+      const [dpRes, compRes, checkTRes, memRes, actRes] = await Promise.allSettled([
         api.getMekoDatapacks(),
         api.compareMekoOnOff({ corridorId: 'C-14', wardId: 'ward-12', budgetLakh: 8.0 }),
         api.getMekoCheckT(),
         api.getMekoMemories({ agentId: agentForDp, datapackId: selectedDatapack }),
         api.getMekoActivity(30),
       ]);
-      setDatapacks(dpRes.datapacks || []);
-      setComparison(compRes);
-      setCheckT(checkTRes);
-      setMemories(memRes.memories || []);
-      setActivity(actRes.events || []);
+      if (dpRes.status === 'fulfilled') setDatapacks(dpRes.value?.datapacks || []);
+      if (compRes.status === 'fulfilled') setComparison(compRes.value);
+      if (checkTRes.status === 'fulfilled') setCheckT(checkTRes.value);
+      if (memRes.status === 'fulfilled') setMemories(memRes.value?.memories || []);
+      if (actRes.status === 'fulfilled') setActivity(actRes.value?.events || []);
     } catch (err) {
       setErrorMessage(err.message || 'Failed to load Meko datapack state.');
     } finally {

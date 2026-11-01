@@ -130,6 +130,7 @@ export default function MapExplorerView({
           aqiStations={aqiStations}
           rasterZones={rasterZones}
           targetLocation={targetLocation}
+          hasRightDrawer={Boolean(selectedCorridor)}
         />
 
         {/* Collapsible Left Filter Drawer */}

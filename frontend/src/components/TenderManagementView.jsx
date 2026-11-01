@@ -157,21 +157,29 @@ export default function TenderManagementView({ token, corridors = [] }) {
   };
 
   // KPIs
-  const openTendersCount = tenders.filter((t) => t.status === 'PUBLISHED').length;
-  const awardedCount = tenders.filter((t) => t.status === 'AWARDED').length;
+  const openTendersCount = tenders.filter(
+    (t) => t.status === 'PUBLISHED' || t.status === 'Open' || t.status === 'Under Review'
+  ).length;
+  const awardedCount = tenders.filter(
+    (t) => t.status === 'AWARDED' || t.status === 'Awarded' || t.status === 'In Progress'
+  ).length;
   const totalProposalsCount = tenders.reduce(
     (sum, t) => sum + (t.proposals_count || t.proposals?.length || 0),
     0
   );
   const totalBudgetSanctioned = tenders.reduce(
-    (sum, t) => sum + (Number(t.budget_ceiling_lakh) || 0),
+    (sum, t) => sum + (Number(t.budget_ceiling_lakh || t.approved_budget_lakh) || 0),
     0
   );
 
   // Filtered tenders
   const filteredTenders = useMemo(() => {
     if (statusFilter === 'ALL') return tenders;
-    return tenders.filter((t) => t.status === statusFilter);
+    return tenders.filter((t) => {
+      const s = String(t.status || '').toLowerCase();
+      const f = String(statusFilter).toLowerCase();
+      return s === f || (f === 'open' && (s === 'published' || s === 'open'));
+    });
   }, [tenders, statusFilter]);
 
   // Columns for DataTable
@@ -234,21 +242,23 @@ export default function TenderManagementView({ token, corridors = [] }) {
       header: 'Status',
       accessor: 'status',
       render: (row) => {
-        if (row.status === 'PUBLISHED') {
-          return (
-            <StatusBadge variant="info" showDot>
-              PUBLISHED
-            </StatusBadge>
-          );
+        const s = String(row.status || 'Open').toLowerCase();
+        let variant = 'info';
+        let label = 'Open';
+        if (s === 'awarded' || s === 'completed') {
+          variant = 'success';
+          label = s === 'completed' ? 'Completed' : 'Awarded';
+        } else if (s === 'under review' || s === 'applied' || s === 'in progress') {
+          variant = 'warning';
+          label = s === 'in progress' ? 'In Progress' : 'Under Review';
+        } else if (s === 'rejected' || s === 'cancelled') {
+          variant = 'danger';
+          label = s === 'rejected' ? 'Rejected' : 'Cancelled';
+        } else {
+          variant = 'info';
+          label = 'Open';
         }
-        if (row.status === 'AWARDED') {
-          return (
-            <StatusBadge variant="success" showDot>
-              AWARDED
-            </StatusBadge>
-          );
-        }
-        return <StatusBadge variant="default">{row.status}</StatusBadge>;
+        return <StatusBadge variant={variant} showDot>{label}</StatusBadge>;
       },
     },
     {
@@ -477,8 +487,8 @@ export default function TenderManagementView({ token, corridors = [] }) {
 
                 <div className="space-y-3">
                   {selectedTender.proposals?.map((p) => {
-                    const isAwarded = p.status === 'AWARDED';
-                    const canAward = selectedTender.status === 'PUBLISHED' && !isAwarded;
+                    const isAwarded = p.status === 'AWARDED' || p.status === 'Awarded';
+                    const canAward = (selectedTender.status === 'PUBLISHED' || selectedTender.status === 'Open' || selectedTender.status === 'Under Review') && !isAwarded;
 
                     return (
                       <div

@@ -481,9 +481,34 @@ function escapeHtml(str) {
     .replace(/'/g, '&#39;');
 }
 
-function MapViewportController({ selectedCorridor, fitTrigger, resetTrigger, targetLocation }) {
+function MapViewportController({ selectedCorridor, fitTrigger, resetTrigger, targetLocation, resizeTrigger }) {
   const map = useMap();
   const prevCorridorIdRef = useRef(null);
+
+  // ResizeObserver on map container for ultra-smooth resizing when layout changes
+  useEffect(() => {
+    if (!map || !map.getContainer) return;
+    const container = map.getContainer();
+    if (!container || typeof ResizeObserver === 'undefined') return;
+
+    const ro = new ResizeObserver(() => {
+      if (map && map._container && !map._destroyed) {
+        map.invalidateSize();
+      }
+    });
+    ro.observe(container);
+    return () => ro.disconnect();
+  }, [map]);
+
+  useEffect(() => {
+    if (!map || !map._container || map._destroyed) return;
+    const timer = setTimeout(() => {
+      if (map && map._container && !map._destroyed) {
+        map.invalidateSize();
+      }
+    }, 120);
+    return () => clearTimeout(timer);
+  }, [resizeTrigger, map]);
 
   // Initialize custom Leaflet stacking panes to ensure selected corridor
   // and floating label always sit high above all rasters and unselected vectors
@@ -684,6 +709,8 @@ export default function InteractiveMap({
   aqiStations = [],
   rasterZones = null,
   targetLocation = null,
+  hasRightDrawer = false,
+  resizeTrigger = 0,
 }) {
   const [basemap, setBasemap] = useState('dark');
   const [rasterOpacity, setRasterOpacity] = useState(0.72);
@@ -703,6 +730,22 @@ export default function InteractiveMap({
 
   // Right-Side Dismissible Overlay Panel State (Visible by default)
   const [isOverlaysPanelOpen, setIsOverlaysPanelOpen] = useState(true);
+  const overlaysPanelRef = useRef(null);
+
+  // Outside-click dismiss handler for Overlays panel
+  useEffect(() => {
+    if (!isOverlaysPanelOpen) return;
+    const handleOutsideClick = (e) => {
+      if (overlaysPanelRef.current && !overlaysPanelRef.current.contains(e.target)) {
+        // Ignore clicks on the reopen button
+        const openBtn = document.querySelector('[data-testid="open-overlays-panel-btn"]');
+        if (openBtn && openBtn.contains(e.target)) return;
+        setIsOverlaysPanelOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, [isOverlaysPanelOpen]);
 
   // Additional Administrative Context Layers (Disabled by default to eliminate squares/rectangles and dashed boxes)
   const [showDistricts, setShowDistricts] = useState(false);
@@ -771,6 +814,7 @@ export default function InteractiveMap({
           fitTrigger={fitTrigger}
           resetTrigger={resetTrigger}
           targetLocation={targetLocation}
+          resizeTrigger={resizeTrigger}
         />
         <PointClickInspector
           enabled={inspectMode}
@@ -1281,9 +1325,10 @@ export default function InteractiveMap({
       {/* Right-Side Dismissible OVERLAYS Panel (Visible by default) */}
       {isOverlaysPanelOpen && (
         <div
+          ref={overlaysPanelRef}
           data-testid="floating-overlays-card"
           className={`absolute top-3 ${
-            selectedCorridor ? 'right-4 md:right-[25.5rem]' : 'right-4'
+            hasRightDrawer && selectedCorridor ? 'right-4 md:right-[25.5rem]' : 'right-4'
           } z-[400] w-72 max-w-[calc(100vw-2rem)] max-h-[calc(100vh-120px)] flex flex-col bg-[#071C16]/95 backdrop-blur-xl border border-white/15 rounded-2xl p-3.5 shadow-2xl transition-all`}
           role="region"
           aria-label="Map Overlays Panel"
@@ -1424,7 +1469,7 @@ export default function InteractiveMap({
       {!isOverlaysPanelOpen && (
         <div
           className={`absolute top-3 ${
-            selectedCorridor ? 'right-4 md:right-[25.5rem]' : 'right-4'
+            hasRightDrawer && selectedCorridor ? 'right-4 md:right-[25.5rem]' : 'right-4'
           } z-[400] flex items-center gap-2`}
         >
           {selectedCorridor && (

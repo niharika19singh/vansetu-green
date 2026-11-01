@@ -209,16 +209,23 @@ export default function TenderMarketplaceView({ token, corridors = [] }) {
       <div className="flex-1 overflow-y-auto p-6">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {tenders.map((t) => {
-            const isPublished = t.status === 'PUBLISHED';
-            const isAwarded = t.status === 'AWARDED';
-            const isAllocated = assignments.some(
-              (a) => a.corridor_id === t.corridor_id && a.status === 'ALLOCATED'
-            );
+            const rawStatus = t.status || 'Open';
+            let normStatus = 'Open';
+            if (rawStatus === 'AWARDED' || rawStatus === 'Awarded') normStatus = 'Awarded';
+            else if (rawStatus === 'UNDER_REVIEW' || rawStatus === 'Under Review' || rawStatus === 'Applied') normStatus = 'Under Review';
+            else if (rawStatus === 'IN_PROGRESS' || rawStatus === 'In Progress') normStatus = 'In Progress';
+            else if (rawStatus === 'COMPLETED' || rawStatus === 'Completed') normStatus = 'Completed';
+            else if (rawStatus === 'REJECTED' || rawStatus === 'Rejected') normStatus = 'Rejected';
+            else if (rawStatus === 'CANCELLED' || rawStatus === 'Cancelled') normStatus = 'Cancelled';
+
+            const isAwarded = normStatus === 'Awarded' || normStatus === 'In Progress' || normStatus === 'Completed';
+            const canBid = normStatus === 'Open';
+            const progress = Number(t.delivery_progress_pct || t.progress_pct || 0);
 
             return (
               <div
-                key={t.id}
-                className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4 flex flex-col justify-between hover:border-slate-700 transition shadow-sm"
+                key={t.id || t.tender_id}
+                className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4 flex flex-col justify-between hover:border-emerald-500/40 transition shadow-sm"
               >
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
@@ -226,58 +233,85 @@ export default function TenderMarketplaceView({ token, corridors = [] }) {
                       {t.corridor_id}
                     </span>
                     <div className="flex items-center gap-1.5">
-                      {isAllocated ? (
-                        <StatusBadge variant="warning" showDot>
-                          CORRIDOR ALREADY ALLOCATED
-                        </StatusBadge>
-                      ) : (
-                        <StatusBadge variant="success" showDot>
-                          CORRIDOR AVAILABLE
-                        </StatusBadge>
-                      )}
+                      <StatusBadge
+                        variant={
+                          normStatus === 'Awarded' || normStatus === 'Completed'
+                            ? 'success'
+                            : normStatus === 'In Progress' || normStatus === 'Under Review'
+                            ? 'warning'
+                            : 'info'
+                        }
+                        showDot
+                      >
+                        {normStatus.toUpperCase()}
+                      </StatusBadge>
                     </div>
                   </div>
 
                   <div>
                     <h3 className="text-sm font-bold text-white line-clamp-1">{t.title}</h3>
                     <p className="text-xs text-slate-400 mt-1 line-clamp-2 leading-relaxed">
-                      {t.description}
+                      {t.description || t.scope_of_work}
                     </p>
                   </div>
 
                   <div className="grid grid-cols-2 gap-2 bg-slate-950 p-3 rounded-xl border border-slate-850 text-xs font-mono">
                     <div>
                       <span className="text-[10px] text-slate-500 uppercase block">
-                        Budget Ceiling
+                        Contract Value / Ceiling
                       </span>
                       <span className="text-amber-300 font-bold text-sm">
-                        ₹{t.budget_ceiling_lakh} Lakh
+                        ₹{t.budget_ceiling_lakh || t.approved_budget_lakh || 18.5} Lakh
                       </span>
                     </div>
                     <div>
-                      <span className="text-[10px] text-slate-500 uppercase block">Est. Duration</span>
+                      <span className="text-[10px] text-slate-500 uppercase block">Timeline</span>
                       <span className="text-slate-300 font-bold text-sm">
-                        {t.estimated_duration_weeks || 16} Weeks
+                        {t.timeline_weeks || t.estimated_duration_weeks || 16} Weeks
                       </span>
                     </div>
                   </div>
+
+                  {t.assigned_contractor && (
+                    <div className="text-[11px] text-slate-300 bg-slate-950/80 p-2.5 rounded-lg border border-slate-800/80 space-y-1">
+                      <div className="text-[10px] text-slate-500 uppercase font-mono">Assigned Contractor</div>
+                      <div className="font-semibold text-emerald-300 truncate">{t.assigned_contractor}</div>
+                    </div>
+                  )}
+
+                  {isAwarded && (
+                    <div className="space-y-1 bg-slate-950/80 p-2.5 rounded-lg border border-slate-800/80">
+                      <div className="flex justify-between text-[10px] font-mono text-slate-400">
+                        <span>Delivery Progress</span>
+                        <span className="font-bold text-emerald-400">{progress}%</span>
+                      </div>
+                      <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                        <div
+                          className="bg-emerald-500 h-1.5 rounded-full transition-all"
+                          style={{ width: `${Math.min(100, Math.max(5, progress))}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="pt-3 border-t border-slate-800 flex items-center justify-between">
                   <div className="text-[11px] text-slate-400 font-mono">
-                    Deadline: {t.submission_deadline ? t.submission_deadline.substring(0, 10) : 'Open'}
+                    Deadline: {t.closing_date ? t.closing_date.substring(0, 10) : t.submission_deadline ? t.submission_deadline.substring(0, 10) : 'Open'}
                   </div>
 
-                  {isPublished ? (
+                  {canBid ? (
                     <button
                       onClick={() => handleOpenProposalDrawer(t)}
-                      className="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs flex items-center gap-1.5 transition shadow-lg shadow-blue-950/40"
+                      className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs flex items-center gap-1.5 transition shadow-lg shadow-emerald-950/40"
                     >
                       <Send className="w-3.5 h-3.5" />
                       <span>Submit Bid</span>
                     </button>
                   ) : (
-                    <span className="text-xs font-mono text-slate-500">Tender Closed</span>
+                    <span className="text-xs font-mono text-slate-500">
+                      {isAwarded ? 'Contract Assigned' : 'Under Review'}
+                    </span>
                   )}
                 </div>
               </div>

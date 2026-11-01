@@ -51,6 +51,7 @@ from app.routers import (
     prediction,
     community,
     provenance,
+    government_reports,
 )
 
 logging.basicConfig(
@@ -139,6 +140,7 @@ app.include_router(health.router)
 app.include_router(prediction.router)
 app.include_router(community.router)
 app.include_router(provenance.router)
+app.include_router(government_reports.router)
 
 
 @app.get("/", tags=["System"])

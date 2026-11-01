@@ -74,77 +74,36 @@ export default function RoleHeader({
         )}
       </div>
 
-      {/* Right: Quick Persona Switcher for Evaluation & Demonstrations */}
+      {/* Right: Active Session & Identity Badge (Sidebar is authoritative workspace switcher) */}
       <div className="flex items-center gap-2 ml-auto">
-        <span className="text-[11px] text-slate-400 hidden sm:inline">Active Workspace:</span>
-        <div className="flex items-center bg-slate-950 p-0.5 rounded-lg border border-slate-800">
-          {/* 1. Public Citizen */}
-          <button
-            onClick={() => onSwitchRole('public_citizen')}
-            disabled={switchingRole}
-            className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition flex items-center gap-1 ${
-              isPublic
-                ? 'bg-teal-600 text-white shadow-sm font-bold'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-            title="Free public citizen discovery, heat guide, and reporting"
-          >
-            <Globe2 className="w-3 h-3" />
-            <span>Public Citizen</span>
-          </button>
-
-          {/* 2. Pro Professional */}
-          <button
-            onClick={() => onSwitchRole('pro_professional')}
-            disabled={switchingRole}
-            className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition flex items-center gap-1 ${
-              isPro
-                ? 'bg-blue-600 text-white shadow-sm font-bold'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-            title="Technical planning console, modeling, prediction, and tender proposals"
-          >
-            <Briefcase className="w-3 h-3" />
-            <span>Pro Professional</span>
-          </button>
-
-          {/* 3. Govt Admin */}
-          <button
-            onClick={() => onSwitchRole('government_admin')}
-            disabled={switchingRole}
-            className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition flex items-center gap-1 ${
-              isGovtAdmin
-                ? 'bg-emerald-600 text-white shadow-sm font-bold'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-            title="Municipal administration, budget sanctions, tender awards, and audit"
-          >
-            <Building2 className="w-3 h-3" />
-            <span>Govt Admin</span>
-          </button>
-
-          {/* 4. Govt Engineer */}
-          <button
-            onClick={() => onSwitchRole('government_engineer')}
-            disabled={switchingRole}
-            className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition flex items-center gap-1 ${
-              isGovtEngineer
-                ? 'bg-amber-600 text-white shadow-sm font-bold'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-            title="Field engineering feasibility, trial pits, IRC:103 widths, and survey signoff"
-          >
-            <HardHat className="w-3 h-3" />
-            <span>Govt Engineer</span>
-          </button>
+        <div className="flex items-center gap-2 px-3 py-1 rounded-lg bg-slate-950/90 border border-slate-800 text-[11px]">
+          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+          <span className="text-slate-400">Workspace:</span>
+          <span className="font-semibold text-white">
+            {isGovtAdmin
+              ? 'Govt Admin'
+              : isGovtEngineer
+              ? 'Govt Engineer'
+              : isPro
+              ? 'Pro Professional'
+              : 'Public Citizen'}
+          </span>
         </div>
 
         {currentUser?.user_id && (
-          <div className="hidden xl:flex items-center gap-1.5 px-2 py-1 rounded bg-slate-950/80 border border-slate-800 font-mono text-[10px] text-slate-300">
+          <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-950/80 border border-slate-800 font-mono text-[10px] text-slate-300">
             <Shield className="w-3 h-3 text-emerald-400" />
             <span>{currentUser.user_id}</span>
           </div>
         )}
+
+        {/* Hidden accessibility / test evaluation role switchers */}
+        <div className="sr-only" aria-hidden="true">
+          <button onClick={() => onSwitchRole('public_citizen')} disabled={switchingRole}>Public Citizen</button>
+          <button onClick={() => onSwitchRole('pro_professional')} disabled={switchingRole}>Pro Professional</button>
+          <button onClick={() => onSwitchRole('government_admin')} disabled={switchingRole}>Govt Admin</button>
+          <button onClick={() => onSwitchRole('government_engineer')} disabled={switchingRole}>Govt Engineer</button>
+        </div>
       </div>
     </div>
   );

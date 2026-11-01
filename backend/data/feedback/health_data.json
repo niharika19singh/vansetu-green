@@ -58,5 +58,50 @@
     "emergency_visits": 0,
     "vulnerable_population_pct": 0.0,
     "heat_risk_level": "Moderate"
+  },
+  {
+    "id": "924322ff",
+    "submitted_at": "2026-11-01T03:51:02.514218+00:00",
+    "ip_hash": "251a6e94c663ae6f",
+    "verification_status": "official_clinical_entry",
+    "total_heat_cases": 59,
+    "district": "Central",
+    "area": "LNJP Hospital",
+    "heatstroke_cases": 8,
+    "dehydration_cases": 19,
+    "respiratory_cases": 32,
+    "emergency_visits": 0,
+    "vulnerable_population_pct": 0.0,
+    "heat_risk_level": "Moderate"
+  },
+  {
+    "id": "4acdb8fc",
+    "submitted_at": "2026-11-01T03:52:01.308211+00:00",
+    "ip_hash": "251a6e94c663ae6f",
+    "verification_status": "official_clinical_entry",
+    "total_heat_cases": 59,
+    "district": "Central",
+    "area": "LNJP Hospital",
+    "heatstroke_cases": 8,
+    "dehydration_cases": 19,
+    "respiratory_cases": 32,
+    "emergency_visits": 0,
+    "vulnerable_population_pct": 0.0,
+    "heat_risk_level": "Moderate"
+  },
+  {
+    "id": "98061556",
+    "submitted_at": "2026-11-01T04:15:02.763703+00:00",
+    "ip_hash": "251a6e94c663ae6f",
+    "verification_status": "official_clinical_entry",
+    "total_heat_cases": 59,
+    "district": "Central",
+    "area": "LNJP Hospital",
+    "heatstroke_cases": 8,
+    "dehydration_cases": 19,
+    "respiratory_cases": 32,
+    "emergency_visits": 0,
+    "vulnerable_population_pct": 0.0,
+    "heat_risk_level": "Moderate"
   }
 ]

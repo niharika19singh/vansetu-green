@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   MapPin,
   Trees,
@@ -12,10 +12,42 @@ import {
   Sun,
   Layers,
   Sparkles,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { api } from '../api/client';
 import InteractiveMap from '../components/InteractiveMap';
-import { DELHI_DISTRICTS_LIST } from './PublicCitizenDashboardView';
+
+export const CANONICAL_DELHI_DISTRICTS = [
+  'Central Delhi',
+  'East Delhi',
+  'New Delhi',
+  'North Delhi',
+  'North East Delhi',
+  'North West Delhi',
+  'Shahdara',
+  'South Delhi',
+  'South East Delhi',
+  'South West Delhi',
+  'West Delhi',
+];
+
+export function normalizeDistrict(d) {
+  if (!d) return '';
+  const s = String(d).trim().toLowerCase();
+  if (s.includes('shahdara')) return 'Shahdara';
+  if (s.includes('new delhi')) return 'New Delhi';
+  if (s.includes('north east')) return 'North East Delhi';
+  if (s.includes('north west')) return 'North West Delhi';
+  if (s.includes('south east')) return 'South East Delhi';
+  if (s.includes('south west')) return 'South West Delhi';
+  if (s.includes('north')) return 'North Delhi';
+  if (s.includes('south')) return 'South Delhi';
+  if (s.includes('east')) return 'East Delhi';
+  if (s.includes('west')) return 'West Delhi';
+  if (s.includes('central')) return 'Central Delhi';
+  return d;
+}
 
 export default function PublicClimateMapView({
   corridors = [],
@@ -27,6 +59,13 @@ export default function PublicClimateMapView({
   const [filterMode, setFilterMode] = useState('all'); // 'all', 'hottest', 'coolest'
   const [search, setSearch] = useState('');
   const [activeCorridor, setActiveCorridor] = useState(null);
+  const [isPanelCollapsed, setIsPanelCollapsed] = useState(false);
+  const [resizeTrigger, setResizeTrigger] = useState(0);
+
+  const togglePanel = useCallback(() => {
+    setIsPanelCollapsed((prev) => !prev);
+    setResizeTrigger((c) => c + 1);
+  }, []);
 
   // Filter corridors for citizens
   const filteredCorridors = corridors.filter((c) => {
@@ -35,8 +74,12 @@ export default function PublicClimateMapView({
     const cName = props.name || '';
     const cCode = props.code || props.id || '';
 
-    if (district !== 'All Districts' && !cDistrict.toLowerCase().includes(district.toLowerCase())) {
-      return false;
+    if (district !== 'All Districts') {
+      const normC = normalizeDistrict(cDistrict);
+      const normD = normalizeDistrict(district);
+      if (normC !== normD) {
+        return false;
+      }
     }
 
     if (search.trim()) {
@@ -61,19 +104,35 @@ export default function PublicClimateMapView({
   const displayCorridor = activeCorridor || selectedCorridor || filteredCorridors[0];
 
   return (
-    <div className="h-full flex flex-col lg:flex-row bg-[#071C16] text-slate-100 overflow-hidden font-body">
+    <div className="h-full flex flex-col lg:flex-row bg-[#071C16] text-slate-100 overflow-hidden font-body relative">
       {/* Left Sidebar: Citizen Controls & Corridor Cards */}
-      <div className="w-full lg:w-96 flex flex-col border-b lg:border-b-0 lg:border-r border-emerald-500/20 bg-[#0D2821] shrink-0 h-1/2 lg:h-full overflow-hidden">
+      <div
+        className={`${
+          isPanelCollapsed
+            ? 'hidden lg:hidden'
+            : 'w-full lg:w-96 flex flex-col border-b lg:border-b-0 lg:border-r border-emerald-500/20 bg-[#0D2821] shrink-0 h-1/2 lg:h-full'
+        } overflow-hidden transition-all duration-300 z-10`}
+      >
         {/* Header */}
         <div className="p-4 border-b border-emerald-500/20 space-y-3">
-          <div>
-            <span className="px-2 py-0.5 rounded bg-teal-500/20 text-teal-300 font-bold text-[10px] uppercase tracking-wider border border-teal-500/30">
-              Citizen Map Guide
-            </span>
-            <h1 className="text-lg font-bold text-white mt-1">Explore Delhi Heat &amp; Shade</h1>
-            <p className="text-xs text-slate-400">
-              Discover street-level pedestrian heat risks and cool tree-covered corridors.
-            </p>
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <span className="px-2 py-0.5 rounded bg-teal-500/20 text-teal-300 font-bold text-[10px] uppercase tracking-wider border border-teal-500/30">
+                Citizen Map Guide
+              </span>
+              <h1 className="text-lg font-bold text-white mt-1">Explore Delhi Heat &amp; Shade</h1>
+              <p className="text-xs text-slate-400">
+                Discover street-level pedestrian heat risks and cool tree-covered corridors.
+              </p>
+            </div>
+            <button
+              onClick={togglePanel}
+              className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-emerald-500/20 border border-emerald-500/30 transition shrink-0"
+              title="Collapse explore panel"
+              aria-label="Collapse explore panel"
+            >
+              <ChevronLeft className="w-4 h-4 text-emerald-400" />
+            </button>
           </div>
 
           {/* Search Box */}
@@ -98,7 +157,7 @@ export default function PublicClimateMapView({
                 className="w-full bg-[#071C16] border border-emerald-500/30 rounded-lg px-2 py-1 text-xs text-white focus:outline-none"
               >
                 <option value="All Districts">All 11 Districts</option>
-                {DELHI_DISTRICTS_LIST.map((d) => (
+                {CANONICAL_DELHI_DISTRICTS.map((d) => (
                   <option key={d} value={d}>{d}</option>
                 ))}
               </select>
@@ -122,8 +181,10 @@ export default function PublicClimateMapView({
         {/* Corridor List for Citizens */}
         <div className="flex-1 overflow-y-auto p-3 space-y-2.5">
           <div className="text-[11px] text-slate-400 px-1 flex items-center justify-between">
-            <span>Showing {filteredCorridors.length} streets</span>
-            <span>Click any street to inspect</span>
+            <span className="font-medium text-emerald-300">
+              Showing {filteredCorridors.length} corridors {district !== 'All Districts' ? `in ${district}` : 'in Delhi'}
+            </span>
+            <span className="text-[10px] text-slate-500">Click street to inspect</span>
           </div>
 
           {filteredCorridors.map((c) => {
@@ -177,8 +238,29 @@ export default function PublicClimateMapView({
 
       {/* Right Canvas: Interactive Map & Street Explainer Card */}
       <div className="flex-1 flex flex-col h-1/2 lg:h-full relative overflow-hidden">
+        {/* Floating Reopen Button when left panel is collapsed */}
+        {isPanelCollapsed && (
+          <div className="absolute top-4 left-4 z-30 pointer-events-auto">
+            <button
+              onClick={togglePanel}
+              className="px-3.5 py-2 rounded-xl bg-[#0D2821]/95 hover:bg-[#12392B] border border-emerald-500/40 text-white font-semibold text-xs flex items-center gap-2 shadow-2xl backdrop-blur-md transition-all hover:border-emerald-400"
+              title="Open Explore Delhi Heat & Shade panel"
+            >
+              <ChevronRight className="w-4 h-4 text-emerald-400" />
+              <span>Explore Delhi Heat &amp; Shade</span>
+              <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[10px] font-mono font-bold">
+                {filteredCorridors.length}
+              </span>
+            </button>
+          </div>
+        )}
+
         {/* Top Floating Status Pill */}
-        <div className="absolute top-4 left-4 z-20 bg-[#0D2821]/95 backdrop-blur-md border border-emerald-500/30 rounded-xl px-4 py-2.5 shadow-xl max-w-md pointer-events-auto">
+        <div
+          className={`absolute ${
+            isPanelCollapsed ? 'top-16 left-4' : 'top-4 left-4'
+          } z-20 bg-[#0D2821]/95 backdrop-blur-md border border-emerald-500/30 rounded-xl px-4 py-2.5 shadow-xl max-w-md pointer-events-auto transition-all`}
+        >
           <div className="flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full bg-teal-400 animate-ping" />
             <span className="text-xs font-bold text-white">Public Heat Overlay Active</span>
@@ -193,6 +275,8 @@ export default function PublicClimateMapView({
           <InteractiveMap
             corridors={filteredCorridors}
             selectedCorridor={displayCorridor}
+            hasRightDrawer={false}
+            resizeTrigger={resizeTrigger}
             onSelectCorridor={(c) => {
               setActiveCorridor(c);
               if (onSelectCorridor) onSelectCorridor(c);

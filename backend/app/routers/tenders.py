@@ -73,6 +73,12 @@ class VerifyProfessionalRequest(BaseModel):
     verification_status: str = Field(description="'VERIFIED', 'PENDING_VERIFICATION', or 'SUSPENDED'")
 
 
+class UpdateTenderProgressRequest(BaseModel):
+    progress_pct: float = Field(ge=0.0, le=100.0, description="Delivery completion percentage (0-100)")
+    status: Optional[str] = Field(default=None, description="Updated status, e.g. 'In Progress', 'Completed'")
+    notes: Optional[str] = Field(default="", description="Milestone verification notes")
+
+
 # -----------------------------------------------------------------------------
 # Corridor Availability
 # -----------------------------------------------------------------------------
@@ -212,6 +218,26 @@ def award_tender(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+
+
+@router.post("/tenders/{tender_id}/progress")
+def update_tender_progress(
+    tender_id: str,
+    body: UpdateTenderProgressRequest,
+    current_user: AuthenticatedUser = Depends(get_optional_current_user),
+) -> Dict[str, Any]:
+    """Update execution progress and milestone completion for a corridor tender."""
+    svc = get_tender_service()
+    try:
+        return svc.update_tender_progress(
+            tender_id=tender_id,
+            progress_pct=body.progress_pct,
+            status=body.status,
+            milestone_notes=body.notes,
+            user=current_user,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
 
 
 # -----------------------------------------------------------------------------
