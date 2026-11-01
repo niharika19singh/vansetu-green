@@ -1,16 +1,23 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import {
   Database,
-  ShieldCheck,
   X,
-  CheckCircle2,
-  AlertCircle,
-  Layers,
-  Calendar,
-  Globe,
+  Thermometer,
+  Info,
 } from 'lucide-react';
 
 export default function DataProvenanceModal({ open, onClose, provenance, statsSummary }) {
+  useEffect(() => {
+    if (!open) return undefined;
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [open, onClose]);
+
   if (!open) return null;
 
   const datasets = provenance?.datasets ? Object.values(provenance.datasets) : [];
@@ -18,28 +25,34 @@ export default function DataProvenanceModal({ open, onClose, provenance, statsSu
   const aqiMeta = statsSummary?.aqi || {};
 
   return (
-    <div className="fixed inset-0 z-[1000] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div
+      className="fixed inset-0 z-[1000] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="provenance-modal-title"
+    >
       <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-4xl w-full max-h-[88vh] flex flex-col shadow-2xl overflow-hidden">
         {/* Header */}
         <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/60">
           <div className="flex items-center gap-2.5">
             <div className="p-2 rounded-lg bg-emerald-500/15 border border-emerald-500/30">
-              <Database className="w-5 h-5 text-emerald-400" />
+              <Database className="w-5 h-5 text-emerald-400" aria-hidden="true" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-slate-100">
+              <h2 id="provenance-modal-title" className="text-base font-bold text-slate-100">
                 Scientific Data Provenance &amp; Spatial Resolution Registry
               </h2>
               <p className="text-xs text-slate-400">
-                Verification of native vs. display resolutions, CRS validation, observation epochs, and live vs. historical status
+                Verification of native vs. display resolutions, CRS validation, observation epochs, and measured vs. interpolated status
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-slate-800"
+            aria-label="Close provenance modal"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
           >
-            <X className="w-5 h-5" />
+            <X className="w-5 h-5" aria-hidden="true" />
           </button>
         </div>
 
@@ -91,7 +104,54 @@ export default function DataProvenanceModal({ open, onClose, provenance, statsSu
                 {aqiMeta.is_live ? 'Live Sensor API' : 'Historical Reference'}
               </div>
               <div className="text-[10px] text-slate-400 mt-0.5">
-                8 CPCB Stations ({aqiMeta.data_mode})
+                8 CPCB Stations ({aqiMeta.data_mode || 'historical_reference'})
+              </div>
+            </div>
+          </div>
+
+          {/* Section 6A & 6B: Sensor Resolution & Thermal Disambiguation Reference Matrix */}
+          <div className="bg-slate-950/90 border border-slate-800 rounded-xl p-4 space-y-2.5">
+            <div className="flex items-center gap-2">
+              <Thermometer className="w-4 h-4 text-orange-400" aria-hidden="true" />
+              <h3 className="text-sm font-bold text-slate-100">
+                Satellite Sensor Resolution Hierarchy &amp; Human Heat Stress Disambiguation
+              </h3>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 text-[11px]">
+              <div className="bg-slate-900 p-2.5 rounded-lg border border-slate-800 space-y-1">
+                <div className="font-bold text-emerald-400">
+                  Sentinel-2 L2A MSI (Active Optical)
+                </div>
+                <div className="font-mono text-[10px] text-slate-300">
+                  Native: 10m • Display: 10m (True Pixel)
+                </div>
+                <p className="text-slate-400 text-[10px]">
+                  Red (B04) and NIR (B08) bands provide true 10m street-corridor canopy reflectance without spatial interpolation.
+                </p>
+              </div>
+
+              <div className="bg-slate-900 p-2.5 rounded-lg border border-slate-800 space-y-1">
+                <div className="font-bold text-orange-400">
+                  MODIS Terra vs. Landsat 8/9 TIRS (Thermal)
+                </div>
+                <div className="font-mono text-[10px] text-slate-300">
+                  MODIS: 1,000m Native • Landsat: 100m Native (30m Grid)
+                </div>
+                <p className="text-slate-400 text-[10px]">
+                  Current raster pipeline uses MODIS MOD11A2 (1km native resampled to 10m display). Note: Even Landsat 8/9 Collection 2 Surface Temperature has a 100m native thermal sensor resampled to 30m pixels.
+                </p>
+              </div>
+
+              <div className="bg-slate-900 p-2.5 rounded-lg border border-amber-500/30 space-y-1">
+                <div className="font-bold text-amber-300">
+                  Human Heat Stress (UTCI / WBGT): Not available
+                </div>
+                <div className="font-mono text-[10px] text-amber-200">
+                  Requires 2m Air Temp, RH%, Wind &amp; MRT
+                </div>
+                <p className="text-slate-400 text-[10px]">
+                  Satellite LST measures roof/pavement radiometric skin temperature, not pedestrian thermal comfort. UTCI/WBGT is marked &ldquo;Not available&rdquo; until street-level weather stations are connected.
+                </p>
               </div>
             </div>
           </div>

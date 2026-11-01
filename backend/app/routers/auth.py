@@ -11,8 +11,8 @@ from __future__ import annotations
 import logging
 import os
 import secrets
-from typing import Any, Dict, List
-from fastapi import APIRouter, Depends, HTTPException, status
+from typing import Any, Dict, List, Optional
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
 from ml.security.auth import (
@@ -32,7 +32,7 @@ router = APIRouter(prefix="/api/auth", tags=["Authentication & RBAC"])
 
 
 class DemoRoleSwitchRequest(BaseModel):
-    role: str = Field(description="Role to preview: 'government_admin', 'pro_professional', or 'normal_user'")
+    role: Optional[str] = Field(default=None, description="Role to preview: 'government_admin', 'government_engineer', 'pro_professional', or 'public_citizen'")
 
 
 @router.get("/me")
@@ -69,7 +69,10 @@ async def get_my_permissions(
 
 
 @router.post("/demo-switch-role")
-async def demo_switch_role(req: DemoRoleSwitchRequest) -> Dict[str, Any]:
+async def demo_switch_role(
+    req: Optional[DemoRoleSwitchRequest] = None,
+    role: Optional[str] = Query(default=None),
+) -> Dict[str, Any]:
     """
     Development-only persona provisioning tool for demonstration testing.
     Issues an ephemeral bearer token with 15-minute validity for the chosen role.
@@ -86,8 +89,9 @@ async def demo_switch_role(req: DemoRoleSwitchRequest) -> Dict[str, Any]:
             ),
         )
 
+    target_role = (req.role if req and req.role else role) or ""
     auth_mgr = get_auth_manager()
-    role_key = req.role.strip().lower()
+    role_key = target_role.strip().lower()
 
     if role_key in ("government_admin", "govt_admin", "admin"):
         token, user = auth_mgr.provision_test_user(
@@ -119,7 +123,7 @@ async def demo_switch_role(req: DemoRoleSwitchRequest) -> Dict[str, Any]:
             expires_in_seconds=900,
             is_demo=True,
         )
-    elif role_key in ("normal_user", "public", "citizen", "guest"):
+    elif role_key in ("normal_user", "public_citizen", "public", "citizen", "guest"):
         token, user = auth_mgr.provision_test_user(
             role=ReviewerRole.NORMAL_USER,
             user_id=f"DEMO_CITIZEN_{secrets.token_hex(4)}",
@@ -132,14 +136,19 @@ async def demo_switch_role(req: DemoRoleSwitchRequest) -> Dict[str, Any]:
     else:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Unknown role '{req.role}'. Choose 'government_admin', 'government_engineer', 'pro_professional', or 'normal_user'.",
+            detail=f"Unknown role '{target_role}'. Choose 'government_admin', 'government_engineer', 'pro_professional', or 'public_citizen'.",
         )
 
     perms = [p.value for p in ROLE_PERMISSIONS.get(user.role, set())]
     return {
         "access_token": token,
+        "token": token,
         "token_type": "Bearer",
         "expires_in": 900,
+        "role": user.role.value.lower(),
+        "user_id": user.user_id,
+        "organization": user.organization,
+        "permissions": sorted(perms),
         "user": {
             "user_id": user.user_id,
             "username": user.username,

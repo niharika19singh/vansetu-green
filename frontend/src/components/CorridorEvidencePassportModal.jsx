@@ -89,8 +89,31 @@ export default function CorridorEvidencePassportModal({ corridorId, open, onClos
           )}
 
           {error && (
-            <div className="p-4 rounded-xl bg-red-950/40 border border-red-800 text-red-300">
-              {error}
+            <div className="p-8 rounded-xl bg-slate-950/80 border border-slate-800 text-center space-y-3">
+              <AlertTriangle className="w-8 h-8 text-amber-400 mx-auto" />
+              <div className="text-sm font-semibold text-white">Corridor Evidence Not Found</div>
+              <p className="text-xs text-slate-400 max-w-md mx-auto">{error}</p>
+              <div className="pt-2">
+                <button
+                  onClick={() => {
+                    setLoading(true);
+                    setError(null);
+                    api
+                      .getEvidencePassport(corridorId)
+                      .then((data) => {
+                        setPassport(data);
+                        setLoading(false);
+                      })
+                      .catch((err) => {
+                        setError(err.message || 'Failed to load Evidence Passport');
+                        setLoading(false);
+                      });
+                  }}
+                  className="px-4 py-2 bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-semibold rounded-lg transition shadow"
+                >
+                  Retry Verification
+                </button>
+              </div>
             </div>
           )}
 
@@ -104,12 +127,16 @@ export default function CorridorEvidencePassportModal({ corridorId, open, onClos
                     5 Disaggregated Data Quality Dimensions
                   </h3>
                   <span className="text-xs text-emerald-400 font-mono font-bold">
-                    Confidence: {passport.data_quality_dimensions.recommendation_confidence.score}%
+                    Confidence:{' '}
+                    {(() => {
+                      const cScore = passport.data_quality_dimensions?.recommendation_confidence?.score;
+                      return cScore <= 1 ? (cScore * 100).toFixed(0) : cScore;
+                    })()}%
                   </span>
                 </div>
 
                 <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-                  {Object.entries(passport.data_quality_dimensions).map(([key, dim]) => (
+                  {Object.entries(passport.data_quality_dimensions || {}).map(([key, dim]) => (
                     <div
                       key={key}
                       className="bg-slate-900/90 border border-slate-800/80 p-2.5 rounded-lg text-center"
@@ -118,12 +145,12 @@ export default function CorridorEvidencePassportModal({ corridorId, open, onClos
                         {key.replace(/_/g, ' ')}
                       </div>
                       <div className="text-base font-bold text-white font-mono mt-0.5">
-                        {dim.score}%
+                        {dim.score <= 1 ? (dim.score * 100).toFixed(0) : dim.score}%
                       </div>
                       <div className="mt-1">
                         <span
                           className={`text-[9px] px-1.5 py-0.5 rounded font-bold ${
-                            dim.grade === 'HIGH' || dim.grade === 'EXCELLENT'
+                            dim.grade === 'HIGH' || dim.grade === 'EXCELLENT' || dim.grade?.startsWith('A')
                               ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
                               : 'bg-amber-950 text-amber-300 border border-amber-800'
                           }`}

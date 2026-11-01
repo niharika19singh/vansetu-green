@@ -177,7 +177,7 @@ export default function HospitalDataSourcesView({ token }) {
         {/* Right Column: ABDM Ecosystem Security & Architecture Disclosures */}
         <div className="lg:col-span-5 h-full overflow-y-auto p-5 space-y-4">
           <div className="text-xs font-bold text-slate-400 uppercase tracking-wider font-mono">
-            ABDM Sandbox Architecture
+            ABDM Sandbox &amp; Model Architecture
           </div>
 
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
@@ -209,12 +209,20 @@ export default function HospitalDataSourcesView({ token }) {
                 <span className="text-slate-400">Zero PII Guarantee:</span>
                 <span className="text-emerald-400 font-bold">ENFORCED (100%)</span>
               </div>
+              <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 flex justify-between">
+                <span className="text-slate-400">Database Store:</span>
+                <span className="text-emerald-300 font-bold">backend/data/hospital_health.sqlite</span>
+              </div>
             </div>
 
-            <div className="p-3 rounded-lg bg-emerald-950/30 border border-emerald-500/30 text-[11px] text-emerald-200/90 leading-relaxed">
-              <strong>Compliance Protocol:</strong> Only monthly epidemiological counts of
-              heatstroke attendances aggregated by municipal district are stored for corridor
-              prioritization calculations.
+            <div className="p-3 rounded-lg bg-emerald-950/30 border border-emerald-500/30 text-[11px] text-emerald-200/90 space-y-1.5 leading-relaxed">
+              <strong className="text-white block">Health Vulnerability Model Specifications:</strong>
+              <ul className="list-disc list-inside space-y-1 text-slate-300">
+                <li><strong className="text-emerald-300">Participating Facilities:</strong> AIIMS (South), Safdarjung Hospital (South), LNJP Hospital (Central).</li>
+                <li><strong className="text-emerald-300">Input Features:</strong> Heat-illness visits, heatstroke emergency attendances, respiratory visits, population catchment.</li>
+                <li><strong className="text-emerald-300">Output Multiplier:</strong> Bounded 1.00× to 1.25× scaling applied to corridor heat risk.</li>
+                <li><strong className="text-emerald-300">Sandbox Ready:</strong> Pre-validated mock ABDM gateway ready for live production switch.</li>
+              </ul>
             </div>
           </div>
         </div>

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import {
   BarChart,
   Bar,
@@ -10,18 +10,33 @@ import {
 } from 'recharts';
 import {
   Calculator,
-  Activity,
-  ShieldAlert,
   CheckCircle2,
+  ShieldAlert,
   TrendingUp,
   Layers,
+  Footprints,
+  Info,
+  ThumbsUp,
+  MessageSquare,
+  Box,
+  Send,
+  Sparkles,
+  Loader2,
 } from 'lucide-react';
+import { api } from '../api/client';
+import Corridor3DViewer from './Corridor3DViewer';
+import {
+  FeasibilityStatusBadge,
+  ThermalSeparationCard,
+  deriveCorridorFeasibilityStatus,
+  FEASIBILITY_STATUS_META,
+} from './ui/ScientificBadges';
 
 const INDICATOR_LABELS = {
-  heat: 'Heat Exposure (LST)',
+  heat: 'Heat Exposure (Surface LST)',
   green_deficit: 'Vegetation Deficit (1-NDVI)',
   pollution: 'Air Quality Stress (AQI)',
-  pedestrian: 'Pedestrian Demand',
+  pedestrian: 'Pedestrian Exposure Proxy',
   health_risk: 'Compound Health Risk',
   vulnerable_pop: 'Socio-Spatial Vulnerability',
 };
@@ -35,63 +50,143 @@ const INDICATOR_COLORS = {
   vulnerable_pop: '#a855f7',
 };
 
-export default function CorridorAnalyticalDetail({
+function CorridorAnalyticalDetail({
   corridor,
   sensitivityRow,
   activeScenario,
+  mekoEnabled = true,
   onOpenPassport,
 }) {
-  if (!corridor) {
-    return (
-      <div className="p-6 text-center text-slate-400 text-xs">
-        Select an urban corridor on the map or ranking list to inspect its explainable calculation breakdown.
-      </div>
-    );
-  }
-
-  const calc = corridor.calculation_breakdown || {};
+  const calc = corridor?.calculation_breakdown || {};
   const normInputs = calc.normalized_inputs || {};
   const activeWeights = calc.active_weights || {};
   const configWeights = calc.configured_weights || {};
   const contributions = calc.weighted_contributions || {};
   const confBreakdown = calc.confidence_breakdown || {};
   const feasBreakdown = calc.feasibility_breakdown || {};
-  const completeness = corridor.data_completeness || {};
+  const completeness = corridor?.data_completeness || {};
 
-  // Prepare Recharts data for 6-factor weighted contribution breakdown
-  const factorChartData = Object.keys(INDICATOR_LABELS).map((key) => ({
-    key,
-    name: INDICATOR_LABELS[key].split(' (')[0],
-    fullLabel: INDICATOR_LABELS[key],
-    normalized: normInputs[key] !== null && normInputs[key] !== undefined ? normInputs[key] : 0,
-    activeWeight: activeWeights[key] || 0,
-    contribution:
-      contributions[key] !== null && contributions[key] !== undefined ? contributions[key] : 0,
-    isMissing: normInputs[key] === null || normInputs[key] === undefined,
-    color: INDICATOR_COLORS[key],
-  }));
+  // Memoize Recharts data for 6-factor weighted contribution breakdown
+  const factorChartData = useMemo(() => {
+    if (!corridor) return [];
+    return Object.keys(INDICATOR_LABELS).map((key) => ({
+      key,
+      name: INDICATOR_LABELS[key].split(' (')[0],
+      fullLabel: INDICATOR_LABELS[key],
+      normalized: normInputs[key] !== null && normInputs[key] !== undefined ? normInputs[key] : 0,
+      activeWeight: activeWeights[key] || 0,
+      contribution:
+        contributions[key] !== null && contributions[key] !== undefined ? contributions[key] : 0,
+      isMissing: normInputs[key] === null || normInputs[key] === undefined,
+      color: INDICATOR_COLORS[key],
+    }));
+  }, [corridor, normInputs, activeWeights, contributions]);
 
-  // Prepare Recharts data for 5-scenario sensitivity comparison
-  const scenarioComp = sensitivityRow?.scenario_comparison || {};
-  const scenarioChartData = [
-    { id: 'baseline', label: 'Baseline' },
-    { id: 'heat_resilience', label: 'Heat Res.' },
-    { id: 'air_quality', label: 'Air Qual.' },
-    { id: 'pedestrian_equity', label: 'Ped. Equity' },
-    { id: 'extreme_vulnerability', label: 'Ext. Vuln.' },
-  ].map((sc) => {
-    const entry = scenarioComp[sc.id] || {};
-    return {
-      id: sc.id,
-      name: sc.label,
-      score: entry.score || 0,
-      rank: entry.rank || '-',
-      delta: entry.rank_shift_vs_baseline || 0,
-      isCurrent: sc.id === activeScenario,
-    };
-  });
+  // Memoize Recharts data for 5-scenario sensitivity comparison
+  const scenarioChartData = useMemo(() => {
+    const scenarioComp = sensitivityRow?.scenario_comparison || {};
+    return [
+      { id: 'baseline', label: 'Baseline' },
+      { id: 'heat_resilience', label: 'Heat Res.' },
+      { id: 'air_quality', label: 'Air Qual.' },
+      { id: 'pedestrian_equity', label: 'Ped. Equity' },
+      { id: 'extreme_vulnerability', label: 'Ext. Vuln.' },
+    ].map((sc) => {
+      const entry = scenarioComp[sc.id] || {};
+      return {
+        id: sc.id,
+        name: sc.label,
+        score: entry.score || 0,
+        rank: entry.rank || '-',
+        delta: entry.rank_shift_vs_baseline || 0,
+        isCurrent: sc.id === activeScenario,
+      };
+    });
+  }, [sensitivityRow, activeScenario]);
+
+  if (!corridor) {
+    return (
+      <div className="p-6 text-center text-slate-400 text-xs">
+        Select an urban corridor on the map or ranking list to inspect its Tri-Vector evidence breakdown, thermal disambiguation, and sensitivity profile.
+      </div>
+    );
+  }
 
   const stability = sensitivityRow?.stability_metrics || {};
+  const feasibilityStatus = deriveCorridorFeasibilityStatus(corridor, mekoEnabled);
+  const feasibilityMeta =
+    FEASIBILITY_STATUS_META[feasibilityStatus] ||
+    FEASIBILITY_STATUS_META.FIELD_VERIFICATION_REQUIRED;
+
+  // Legacy Parity: Community Upvoting & Suggestions State
+  const [upvotes, setUpvotes] = useState(0);
+  const [hasUpvoted, setHasUpvoted] = useState(false);
+  const [isUpvoting, setIsUpvoting] = useState(false);
+
+  const [suggestions, setSuggestions] = useState([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [newSuggestionText, setNewSuggestionText] = useState('');
+  const [submittingSuggestion, setSubmittingSuggestion] = useState(false);
+
+  // Legacy Parity: 3D Physical Cross-Section Viewer
+  const [show3DViewer, setShow3DViewer] = useState(false);
+
+  useEffect(() => {
+    if (!corridor) return;
+    const cid = corridor.code || corridor.id;
+    api
+      .getCorridorUpvotes(cid)
+      .then((res) => {
+        setUpvotes(res.upvotes || 0);
+      })
+      .catch(() => {});
+
+    api
+      .getCorridorSuggestions(cid)
+      .then((res) => {
+        setSuggestions(res.suggestions || []);
+      })
+      .catch(() => {});
+  }, [corridor]);
+
+  const handleUpvote = useCallback(async () => {
+    if (!corridor || isUpvoting || hasUpvoted) return;
+    setIsUpvoting(true);
+    const cid = corridor.code || corridor.id;
+    try {
+      const res = await api.upvoteCorridor(cid);
+      setUpvotes(res.upvotes || upvotes + 1);
+      setHasUpvoted(true);
+    } catch (err) {
+      console.error('Upvote failed:', err);
+    } finally {
+      setIsUpvoting(false);
+    }
+  }, [corridor, isUpvoting, hasUpvoted, upvotes]);
+
+  const handleSubmitSuggestion = useCallback(async (e) => {
+    e.preventDefault();
+    if (!corridor || !newSuggestionText.trim() || submittingSuggestion) return;
+    setSubmittingSuggestion(true);
+    const cid = corridor.code || corridor.id;
+    try {
+      const res = await api.addCorridorSuggestion(cid, newSuggestionText.trim());
+      setSuggestions((prev) => [
+        {
+          id: res.id,
+          text: newSuggestionText.trim(),
+          upvotes: 0,
+          created_at: new Date().toISOString(),
+        },
+        ...prev,
+      ]);
+      setNewSuggestionText('');
+    } catch (err) {
+      console.error('Submit suggestion failed:', err);
+    } finally {
+      setSubmittingSuggestion(false);
+    }
+  }, [corridor, newSuggestionText, submittingSuggestion]);
 
   return (
     <div className="space-y-4 text-xs">
@@ -112,107 +207,282 @@ export default function CorridorAnalyticalDetail({
         </button>
       </div>
 
-      {/* Tri-Vector Score Cards */}
-      <div className="grid grid-cols-3 gap-2">
-        <div className="bg-slate-950/90 border border-emerald-500/30 rounded-lg p-2.5">
-          <div className="text-[10px] text-slate-400 uppercase font-semibold">
-            Priority Score
+      {/* Community Participation & 3D Cross-Section Action Row */}
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={handleUpvote}
+          disabled={hasUpvoted || isUpvoting}
+          className={`px-3 py-1.5 rounded-lg font-semibold text-xs flex items-center gap-1.5 transition border ${
+            hasUpvoted
+              ? 'bg-emerald-500/20 border-emerald-400 text-emerald-300'
+              : 'bg-slate-900 hover:bg-slate-800 border-slate-700 text-slate-200'
+          }`}
+          title="Upvote this corridor to demonstrate citizen greening demand"
+        >
+          <ThumbsUp className={`w-3.5 h-3.5 ${hasUpvoted ? 'text-emerald-400 fill-emerald-400' : 'text-slate-400'}`} />
+          <span>{hasUpvoted ? 'Upvoted' : 'Upvote Corridor'} ({upvotes})</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setShow3DViewer(!show3DViewer)}
+          className={`px-3 py-1.5 rounded-lg font-semibold text-xs flex items-center gap-1.5 transition border ${
+            show3DViewer
+              ? 'bg-emerald-600 border-emerald-400 text-white shadow'
+              : 'bg-slate-900 hover:bg-slate-800 border-slate-700 text-slate-200'
+          }`}
+          title="Toggle interactive 3D physical cross-section preview"
+        >
+          <Box className="w-3.5 h-3.5 text-emerald-400" />
+          <span>3D Cross-Section</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setShowSuggestions(!showSuggestions)}
+          className={`px-3 py-1.5 rounded-lg font-semibold text-xs flex items-center gap-1.5 transition border ${
+            showSuggestions
+              ? 'bg-emerald-600 border-emerald-400 text-white shadow'
+              : 'bg-slate-900 hover:bg-slate-800 border-slate-700 text-slate-200'
+          }`}
+          title="View and submit citizen suggestions for this corridor"
+        >
+          <MessageSquare className="w-3.5 h-3.5 text-amber-400" />
+          <span>Suggestions ({suggestions.length})</span>
+        </button>
+      </div>
+
+      {/* 3D Corridor Cross-Section Viewer Panel */}
+      {show3DViewer && (
+        <div className="space-y-1.5">
+          <Corridor3DViewer corridor={corridor} height="280px" />
+        </div>
+      )}
+
+      {/* Community Suggestions Section */}
+      {showSuggestions && (
+        <div className="bg-slate-950/90 border border-slate-800 rounded-xl p-3 space-y-3">
+          <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+            <span className="font-bold text-slate-200 flex items-center gap-1.5">
+              <MessageSquare className="w-3.5 h-3.5 text-amber-400" />
+              Community Citizen Suggestions
+            </span>
+            <span className="text-[10px] text-slate-400">Rate limit: 3/hr per corridor</span>
           </div>
-          <div className="text-lg font-bold font-mono text-emerald-400 mt-0.5">
-            {corridor.priority_score !== null ? corridor.priority_score.toFixed(4) : 'N/A'}
+
+          <form onSubmit={handleSubmitSuggestion} className="space-y-2">
+            <div className="relative">
+              <textarea
+                value={newSuggestionText}
+                onChange={(e) => setNewSuggestionText(e.target.value)}
+                maxLength={300}
+                placeholder="Suggest a specific greening, shade pergola, or water point intervention for this corridor..."
+                rows={2}
+                className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-slate-100 placeholder:text-slate-400 focus:outline-none focus:border-emerald-500 resize-none"
+              />
+              <span className="absolute bottom-1.5 right-2 text-[9px] text-slate-400">
+                {newSuggestionText.length}/300
+              </span>
+            </div>
+            <div className="flex justify-end">
+              <button
+                type="submit"
+                disabled={!newSuggestionText.trim() || submittingSuggestion}
+                className="px-3 py-1 rounded bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-semibold flex items-center gap-1 transition"
+              >
+                {submittingSuggestion ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
+                Submit Suggestion
+              </button>
+            </div>
+          </form>
+
+          <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+            {suggestions.length === 0 ? (
+              <div className="text-center py-3 text-slate-400 text-xs">
+                No citizen suggestions submitted yet. Be the first to propose an intervention!
+              </div>
+            ) : (
+              suggestions.map((s) => (
+                <div key={s.id} className="bg-slate-900/80 border border-slate-800 p-2.5 rounded-lg space-y-1">
+                  <div className="text-slate-200 text-xs">{s.text}</div>
+                  <div className="flex items-center justify-between text-[10px] text-slate-400 pt-1 border-t border-slate-800/60">
+                    <span>{new Date(s.created_at).toLocaleDateString()}</span>
+                    <span className="text-emerald-400 font-semibold">👍 {s.upvotes || 0} votes</span>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
-          <div className="text-[10px] text-slate-400">
-            Rank #{corridor.rank} ({corridor.severity})
+        </div>
+      )}
+      {/* Section 6C & 6D: Tri-Vector Evidence Cards (Never Collapsed Into One Score) */}
+      <div
+        className="space-y-2"
+        role="region"
+        aria-label="Tri-Vector Decision Assessment: Priority Need, Implementation Feasibility, and Evidence Confidence"
+      >
+        <div className="flex items-center justify-between">
+          <span className="text-[11px] font-bold text-slate-200 uppercase tracking-wide">
+            Tri-Vector Decision Framework (Separated Dimensions)
+          </span>
+          <FeasibilityStatusBadge status={feasibilityStatus} />
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          {/* Vector 1: Priority Need */}
+          <div className="bg-slate-950/90 border border-emerald-500/30 rounded-lg p-2.5">
+            <div className="text-[10px] text-slate-400 uppercase font-semibold">
+              1. Priority Need
+            </div>
+            <div className="text-lg font-bold font-mono text-emerald-400 mt-0.5">
+              {corridor.priority_score !== null ? corridor.priority_score.toFixed(4) : 'N/A'}
+            </div>
+            <div className="text-[10px] text-slate-300 font-medium">
+              Rank #{corridor.rank} ({corridor.severity})
+            </div>
+            <div className="text-[10px] text-slate-500 mt-0.5">
+              6-indicator multi-hazard index
+            </div>
+          </div>
+
+          {/* Vector 2: Implementation Feasibility */}
+          <div className="bg-slate-950/90 border border-sky-500/30 rounded-lg p-2.5">
+            <div className="text-[10px] text-slate-400 uppercase font-semibold">
+              2. Site Feasibility
+            </div>
+            <div className="text-lg font-bold font-mono text-sky-400 mt-0.5">
+              {(corridor.feasibility_score * 100).toFixed(0)}%
+            </div>
+            <div className="text-[10px] text-slate-300 font-medium">
+              Est. ROW ~{feasBreakdown.estimated_row_width_m || 18}m ({corridor.highway})
+            </div>
+            <div className="text-[10px] text-amber-300/90 mt-0.5">
+              OSM proxy — civil survey pending
+            </div>
+          </div>
+
+          {/* Vector 3: Evidence Confidence */}
+          <div className="bg-slate-950/90 border border-amber-500/30 rounded-lg p-2.5">
+            <div className="text-[10px] text-slate-400 uppercase font-semibold">
+              3. Evidence Confidence
+            </div>
+            <div className="text-lg font-bold font-mono text-amber-400 mt-0.5">
+              {(corridor.confidence_score * 100).toFixed(0)}%
+            </div>
+            <div className="text-[10px] text-slate-300 font-medium">
+              {completeness.active_signal_count || 6}/{completeness.total_signal_count || 6} Signals Active
+            </div>
+            <div className="text-[10px] text-slate-500 mt-0.5">
+              {corridor.aqi_is_live ? 'Live AQI + Historical Raster' : 'Historical Reference Mode'}
+            </div>
           </div>
         </div>
 
-        <div className="bg-slate-950/90 border border-sky-500/30 rounded-lg p-2.5">
-          <div className="text-[10px] text-slate-400 uppercase font-semibold">
-            Feasibility
-          </div>
-          <div className="text-lg font-bold font-mono text-sky-400 mt-0.5">
-            {(corridor.feasibility_score * 100).toFixed(0)}%
-          </div>
-          <div className="text-[10px] text-slate-400">
-            ROW ~{feasBreakdown.estimated_row_width_m || 18}m ({corridor.highway})
-          </div>
-        </div>
-
-        <div className="bg-slate-950/90 border border-amber-500/30 rounded-lg p-2.5">
-          <div className="text-[10px] text-slate-400 uppercase font-semibold">
-            Evidence Conf.
-          </div>
-          <div className="text-lg font-bold font-mono text-amber-400 mt-0.5">
-            {(corridor.confidence_score * 100).toFixed(0)}%
-          </div>
-          <div className="text-[10px] text-slate-400">
-            {completeness.active_signal_count || 6}/{completeness.total_signal_count || 6} Signals Active
+        {/* Explicit Engineering Feasibility & Uncertainty Notice (Section 6D) */}
+        <div className="bg-slate-950/90 border border-slate-800 rounded-lg p-2.5 text-[11px] flex items-start gap-2">
+          <Info className="w-3.5 h-3.5 text-sky-400 shrink-0 mt-0.5" aria-hidden="true" />
+          <div className="text-slate-300 leading-relaxed">
+            <strong className="text-sky-300">{feasibilityMeta.humanLabel}: </strong>
+            {feasibilityMeta.description} Estimated road width (~{feasBreakdown.estimated_row_width_m || 18}m) is derived from OpenStreetMap highway tag (<code className="text-slate-200">{corridor.highway}</code>) and must not be treated as a completed engineering survey.
           </div>
         </div>
       </div>
 
-      {/* Native vs Display Resolution Disclosure Card */}
-      <div className="bg-slate-950/90 border border-slate-800 rounded-lg p-3 space-y-2">
-        <div className="flex items-center justify-between">
+      {/* Section 6A: Research-Backed Thermal & Human Heat Stress Disambiguation Card */}
+      <ThermalSeparationCard corridor={corridor} />
+
+      {/* Section 6B & Section 8: Native vs Display Resolution & Pedestrian Connectivity Card */}
+      <div className="bg-slate-950/90 border border-slate-800 rounded-lg p-3 space-y-2.5">
+        <div className="flex items-center justify-between flex-wrap gap-1">
           <span className="font-bold text-slate-200 flex items-center gap-1.5">
-            <Layers className="w-3.5 h-3.5 text-emerald-400" />
-            Geospatial Measurements (Native vs. Display Resolution)
+            <Layers className="w-3.5 h-3.5 text-emerald-400" aria-hidden="true" />
+            Raster Provenance (Native vs. Display Grid) &amp; Pedestrian Continuity
           </span>
           <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/30">
-            EPSG:4326 Verified
+            CRS: EPSG:4326
           </span>
         </div>
 
-        <div className="grid grid-cols-2 gap-2 text-[11px]">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
           <div className="bg-slate-900/90 p-2 rounded border border-slate-800">
-            <div className="text-[10px] text-slate-400">MODIS LST (1,000m Native Pixel)</div>
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] text-slate-400">MODIS LST (1,000m Native)</span>
+              <span className="text-[9px] font-mono px-1 rounded bg-orange-500/15 text-orange-300">
+                MEASURED
+              </span>
+            </div>
             <div className="font-mono font-bold text-orange-400 text-sm">
               {corridor.lst_native_mean}°C
             </div>
             <div className="text-[10px] text-slate-500">
-              Un-interpolated 57×79 native thermal cell
+              Un-interpolated 57×79 native thermal cell (Mar–Jun 2024)
             </div>
           </div>
 
           <div className="bg-slate-900/90 p-2 rounded border border-slate-800">
-            <div className="text-[10px] text-slate-400">MODIS LST (10m Bilinear Display)</div>
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] text-slate-400">MODIS LST (10m Display Grid)</span>
+              <span className="text-[9px] font-mono px-1 rounded bg-amber-500/15 text-amber-300">
+                RESAMPLED
+              </span>
+            </div>
             <div className="font-mono font-bold text-amber-300 text-sm">
               {corridor.lst_mean}°C (Max {corridor.lst_max}°C)
             </div>
             <div className="text-[10px] text-slate-500">
-              Aligned to 10m grid for visual overlay
+              Bilinearly aligned to 10m grid for visual co-registration
             </div>
           </div>
 
           <div className="bg-slate-900/90 p-2 rounded border border-slate-800">
-            <div className="text-[10px] text-slate-400">Sentinel-2 NDVI (10m Native)</div>
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] text-slate-400">Sentinel-2 NDVI (10m Native)</span>
+              <span className="text-[9px] font-mono px-1 rounded bg-emerald-500/15 text-emerald-300">
+                MEASURED
+              </span>
+            </div>
             <div className="font-mono font-bold text-emerald-400 text-sm">
               {corridor.ndvi_mean} (Deficit: {corridor.green_deficit})
             </div>
             <div className="text-[10px] text-slate-500">
-              5572×7794 native surface reflectance
+              5572×7794 native surface reflectance (B08/B04)
             </div>
           </div>
 
           <div className="bg-slate-900/90 p-2 rounded border border-slate-800">
-            <div className="text-[10px] text-slate-400">
-              Nearest CPCB AQI ({corridor.aqi_distance_km} km)
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] text-slate-400">
+                CPCB Station AQI ({corridor.aqi_distance_km} km)
+              </span>
+              <span className="text-[9px] font-mono px-1 rounded bg-sky-500/15 text-sky-300">
+                {corridor.aqi_is_live ? 'LIVE API' : 'STATION REF'}
+              </span>
             </div>
             <div className="font-mono font-bold text-yellow-400 text-sm">
               AQI {corridor.aqi} (PM2.5: {corridor.pm25})
             </div>
             <div className="text-[10px] text-slate-500 truncate" title={corridor.aqi_station}>
-              {corridor.aqi_station} [{corridor.aqi_is_live ? 'Live API' : 'CPCB Baseline'}]
+              {corridor.aqi_station}
             </div>
+          </div>
+        </div>
+
+        {/* Pedestrian Corridor Continuity & Exposure Proxy Summary (Section 8) */}
+        <div className="bg-slate-900/70 border border-slate-800 rounded p-2 text-[11px] flex items-start gap-2">
+          <Footprints className="w-3.5 h-3.5 text-sky-400 shrink-0 mt-0.5" aria-hidden="true" />
+          <div className="text-slate-300">
+            <strong className="text-sky-300">Pedestrian Corridor Continuity: </strong>
+            Span <span className="font-mono text-white">{corridor.length_km} km</span> along <span className="font-mono uppercase text-slate-200">{corridor.highway}</span> right-of-way in {corridor.district} ({corridor.ward_id}). Canopy gap ratio <span className="font-mono text-emerald-300">{(corridor.green_deficit * 100).toFixed(1)}%</span> indicates priority for continuous shaded pedestrian walkability.
           </div>
         </div>
       </div>
 
       {/* Explainable Formula Trace & Table */}
       <div className="bg-slate-950/90 border border-slate-800 rounded-lg p-3 space-y-2.5">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between flex-wrap gap-1">
           <span className="font-bold text-slate-200 flex items-center gap-1.5">
-            <Calculator className="w-3.5 h-3.5 text-emerald-400" />
+            <Calculator className="w-3.5 h-3.5 text-emerald-400" aria-hidden="true" />
             Explainable Scoring Inputs &amp; Formula Trace
           </span>
           <span className="text-[10px] text-slate-400">
@@ -307,9 +577,9 @@ export default function CorridorAnalyticalDetail({
       {/* 5-Scenario Comparative Ranking & Stability Analysis */}
       {sensitivityRow && (
         <div className="bg-slate-950/90 border border-slate-800 rounded-lg p-3 space-y-2.5">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between flex-wrap gap-1">
             <span className="font-bold text-slate-200 flex items-center gap-1.5">
-              <TrendingUp className="w-3.5 h-3.5 text-sky-400" />
+              <TrendingUp className="w-3.5 h-3.5 text-sky-400" aria-hidden="true" />
               5-Scenario Sensitivity &amp; Ranking Stability
             </span>
             <span className="px-2 py-0.5 rounded bg-sky-500/15 text-sky-300 border border-sky-500/30 font-mono text-[10px]">
@@ -381,7 +651,7 @@ export default function CorridorAnalyticalDetail({
       <div className="bg-slate-950/90 border border-slate-800 rounded-lg p-3 space-y-2">
         <div className="flex items-center justify-between">
           <span className="font-bold text-slate-200 flex items-center gap-1.5">
-            <ShieldAlert className="w-3.5 h-3.5 text-amber-400" />
+            <ShieldAlert className="w-3.5 h-3.5 text-amber-400" aria-hidden="true" />
             Evidence Confidence Deduction Ledger
           </span>
           <span className="font-mono text-amber-400 font-bold">
@@ -405,3 +675,5 @@ export default function CorridorAnalyticalDetail({
     </div>
   );
 }
+
+export default React.memo(CorridorAnalyticalDetail);

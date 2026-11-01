@@ -48,6 +48,10 @@ from app.routers import (
     tenders,
     corridor_cost,
     health,
+    prediction,
+    community,
+    provenance,
+    government_reports,
 )
 
 logging.basicConfig(
@@ -83,10 +87,26 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+ALLOWED_ORIGINS = [
+    "http://localhost:5173",
+    "http://localhost:3000",
+    "http://localhost:8080",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:8080",
+    "http://localhost:7860",
+    "http://127.0.0.1:7860",
+    "https://vansetu-green-staging.vercel.app",
+    "https://vansetu.vercel.app",
+    "https://vansetu-slk1.vercel.app",
+    "https://van-setu-final.vercel.app",
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_origin_regex=r"https://.*\.vercel\.app",
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -117,6 +137,10 @@ app.include_router(auth.router)
 app.include_router(tenders.router)
 app.include_router(corridor_cost.router)
 app.include_router(health.router)
+app.include_router(prediction.router)
+app.include_router(community.router)
+app.include_router(provenance.router)
+app.include_router(government_reports.router)
 
 
 @app.get("/", tags=["System"])

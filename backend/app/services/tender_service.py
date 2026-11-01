@@ -1333,6 +1333,65 @@ class TenderService:
                 logs.append(item)
             return logs
 
+    def update_tender_progress(
+        self,
+        tender_id: str,
+        *,
+        progress_pct: float,
+        status: Optional[str] = None,
+        milestone_notes: Optional[str] = None,
+        user: Optional[AuthenticatedUser] = None,
+    ) -> Dict[str, Any]:
+        with self._get_conn() as conn:
+            row = conn.execute("SELECT * FROM tenders WHERE tender_id = ?", (tender_id,)).fetchone()
+            if not row:
+                raise KeyError(f"Tender '{tender_id}' not found.")
+
+            now = _utc_now_iso()
+            actor = user.user_id if user else "MUNICIPAL_OFFICER"
+            new_status = status if status else row["status"]
+
+            conn.execute(
+                """
+                UPDATE tenders
+                SET status = ?, updated_at = ?
+                WHERE tender_id = ?
+                """,
+                (new_status, now, tender_id),
+            )
+
+            conn.execute(
+                """
+                UPDATE corridor_allocations
+                SET progress_pct = ?, status = COALESCE(?, status), updated_at = ?
+                WHERE tender_id = ?
+                """,
+                (progress_pct, new_status, now, tender_id),
+            )
+
+            conn.execute(
+                """
+                INSERT INTO tender_audit_logs (
+                    log_id, entity_type, entity_id, action, performed_by_user_id,
+                    performed_by_role, details_json, timestamp
+                ) VALUES (?, 'TENDER', ?, 'PROGRESS_UPDATED', ?, ?, ?, ?)
+                """,
+                (
+                    f"log-{uuid.uuid4().hex[:10]}",
+                    tender_id,
+                    actor,
+                    user.role.value if user and hasattr(user.role, 'value') else "MUNICIPAL_OFFICER",
+                    json.dumps({
+                        "progress_pct": progress_pct,
+                        "status": new_status,
+                        "notes": milestone_notes,
+                    }),
+                    now,
+                ),
+            )
+
+            return self.get_tender(tender_id, current_user=user)
+
 
 # Global service singleton
 _tender_service: Optional[TenderService] = None
